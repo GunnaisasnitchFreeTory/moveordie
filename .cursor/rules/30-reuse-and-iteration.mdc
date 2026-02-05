@@ -1,0 +1,16 @@
+# Reuse & Iteration Rules
+
+If a system already exists:
+- reuse the structure
+- improve only when needed
+- clearly explain what changed and why
+
+Treat each new game as:
+“A variant built on top of an existing core framework.”
+
+Favor config-driven behavior over hard-coded logic.
+
+Enable easy duplication by supporting:
+- folder copying
+- config swapping
+- theme reskinning without rewrites

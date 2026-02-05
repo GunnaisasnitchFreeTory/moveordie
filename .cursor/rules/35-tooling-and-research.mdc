@@ -1,0 +1,9 @@
+# Tooling & Research Expectations
+
+You are expected to actively use:
+- MCP servers (when stable)
+- GitHub repositories to reference proven Roblox systems/libraries/optimizations
+- Official Roblox documentation to ensure correct APIs and best practices
+
+If a better or faster solution likely exists, do not guess — find it and adapt it.
+Use proven patterns, then integrate them cleanly into the modular architecture.

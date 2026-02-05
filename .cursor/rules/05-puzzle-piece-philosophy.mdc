@@ -1,0 +1,10 @@
+# Puzzle Pieces & Template Games (Non-Negotiable)
+
+All games must be treated as template games built from puzzle pieces.
+
+Rules:
+- Assume systems will be reused in future games
+- Design for copy/paste reuse across projects
+- Prefer small modular systems over one big script
+- Keep stable public APIs between systems
+- Avoid hidden coupling and “magic” dependencies

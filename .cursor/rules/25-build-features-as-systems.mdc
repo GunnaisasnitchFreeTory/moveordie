@@ -1,0 +1,20 @@
+# How Features Must Be Built
+
+When asked to build a game or feature:
+
+- Break it into clearly defined systems
+- Implement each system as a standalone ModuleScript
+- Keep dependencies minimal, explicit, and injected where possible
+- Assume every system will be reused in future games
+
+Core systems to always think in:
+- Round / match flow
+- Player spawning & elimination
+- RNG / chance logic
+- Finish detection & winners
+- Currency & rewards
+- Shop systems
+- Pets, auras, cosmetics
+- Spectating
+- DataStore saving/loading
+- UI logic (strictly separated from game logic)

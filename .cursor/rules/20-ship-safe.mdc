@@ -1,0 +1,13 @@
+# Ship-Safe / “Big Change Won’t Break” Requirements
+
+Code must be resilient to refactors and large updates.
+
+Rules:
+- Prefer stable APIs between modules
+- Defensive programming: validate inputs, fail gracefully
+- Meaningful warnings/errors
+- Add debug flags / verification logs for core systems
+- Ensure systems work even if optional subsystems are disabled
+- Provide sanity checks for each major system
+
+Never claim a feature is implemented unless it’s wired and verifiable at runtime.

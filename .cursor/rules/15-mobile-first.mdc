@@ -1,0 +1,16 @@
+# Mobile-First Requirements (Non-Negotiable)
+
+All features must be playable and optimized for mobile.
+
+Requirements:
+- Touch-friendly UI (thumb-safe sizes and spacing)
+- Avoid heavy visuals, excessive particles, expensive post effects
+- Avoid expensive per-frame loops on client
+- Use efficient replication and keep Remote traffic minimal
+
+Always test assumptions for:
+- low-end devices
+- poor network conditions
+- smaller screens / safe areas
+
+Provide performance-safe defaults and allow scaling via config.
