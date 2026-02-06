@@ -21,6 +21,7 @@ local Server = ServerScriptService:WaitForChild("Server")
 
 local MatchState = require(Shared:WaitForChild("MatchState"))
 local PlayerState = require(Shared:WaitForChild("PlayerState"))
+local SpawnConfig = require(Shared:WaitForChild("SpawnConfig"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local MapManager = require(Server:WaitForChild("MapManager"))
 local RoundManager = require(Server:WaitForChild("RoundManager"))
@@ -66,6 +67,103 @@ local function setMatchState(newState: string)
 end
 
 --[[
+	Safely teleport a player's character to a CFrame.
+	Returns true on success, false if character not ready.
+]]
+local function safeTeleport(player: Player, targetCFrame: CFrame): boolean
+	local character = player.Character
+	if not character then return false end
+	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	
+	if not humanoid or not rootPart then return false end
+	if humanoid.Health <= 0 then return false end
+	
+	-- Teleport
+	rootPart.CFrame = targetCFrame
+	
+	-- Kill velocity to prevent fling
+	rootPart.AssemblyLinearVelocity = Vector3.zero
+	rootPart.AssemblyAngularVelocity = Vector3.zero
+	
+	return true
+end
+
+--[[
+	Teleport a list of players to arena spawn points.
+]]
+local function teleportPlayersToArena(players: { Player })
+	if #players == 0 then return end
+	
+	local spawnCFrames = MapManager.GetArenaSpawnCFrames(#players)
+	if #spawnCFrames == 0 then
+		warn("[MatchManager] No arena spawn CFrames available")
+		return
+	end
+	
+	local teleported = 0
+	
+	for i, player in ipairs(players) do
+		local spawnCFrame = spawnCFrames[((i - 1) % #spawnCFrames) + 1]
+		
+		-- Try immediate teleport
+		if safeTeleport(player, spawnCFrame) then
+			teleported = teleported + 1
+		else
+			-- Retry after delay
+			task.spawn(function()
+				for _ = 1, SpawnConfig.MaxTeleportRetries do
+					task.wait(SpawnConfig.TeleportRetryDelay)
+					if safeTeleport(player, spawnCFrame) then
+						break
+					end
+				end
+			end)
+		end
+	end
+	
+	log(string.format("Teleported %d players to Arena", teleported))
+end
+
+--[[
+	Teleport a list of players back to lobby spawn.
+]]
+local function teleportPlayersToLobby(players: { Player })
+	if #players == 0 then return end
+	if not SpawnConfig.ReturnToLobbyOnEnd then return end
+	
+	local lobbyCFrame = MapManager.GetLobbySpawnCFrame()
+	local teleported = 0
+	
+	for i, player in ipairs(players) do
+		-- Slight spread so they don't stack
+		local offset = Vector3.new(
+			(i % 5 - 2) * 3,
+			0,
+			math.floor(i / 5) * 3
+		)
+		local targetCFrame = lobbyCFrame + offset
+		
+		if safeTeleport(player, targetCFrame) then
+			teleported = teleported + 1
+		else
+			-- Retry after delay
+			task.spawn(function()
+				for _ = 1, SpawnConfig.MaxTeleportRetries do
+					task.wait(SpawnConfig.TeleportRetryDelay)
+					if safeTeleport(player, targetCFrame) then
+						break
+					end
+				end
+			end)
+		end
+	end
+	
+	log(string.format("Returned %d players to Lobby spawn", teleported))
+end
+
+--[[
 	Get players eligible for match participation.
 	Eligible = in Lobby or Waiting state, and not AFK.
 ]]
@@ -100,37 +198,51 @@ local function setEligibleToWaiting()
 end
 
 --[[
-	Set all Waiting players to InMatch.
+	Set all Waiting players to InMatch and teleport them to arena.
 	Called at start of Playing phase.
 ]]
 local function setWaitingToInMatch()
 	local waitingPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
-	local count = 0
+	local playersToTeleport = {}
 	
 	for _, player in ipairs(waitingPlayers) do
 		-- Double-check they're not AFK (safety)
 		if not PlayerStateService.IsAFK(player) then
 			PlayerStateService.SetState(player, PlayerState.States.InMatch)
-			count = count + 1
+			table.insert(playersToTeleport, player)
 		end
 	end
 	
-	log(string.format("Moved %d players to InMatch", count))
-	return count
+	log(string.format("Moved %d players to InMatch", #playersToTeleport))
+	
+	-- Teleport to arena
+	teleportPlayersToArena(playersToTeleport)
+	
+	return #playersToTeleport
 end
 
 --[[
-	Set all InMatch players back to Lobby.
-	Called at end of Playing phase (temporary until teleport/map exists).
+	Set all remaining InMatch players back to Lobby and teleport them.
+	Called at end of Playing phase.
+	(Eliminated players are already in Lobby from Strike)
 ]]
-local function setInMatchToLobby()
+local function setMatchPlayersToLobby()
 	local inMatchPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
 	
+	if #inMatchPlayers == 0 then
+		log("No remaining InMatch players to return")
+		return
+	end
+	
+	-- Teleport back to lobby
+	teleportPlayersToLobby(inMatchPlayers)
+	
+	-- Update state
 	for _, player in ipairs(inMatchPlayers) do
 		PlayerStateService.SetState(player, PlayerState.States.Lobby)
 	end
 	
-	log(string.format("Returned %d players to Lobby", #inMatchPlayers))
+	log(string.format("Returned %d remaining players to Lobby", #inMatchPlayers))
 end
 
 --[[ PHASE HANDLERS ]]
@@ -164,30 +276,26 @@ local function runPlaying()
 	end
 	
 	setMatchState(MatchState.States.Playing)
-	phaseEndTime = tick() + Config.PlayingSeconds
-	log(string.format("Playing started (%ds)", Config.PlayingSeconds))
+	log("Playing started — waiting for RoundManager to complete")
 	
 	-- Notify MapManager that match is starting
 	MapManager.OnMatchStart()
 	
-	-- Move all waiting players into the match
+	-- Move all waiting players into the match (includes teleport)
 	setWaitingToInMatch()
 	
 	-- Start the round loop
 	RoundManager.StartRoundLoop()
 	
-	-- Main playing loop - wait for time to expire or rounds to complete
-	while tick() < phaseEndTime do
-		-- Check if round loop ended early (e.g., max rounds reached)
-		if not RoundManager.IsRunning() then
-			log("Round loop ended early, proceeding to Ending")
-			break
-		end
-		task.wait(1)
+	-- Wait for RoundManager to complete (winner, no winners, or cap reached)
+	-- RoundManager handles its own time/round caps internally
+	while RoundManager.IsRunning() do
+		task.wait(0.5)
 	end
 	
-	-- Stop round loop (in case time expired before rounds finished)
-	RoundManager.StopRoundLoop()
+	-- Get the end reason
+	local endReason = RoundManager.GetMatchEndReason()
+	log(string.format("Round loop completed — reason: %s", endReason or "unknown"))
 	
 	-- Notify MapManager that match is ending
 	MapManager.OnMatchEnd()
@@ -198,10 +306,21 @@ end
 local function runEnding()
 	setMatchState(MatchState.States.Ending)
 	phaseEndTime = tick() + Config.EndingSeconds
-	log(string.format("Ending started (%ds)", Config.EndingSeconds))
 	
-	-- Return all InMatch players to Lobby
-	setInMatchToLobby()
+	-- Log match result
+	local matchEndReason = RoundManager.GetMatchEndReason()
+	local winner = RoundManager.GetWinner()
+	
+	if matchEndReason == "Winner" and winner then
+		log(string.format("Ending started (%ds) — WINNER: %s", Config.EndingSeconds, winner.Name))
+	elseif matchEndReason == "NoWinners" then
+		log(string.format("Ending started (%ds) — No winners", Config.EndingSeconds))
+	else
+		log(string.format("Ending started (%ds)", Config.EndingSeconds))
+	end
+	
+	-- Return all InMatch and Spectating players to Lobby (includes teleport)
+	setMatchPlayersToLobby()
 	
 	-- Wait for ending phase
 	while tick() < phaseEndTime do
@@ -265,4 +384,3 @@ function MatchManager.StopLoop()
 end
 
 return MatchManager
-

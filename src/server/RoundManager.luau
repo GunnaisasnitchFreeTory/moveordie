@@ -3,7 +3,7 @@
 	Server-side round loop controller.
 	
 	Runs during Playing phase only.
-	Loop: Freeze → Telegraph → Strike → Recovery → repeat
+	Loop: FreeMove → Freeze/Telegraph → Strike → Recovery → repeat
 	
 	API:
 		Init()              → Initialize the manager
@@ -24,13 +24,23 @@ local Server = ServerScriptService:WaitForChild("Server")
 local RoundConfig = require(Shared:WaitForChild("RoundConfig"))
 local PlayerState = require(Shared:WaitForChild("PlayerState"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
+local HazardManager = require(Server:WaitForChild("HazardManager"))
+local MapManager = require(Server:WaitForChild("MapManager"))
 
 --[[ PHASE CONSTANTS ]]
 local Phase = {
-	Freeze = "Freeze",
-	Telegraph = "Telegraph",
+	FreeMove = "FreeMove",
+	FreezeTelegraph = "Freeze/Telegraph",
 	Strike = "Strike",
 	Recovery = "Recovery",
+}
+
+--[[ MATCH END REASONS ]]
+local MatchEndReason = {
+	Winner = "Winner",
+	NoWinners = "NoWinners",
+	CapReached = "CapReached",
+	Cancelled = "Cancelled",
 }
 
 --[[ INTERNAL STATE ]]
@@ -38,6 +48,12 @@ local initialized = false
 local running = false
 local currentRound = 0
 local currentPhase: string? = nil
+local matchEndReason: string? = nil
+local winner: Player? = nil
+
+-- Match tracking
+local matchStartTime: number = 0
+local initialAliveCount: number = 0
 
 -- Freeze state storage (player -> original values)
 local frozenPlayers: { [Player]: { WalkSpeed: number, JumpPower: number, JumpHeight: number } } = {}
@@ -148,6 +164,69 @@ local function safeWait(seconds: number): boolean
 end
 
 --[[
+	Check if match time limit has been exceeded.
+]]
+local function isMatchTimeExceeded(): boolean
+	if RoundConfig.MaxMatchSeconds <= 0 then
+		return false -- No limit
+	end
+	return (tick() - matchStartTime) >= RoundConfig.MaxMatchSeconds
+end
+
+--[[
+	Check if match should end based on alive player count or limits.
+	Returns true if match should end, sets matchEndReason and winner.
+]]
+local function checkMatchEnd(): boolean
+	local alivePlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+	local aliveCount = #alivePlayers
+	
+	-- No one survived
+	if aliveCount == 0 then
+		winner = nil
+		matchEndReason = MatchEndReason.NoWinners
+		log("No winners - all players eliminated")
+		return true
+	end
+	
+	-- Winner: only if we started with 2+ players and now have 1
+	if aliveCount == 1 and initialAliveCount >= RoundConfig.MinPlayersForWinner then
+		winner = alivePlayers[1]
+		matchEndReason = MatchEndReason.Winner
+		log(string.format("WINNER: %s!", winner.Name))
+		return true
+	end
+	
+	-- Check max rounds cap
+	if RoundConfig.MaxRoundsPerMatch > 0 and currentRound >= RoundConfig.MaxRoundsPerMatch then
+		-- Award top survivor(s) for now, just log
+		if aliveCount == 1 then
+			winner = alivePlayers[1]
+		else
+			winner = nil
+		end
+		matchEndReason = MatchEndReason.CapReached
+		log(string.format("Max rounds reached (%d), %d players remaining", currentRound, aliveCount))
+		return true
+	end
+	
+	-- Check max time cap
+	if isMatchTimeExceeded() then
+		if aliveCount == 1 then
+			winner = alivePlayers[1]
+		else
+			winner = nil
+		end
+		matchEndReason = MatchEndReason.CapReached
+		log(string.format("Max time reached (%.0fs), %d players remaining", 
+			tick() - matchStartTime, aliveCount))
+		return true
+	end
+	
+	return false
+end
+
+--[[
 	Run a single phase.
 	Returns false if cancelled.
 ]]
@@ -161,35 +240,58 @@ local function runPhase(phaseName: string, duration: number): boolean
 end
 
 --[[
-	Run a single round cycle: Freeze → Telegraph → Strike → Recovery
+	Run a single round cycle: FreeMove → Freeze/Telegraph → Strike → Recovery
 	Returns false if cancelled.
 ]]
 local function runRoundCycle(): boolean
 	currentRound = currentRound + 1
 	log(string.format("=== Round %d starting ===", currentRound))
 	
-	-- Phase 1: Freeze
+	-- Notify MapManager of round start (handles shrinking)
+	MapManager.OnRoundStart(currentRound)
+	
+	-- Check caps before round starts
+	if checkMatchEnd() then
+		running = false
+		return false
+	end
+	
+	-- Phase 1: FreeMove (players can reposition)
+	if not runPhase(Phase.FreeMove, RoundConfig.FreeMoveSeconds) then
+		HazardManager.Cleanup()
+		return false
+	end
+	
+	-- Phase 2: Freeze/Telegraph (players frozen, warning visible)
 	freezeAllPlayers()
-	if not runPhase(Phase.Freeze, RoundConfig.FreezeSeconds) then
+	HazardManager.SelectUnsafeZones(currentRound)
+	HazardManager.SpawnTelegraphs()
+	if not runPhase(Phase.FreezeTelegraph, RoundConfig.FreezeSeconds) then
 		unfreezeAllPlayers()
+		HazardManager.Cleanup()
+		return false
+	end
+	
+	-- Phase 3: Strike (beam fires, eliminate players in unsafe zones)
+	HazardManager.Strike()
+	if not runPhase(Phase.Strike, RoundConfig.StrikeSeconds) then
+		unfreezeAllPlayers()
+		HazardManager.Cleanup()
 		return false
 	end
 	unfreezeAllPlayers()
 	
-	-- Phase 2: Telegraph (visual warning - placeholder for now)
-	if not runPhase(Phase.Telegraph, RoundConfig.TelegraphSeconds) then
+	-- Check for winner after Strike
+	if checkMatchEnd() then
+		HazardManager.ClearTelegraphs()
+		running = false  -- Stop the loop
 		return false
 	end
-	-- Future: Select unsafe tiles, show warning effects
 	
-	-- Phase 3: Strike (beam fires - placeholder for now)
-	if not runPhase(Phase.Strike, RoundConfig.StrikeSeconds) then
-		return false
-	end
-	-- Future: Eliminate players on unsafe tiles
-	
-	-- Phase 4: Recovery (brief pause)
+	-- Phase 4: Recovery (brief pause, cleanup beams)
+	HazardManager.ClearTelegraphs()
 	if not runPhase(Phase.Recovery, RoundConfig.RecoverySeconds) then
+		HazardManager.Cleanup()
 		return false
 	end
 	
@@ -203,6 +305,9 @@ function RoundManager.Init()
 		warn("[RoundManager] Already initialized")
 		return
 	end
+	
+	-- Initialize HazardManager (depends on MapManager being ready)
+	HazardManager.Init()
 	
 	initialized = true
 	log("Initialized")
@@ -227,6 +332,14 @@ function RoundManager.GetCurrentPhase(): string?
 	return currentPhase
 end
 
+function RoundManager.GetMatchEndReason(): string?
+	return matchEndReason
+end
+
+function RoundManager.GetWinner(): Player?
+	return winner
+end
+
 function RoundManager.StartRoundLoop()
 	if running then
 		warn("[RoundManager] Loop already running")
@@ -236,8 +349,17 @@ function RoundManager.StartRoundLoop()
 	running = true
 	currentRound = 0
 	currentPhase = nil
+	matchEndReason = nil
+	winner = nil
 	
-	log("Round loop started")
+	-- Track match start for time limit
+	matchStartTime = tick()
+	
+	-- Track initial player count for winner detection
+	local alivePlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+	initialAliveCount = #alivePlayers
+	
+	log(string.format("Round loop started with %d players", initialAliveCount))
 	
 	task.spawn(function()
 		while running do
@@ -245,18 +367,13 @@ function RoundManager.StartRoundLoop()
 			local completed = runRoundCycle()
 			
 			if not completed then
-				break -- Cancelled
-			end
-			
-			-- Check max rounds limit
-			if RoundConfig.MaxRoundsPerMatch > 0 and currentRound >= RoundConfig.MaxRoundsPerMatch then
-				log(string.format("Max rounds reached (%d)", RoundConfig.MaxRoundsPerMatch))
-				break
+				break -- Cancelled or match ended
 			end
 		end
 		
 		-- Cleanup
 		unfreezeAllPlayers()
+		HazardManager.Cleanup()
 		currentPhase = nil
 		running = false
 		log("Round loop ended")
@@ -274,4 +391,3 @@ function RoundManager.StopRoundLoop()
 end
 
 return RoundManager
-
