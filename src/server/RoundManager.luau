@@ -3,7 +3,10 @@
 	Server-side round loop controller.
 	
 	Runs during Playing phase only.
-	Loop: FreeMove → Freeze/Telegraph → Strike → Recovery → repeat
+	Loop: FreeMove → Telegraph → BeamWarning → Strike → Recovery → repeat
+	
+	Telegraph tiles pulse BEFORE beams appear. When beams spawn,
+	tile warnings are removed so the player only sees beams during the strike window.
 	
 	API:
 		Init()              → Initialize the manager
@@ -30,7 +33,8 @@ local MapManager = require(Server:WaitForChild("MapManager"))
 --[[ PHASE CONSTANTS ]]
 local Phase = {
 	FreeMove = "FreeMove",
-	FreezeTelegraph = "Freeze/Telegraph",
+	Telegraph = "Telegraph",
+	BeamWarning = "BeamWarning",
 	Strike = "Strike",
 	Recovery = "Recovery",
 }
@@ -145,25 +149,6 @@ local function unfreezeAllPlayers()
 end
 
 --[[
-	Safely wait for duration, checking cancellation.
-	Returns true if completed, false if cancelled.
-]]
-local function safeWait(seconds: number): boolean
-	local elapsed = 0
-	local step = 0.1
-	
-	while elapsed < seconds do
-		if not running then
-			return false -- Cancelled
-		end
-		task.wait(math.min(step, seconds - elapsed))
-		elapsed = elapsed + step
-	end
-	
-	return true
-end
-
---[[
 	Check if match time limit has been exceeded.
 ]]
 local function isMatchTimeExceeded(): boolean
@@ -227,6 +212,35 @@ local function checkMatchEnd(): boolean
 end
 
 --[[
+	Safely wait for duration, checking cancellation AND match-end conditions.
+	Polls every 0.1s so mid-phase eliminations (OOB, hazards) are detected
+	within ~0.1s instead of waiting for the next explicit checkMatchEnd() call.
+	Returns true if completed, false if cancelled or match ended.
+]]
+local function safeWait(seconds: number): boolean
+	local elapsed = 0
+	local step = 0.1
+	
+	while elapsed < seconds do
+		if not running then
+			return false -- Cancelled externally
+		end
+		
+		-- Check if match should end mid-phase (e.g., solo player OOB-eliminated)
+		if checkMatchEnd() then
+			running = false
+			log("Match end detected mid-phase — aborting immediately")
+			return false
+		end
+		
+		task.wait(math.min(step, seconds - elapsed))
+		elapsed = elapsed + step
+	end
+	
+	return true
+end
+
+--[[
 	Run a single phase.
 	Returns false if cancelled.
 ]]
@@ -240,8 +254,17 @@ local function runPhase(phaseName: string, duration: number): boolean
 end
 
 --[[
-	Run a single round cycle: FreeMove → Freeze/Telegraph → Strike → Recovery
+	Run a single round cycle: FreeMove → Telegraph → BeamWarning → Strike → Recovery
 	Returns false if cancelled.
+	
+	Key flow:
+	  - Freeze players
+	  - ShowTelegraph (tile warnings pulse — no beams yet)
+	  - HideTelegraph + SpawnBeams (tiles vanish, beams appear)
+	  - Strike (damage check)
+	  - ClearBeams + unfreeze
+	  
+	Every failure path calls HazardManager.Cleanup() so nothing lingers.
 ]]
 local function runRoundCycle(): boolean
 	currentRound = currentRound + 1
@@ -262,17 +285,29 @@ local function runRoundCycle(): boolean
 		return false
 	end
 	
-	-- Phase 2: Freeze/Telegraph (players frozen, warning visible)
+	-- Freeze players before telegraph begins
 	freezeAllPlayers()
 	HazardManager.SelectUnsafeZones(currentRound)
-	HazardManager.SpawnTelegraphs()
-	if not runPhase(Phase.FreezeTelegraph, RoundConfig.FreezeSeconds) then
+	
+	-- Phase 2: Telegraph (tile warnings pulse — NO beams yet)
+	HazardManager.ShowTelegraph()
+	if not runPhase(Phase.Telegraph, RoundConfig.TelegraphSeconds) then
 		unfreezeAllPlayers()
 		HazardManager.Cleanup()
 		return false
 	end
 	
-	-- Phase 3: Strike (beam fires, eliminate players in unsafe zones)
+	-- Phase 3: BeamWarning (tile warnings vanish instantly, beams appear)
+	HazardManager.HideTelegraph()
+	HazardManager.SpawnBeams()
+	local beamWarningTime = math.max(0, RoundConfig.FreezeSeconds - RoundConfig.TelegraphSeconds)
+	if not runPhase(Phase.BeamWarning, beamWarningTime) then
+		unfreezeAllPlayers()
+		HazardManager.Cleanup()
+		return false
+	end
+	
+	-- Phase 4: Strike (beam fires, eliminate players in unsafe zones)
 	HazardManager.Strike()
 	if not runPhase(Phase.Strike, RoundConfig.StrikeSeconds) then
 		unfreezeAllPlayers()
@@ -283,13 +318,13 @@ local function runRoundCycle(): boolean
 	
 	-- Check for winner after Strike
 	if checkMatchEnd() then
-		HazardManager.ClearTelegraphs()
+		HazardManager.Cleanup()
 		running = false  -- Stop the loop
 		return false
 	end
 	
-	-- Phase 4: Recovery (brief pause, cleanup beams)
-	HazardManager.ClearTelegraphs()
+	-- Phase 5: Recovery (brief pause, cleanup beams)
+	HazardManager.ClearBeams()
 	if not runPhase(Phase.Recovery, RoundConfig.RecoverySeconds) then
 		HazardManager.Cleanup()
 		return false

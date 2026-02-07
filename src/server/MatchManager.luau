@@ -25,6 +25,8 @@ local SpawnConfig = require(Shared:WaitForChild("SpawnConfig"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local MapManager = require(Server:WaitForChild("MapManager"))
 local RoundManager = require(Server:WaitForChild("RoundManager"))
+local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
+local EconomyService = require(Server:WaitForChild("EconomyService"))
 
 --[[ CONFIGURATION ]]
 local Config = {
@@ -284,6 +286,10 @@ local function runPlaying()
 	-- Move all waiting players into the match (includes teleport)
 	setWaitingToInMatch()
 	
+	-- Initialize elimination tracking for this match
+	local matchPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+	EliminationTracker.Reset(matchPlayers)
+	
 	-- Start the round loop
 	RoundManager.StartRoundLoop()
 	
@@ -303,6 +309,40 @@ local function runPlaying()
 	return true -- Signal to continue to Ending
 end
 
+--[[
+	Build placement rankings and award coins to all match participants.
+	Must be called BEFORE setMatchPlayersToLobby() (while survivors are still InMatch).
+]]
+local function resolveRankingsAndReward()
+	-- Survivors = players still InMatch at match end
+	local survivors = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+	local rankings = EliminationTracker.BuildRankings(survivors)
+	
+	if #rankings == 0 then
+		log("No rankings to process (no players)")
+		return
+	end
+	
+	-- Award coins
+	local totalAwarded = 0
+	local matchId = EliminationTracker.GetMatchId()
+	
+	for _, group in ipairs(rankings) do
+		for _, entry in ipairs(group.players) do
+			if entry.player and entry.player.Parent and group.coins > 0 then
+				EconomyService.AwardCoins(
+					entry.player,
+					group.coins,
+					string.format("Match#%d Place#%d", matchId, group.placement)
+				)
+				totalAwarded = totalAwarded + group.coins
+			end
+		end
+	end
+	
+	log(string.format("Awarded %d total coins across %d placement groups", totalAwarded, #rankings))
+end
+
 local function runEnding()
 	setMatchState(MatchState.States.Ending)
 	phaseEndTime = tick() + Config.EndingSeconds
@@ -318,6 +358,9 @@ local function runEnding()
 	else
 		log(string.format("Ending started (%ds)", Config.EndingSeconds))
 	end
+	
+	-- Build rankings and award coins BEFORE returning players to lobby
+	resolveRankingsAndReward()
 	
 	-- Return all InMatch and Spectating players to Lobby (includes teleport)
 	setMatchPlayersToLobby()
@@ -339,6 +382,16 @@ function MatchManager.Init()
 	-- Initialize dependencies
 	MapManager.Init()
 	RoundManager.Init()
+	EconomyService.Init()
+	
+	-- Register disconnect elimination tracking:
+	-- When a player leaves while InMatch, record it as an elimination
+	PlayerStateService.OnPlayerRemoval(function(player, oldState)
+		if currentState == MatchState.States.Playing and oldState == PlayerState.States.InMatch then
+			local round = RoundManager.GetCurrentRound()
+			EliminationTracker.RecordElimination(player, round, "Disconnect")
+		end
+	end)
 	
 	initialized = true
 	log("Initialized")

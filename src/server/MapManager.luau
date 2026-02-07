@@ -5,7 +5,7 @@
 	
 	The arena (SquarePlatformMap) is ALWAYS visible in the world.
 	Active bounds shrink each round to increase difficulty.
-	Players outside active bounds are eliminated.
+	Players outside active bounds are eliminated (with post-shrink grace window).
 	
 	API:
 		Init()                        → Initialize and locate arena
@@ -33,8 +33,10 @@ local Server = ServerScriptService:WaitForChild("Server")
 
 local SpawnConfig = require(Shared:WaitForChild("SpawnConfig"))
 local ShrinkConfig = require(Shared:WaitForChild("ShrinkConfig"))
+local StormFXConfig = require(Shared:WaitForChild("StormFXConfig"))
 local PlayerState = require(Shared:WaitForChild("PlayerState"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
+local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
 
 --[[ CONFIGURATION ]]
 local Config = {
@@ -63,6 +65,13 @@ local stormVolume: Part? = nil
 -- Out-of-bounds checking
 local oobCheckConnection: RBXScriptConnection? = nil
 local lastOobCheck: number = 0
+
+-- Shrink grace window
+local lastShrinkTime: number = 0
+local graceLoggedThisRound: boolean = false
+
+-- Current round index (stored from OnRoundStart for elimination tracking)
+local currentRound: number = 0
 
 local MapManager = {}
 
@@ -96,65 +105,7 @@ local function isPositionInsideBounds(worldPos: Vector3): boolean
 		and localPos.Z >= -halfZ and localPos.Z <= halfZ
 end
 
---[[
-	Create particle emitters for animated storm effect.
-]]
-local function createStormParticles(parent: BasePart)
-	-- Main rising mist particles
-	local mist = Instance.new("ParticleEmitter")
-	mist.Name = "StormMist"
-	mist.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 180, 100)),  -- Bright orange
-		ColorSequenceKeypoint.new(0.5, ShrinkConfig.BoundsColor),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 30)),   -- Deep orange
-	})
-	mist.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 3),
-		NumberSequenceKeypoint.new(0.5, 8),
-		NumberSequenceKeypoint.new(1, 12),
-	})
-	mist.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.5),
-		NumberSequenceKeypoint.new(0.3, 0.4),
-		NumberSequenceKeypoint.new(0.7, 0.6),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	mist.Lifetime = NumberRange.new(3, 6)
-	mist.Rate = 25
-	mist.Speed = NumberRange.new(8, 20)
-	mist.SpreadAngle = Vector2.new(20, 60)
-	mist.Rotation = NumberRange.new(0, 360)
-	mist.RotSpeed = NumberRange.new(-60, 60)
-	mist.Drag = 0.5
-	mist.LightEmission = 0.5
-	mist.LightInfluence = 0.3
-	mist.Acceleration = Vector3.new(0, 5, 0)  -- Rise upward
-	mist.Parent = parent
-	
-	-- Sparkle/energy particles for visibility
-	local sparks = Instance.new("ParticleEmitter")
-	sparks.Name = "StormSparks"
-	sparks.Color = ColorSequence.new(Color3.fromRGB(255, 220, 150))  -- Bright yellowish
-	sparks.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.5),
-		NumberSequenceKeypoint.new(0.5, 1.5),
-		NumberSequenceKeypoint.new(1, 0),
-	})
-	sparks.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.3),
-		NumberSequenceKeypoint.new(0.5, 0.5),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	sparks.Lifetime = NumberRange.new(1, 2.5)
-	sparks.Rate = 10
-	sparks.Speed = NumberRange.new(5, 15)
-	sparks.SpreadAngle = Vector2.new(40, 40)
-	sparks.LightEmission = 1
-	sparks.LightInfluence = 0
-	sparks.Parent = parent
-	
-	return mist
-end
+-- Storm particle creation delegated to shared StormFXConfig.CreateStormParticles()
 
 --[[
 	Create a single wall part for the storm boundary.
@@ -170,8 +121,8 @@ local function createStormWall(name: string, parent: Instance): Part
 	wall.Transparency = ShrinkConfig.BoundsTransparency
 	wall.Parent = parent
 	
-	-- Add particle effects
-	createStormParticles(wall)
+	-- Add particle effects (shared storm profile)
+	StormFXConfig.CreateStormParticles(wall, 1)
 	
 	return wall
 end
@@ -268,9 +219,7 @@ local function updateBoundsVisual()
 	boundsWalls[4].Size = Vector3.new(wallThickness, wallHeight, activeSizeZ)
 	boundsWalls[4].CFrame = CFrame.new(centerX - halfSizeX - wallThickness / 2, topY, centerZ)
 	
-	-- Update storm volume (covers area outside bounds up to full arena)
-	-- Actually, let's skip the volume since it would cover the play area
-	-- The walls alone with particles create the storm effect
+	-- Update storm volume
 	if stormVolume then
 		stormVolume.Size = Vector3.new(activeSizeX, 0.1, activeSizeZ)
 		stormVolume.CFrame = CFrame.new(centerX, topY + wallHeight / 2, centerZ)
@@ -307,6 +256,9 @@ local function eliminateOutOfBounds(player: Player)
 		humanoid.Health = 0
 	end
 	
+	-- Record elimination BEFORE state change (so tracker sees them as InMatch)
+	EliminationTracker.RecordElimination(player, currentRound, "OOB")
+	
 	-- Set to Lobby state
 	PlayerStateService.SetState(player, PlayerState.States.Lobby)
 	
@@ -315,9 +267,32 @@ end
 
 --[[
 	Check all InMatch players for out-of-bounds violations.
+	Respects post-shrink grace window (no instant kills after shrink).
 ]]
 local function checkOutOfBounds()
 	if not isActive then return end
+	
+	-- Grace window: skip OOB kills for a short time after each shrink
+	if ShrinkConfig.OOBGraceSeconds > 0 and lastShrinkTime > 0 then
+		local elapsed = os.clock() - lastShrinkTime
+		if elapsed < ShrinkConfig.OOBGraceSeconds then
+			-- Log once per grace window (avoid spam)
+			if not graceLoggedThisRound then
+				shrinkLog(string.format(
+					"Grace active (%.1fs) — skipping OOB kills",
+					ShrinkConfig.OOBGraceSeconds
+				))
+				graceLoggedThisRound = true
+			end
+			return
+		else
+			-- Grace expired → log once then resume normal OOB checking
+			if graceLoggedThisRound then
+				shrinkLog("Grace expired — OOB kills active")
+				graceLoggedThisRound = false
+			end
+		end
+	end
 	
 	local inMatchPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
 	
@@ -447,6 +422,9 @@ function MapManager.OnMatchStart()
 	end
 	
 	isActive = true
+	lastShrinkTime = 0 -- No shrink yet this match
+	graceLoggedThisRound = false
+	currentRound = 0
 	
 	-- Reset bounds at match start
 	MapManager.ResetBounds()
@@ -471,6 +449,8 @@ function MapManager.OnMatchEnd()
 	end
 	
 	isActive = false
+	lastShrinkTime = 0
+	graceLoggedThisRound = false
 	
 	-- Stop out-of-bounds checking
 	stopOobChecking()
@@ -481,10 +461,13 @@ end
 
 --[[
 	Called at the start of each round.
-	Handles shrinking logic.
+	Handles incremental shrinking with step cap + slowdown near MinBounds.
+	Records shrink time for OOB grace window.
 ]]
 function MapManager.OnRoundStart(roundIndex: number)
 	if not initialized or not arenaSize then return end
+	
+	currentRound = roundIndex  -- Store for elimination tracking
 	
 	if not ShrinkConfig.Enabled then return end
 	
@@ -494,22 +477,50 @@ function MapManager.OnRoundStart(roundIndex: number)
 		return
 	end
 	
-	-- Calculate shrink amount
-	local shrinkSteps = roundIndex - ShrinkConfig.StartsAtRound + 1
-	local totalShrink = shrinkSteps * ShrinkConfig.ShrinkPerRoundStuds
+	-- Already at minimum? Nothing to do.
+	local distToMinX = activeSizeX - ShrinkConfig.MinSizeX
+	local distToMinZ = activeSizeZ - ShrinkConfig.MinSizeZ
+	local distToMin = math.min(distToMinX, distToMinZ)
 	
-	-- Apply shrink (clamped to minimum)
-	local newSizeX = math.max(arenaSize.X - totalShrink, ShrinkConfig.MinSizeX)
-	local newSizeZ = math.max(arenaSize.Z - totalShrink, ShrinkConfig.MinSizeZ)
+	if distToMin <= 0 then
+		updateBoundsVisual()
+		return
+	end
 	
-	-- Only log if size actually changed
+	-- Calculate this round's step (incremental, not cumulative)
+	local n = roundIndex - ShrinkConfig.StartsAtRound + 1
+	local rawStep = ShrinkConfig.BaseStepStuds + (n - 1) * ShrinkConfig.StepGrowthStuds
+	local thisStep = rawStep
+	
+	-- B4a: Cap to MaxStep
+	thisStep = math.min(thisStep, ShrinkConfig.MaxStepStuds)
+	
+	-- B4b: Slowdown near MinBounds (scale factor clamped to [0.2, 1.0] — never zero)
+	if distToMin > 0 and distToMin < ShrinkConfig.SlowdownNearMinStuds then
+		local scale = math.clamp(distToMin / ShrinkConfig.SlowdownNearMinStuds, 0.2, 1.0)
+		thisStep = thisStep * scale
+	end
+	
+	-- Apply (clamp to MinBounds, no overshoot)
+	local newSizeX = math.max(activeSizeX - thisStep, ShrinkConfig.MinSizeX)
+	local newSizeZ = math.max(activeSizeZ - thisStep, ShrinkConfig.MinSizeZ)
+	
+	-- Only update + log if size actually changed
 	if newSizeX ~= activeSizeX or newSizeZ ~= activeSizeZ then
 		activeSizeX = newSizeX
 		activeSizeZ = newSizeZ
-		currentShrinkStep = shrinkSteps
+		currentShrinkStep = n
 		
-		shrinkLog(string.format("Round %d shrink: Active bounds now %.0fx%.0f (step %d)", 
-			roundIndex, activeSizeX, activeSizeZ, currentShrinkStep))
+		-- Record shrink time for OOB grace window
+		lastShrinkTime = os.clock()
+		graceLoggedThisRound = false
+		
+		shrinkLog(string.format(
+			"Round %d shrink: step #%d = %.1f studs (raw %.0f, cap %.0f, distToMin was %.0f), bounds now %.0fx%.0f (min %.0fx%.0f)",
+			roundIndex, n, thisStep, rawStep, ShrinkConfig.MaxStepStuds,
+			distToMin, activeSizeX, activeSizeZ,
+			ShrinkConfig.MinSizeX, ShrinkConfig.MinSizeZ
+		))
 	end
 	
 	updateBoundsVisual()

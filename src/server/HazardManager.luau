@@ -3,18 +3,31 @@
 	Server-side beam hazard system.
 	
 	Divides SquarePlatformMap into a grid, selects unsafe zones,
-	spawns telegraph beams, and eliminates players on Strike.
+	shows telegraph warnings, spawns beams, and eliminates players on Strike.
+	
+	Telegraph → Beams flow:
+	  1. ShowTelegraph()  — tile warning overlays pulse on unsafe cells
+	  2. HideTelegraph()  — remove tile warnings (called before beams spawn)
+	  3. SpawnBeams()     — beam columns appear above unsafe zones
+	  4. Strike()         — eliminate players standing in beam zones
+	  5. ClearBeams()     — remove beam columns
+	
+	Cleanup() is a bulletproof catch-all that hides telegraphs AND clears beams.
 	
 	API:
 		Init()                      → Initialize the manager
 		SelectUnsafeZones(round)    → Pick unsafe cells for this round (scales with difficulty)
-		SpawnTelegraphs()           → Create visible beam warnings
+		ShowTelegraph()             → Show tile warning overlays + pulse animation
+		HideTelegraph()             → Remove all tile warning overlays immediately
+		SpawnBeams()                → Create beam columns above unsafe zones
 		Strike()                    → Eliminate players in unsafe zones
-		ClearTelegraphs()           → Remove all beam visuals
+		ClearBeams()                → Remove all beam columns
 		GetUnsafeZones()            → Current unsafe zone data
+		Cleanup()                   → Full reset (HideTelegraph + ClearBeams + clear zones)
 ]]
 
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
@@ -22,9 +35,11 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Server = ServerScriptService:WaitForChild("Server")
 
 local HazardConfig = require(Shared:WaitForChild("HazardConfig"))
+local StormFXConfig = require(Shared:WaitForChild("StormFXConfig"))
 local PlayerState = require(Shared:WaitForChild("PlayerState"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local MapManager = require(Server:WaitForChild("MapManager"))
+local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
 
 --[[ TYPES ]]
 export type GridCell = {
@@ -60,6 +75,13 @@ local selectedCellsLookup: { [string]: boolean } = {}
 
 -- Spawned beam references for accurate hit detection
 local spawnedBeams: { Part } = {}
+
+-- Tile warning overlays (floor danger flash during telegraph)
+local spawnedTileWarnings: { Part } = {}
+local tileWarningActive = false  -- Gate for pulse animation coroutine
+
+-- Current round index (stored from SelectUnsafeZones for elimination tracking)
+local currentRoundIndex: number = 0
 
 local HazardManager = {}
 
@@ -219,6 +241,124 @@ local function getBeamsFolder(): Folder
 	return beamsFolder
 end
 
+--[[
+	Get or create the tile warnings folder.
+]]
+local function getTileWarningsFolder(): Folder
+	local folder = getEffectsFolder()
+	
+	local twFolder = folder:FindFirstChild("TileWarnings")
+	if not twFolder then
+		twFolder = Instance.new("Folder")
+		twFolder.Name = "TileWarnings"
+		twFolder.Parent = folder
+	end
+	
+	return twFolder
+end
+
+--[[
+	Clear all tile warning overlays. Idempotent. Cancels any running pulse animation.
+]]
+local function clearTileWarnings()
+	tileWarningActive = false  -- Stop any running pulse animation immediately
+	
+	if #spawnedTileWarnings == 0 then return end
+	
+	local folder = Workspace:FindFirstChild(HazardConfig.EffectsFolderName)
+	if folder then
+		local twFolder = folder:FindFirstChild("TileWarnings")
+		if twFolder then
+			twFolder:ClearAllChildren()
+		end
+	end
+	
+	local count = #spawnedTileWarnings
+	spawnedTileWarnings = {}
+	
+	if HazardConfig.TileWarningDebugLogs then
+		log(string.format("[TILE WARNING] Cleared %d tile warnings", count))
+	end
+end
+
+--[[
+	Spawn tile warning overlays on the floor for each unsafe zone and run pulse animation.
+	Creates thin neon overlay Parts on the arena surface that pulse to indicate danger.
+	Animation runs in a background coroutine, gated by tileWarningActive.
+]]
+local function spawnTileWarnings()
+	if not HazardConfig.TileWarningEnabled then return end
+	if not platformData then return end
+	
+	clearTileWarnings()  -- Clean any previous overlays
+	tileWarningActive = true
+	
+	local twFolder = getTileWarningsFolder()
+	local cfg = HazardConfig
+	
+	-- Create overlay parts for each unsafe zone cell
+	for _, zone in ipairs(currentUnsafeZones) do
+		local tile = Instance.new("Part")
+		tile.Name = string.format("TileWarn_r%d_c%d", zone.row, zone.col)
+		tile.Anchored = true
+		tile.CanCollide = false
+		tile.CastShadow = false
+		-- Use BeamWidthStuds for telegraph size — single source of truth with beam footprint
+		tile.Size = Vector3.new(cfg.BeamWidthStuds, cfg.TileWarningThickness, cfg.BeamWidthStuds)
+		tile.Position = Vector3.new(
+			zone.worldCenter.X,
+			platformData.topY + cfg.TileWarningThickness / 2 + 0.01,  -- Just above floor surface
+			zone.worldCenter.Z
+		)
+		tile.Color = cfg.TileWarningColor
+		tile.Material = cfg.TileWarningMaterial
+		tile.Transparency = cfg.TileWarningTranspStart
+		tile.Parent = twFolder
+		table.insert(spawnedTileWarnings, tile)
+	end
+	
+	if cfg.TileWarningDebugLogs then
+		log(string.format("[TILE WARNING] Spawned %d tile overlays", #spawnedTileWarnings))
+	end
+	
+	-- Run pulse animation in background (non-blocking, self-cancels on clearTileWarnings)
+	task.spawn(function()
+		local fadeInInfo = TweenInfo.new(cfg.TileWarningPulseFadeIn, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		local fadeOutInfo = TweenInfo.new(cfg.TileWarningPulseFadeOut, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		
+		for pulse = 1, cfg.TileWarningPulseCount do
+			if not tileWarningActive then break end
+			
+			-- FADE IN: snap to dark (danger flash)
+			for _, tile in ipairs(spawnedTileWarnings) do
+				if tile.Parent then
+					TweenService:Create(tile, fadeInInfo, { Transparency = cfg.TileWarningTranspPeak }):Play()
+				end
+			end
+			task.wait(cfg.TileWarningPulseFadeIn)
+			if not tileWarningActive then break end
+			
+			-- FADE OUT: ease back to subtle rest
+			for _, tile in ipairs(spawnedTileWarnings) do
+				if tile.Parent then
+					TweenService:Create(tile, fadeOutInfo, { Transparency = cfg.TileWarningTranspRest }):Play()
+				end
+			end
+			task.wait(cfg.TileWarningPulseFadeOut)
+			if not tileWarningActive then break end
+			
+			-- Gap between pulses (skip after last pulse)
+			if pulse < cfg.TileWarningPulseCount then
+				task.wait(cfg.TileWarningPulseGap)
+			end
+		end
+		
+		if cfg.TileWarningDebugLogs and tileWarningActive then
+			log("[TILE WARNING] Pulse animation complete — holding at rest transparency")
+		end
+	end)
+end
+
 --[[ PUBLIC API ]]
 
 --[[
@@ -311,6 +451,7 @@ function HazardManager.SelectUnsafeZones(roundIndex: number)
 	end
 	
 	roundIndex = roundIndex or 1
+	currentRoundIndex = roundIndex  -- Store for elimination tracking
 	
 	-- Refresh platform data from active bounds (handles shrink)
 	refreshPlatformData()
@@ -401,9 +542,34 @@ function HazardManager.SelectUnsafeZones(roundIndex: number)
 end
 
 --[[
-	Spawn visible beam telegraphs above each unsafe zone.
+	Show tile warning overlays on unsafe zones. Tiles pulse to indicate danger.
+	Call HideTelegraph() before SpawnBeams() to remove them.
 ]]
-function HazardManager.SpawnTelegraphs()
+function HazardManager.ShowTelegraph()
+	if not initialized or not platformData then
+		warn("[HazardManager] Not initialized")
+		return
+	end
+	
+	spawnTileWarnings()
+	log(string.format("Telegraph shown: %d", #spawnedTileWarnings))
+end
+
+--[[
+	Hide all tile warning overlays immediately. Idempotent.
+]]
+function HazardManager.HideTelegraph()
+	local count = #spawnedTileWarnings
+	clearTileWarnings()
+	if count > 0 then
+		log(string.format("Telegraph hidden: %d", count))
+	end
+end
+
+--[[
+	Spawn beam columns above each unsafe zone. Call after HideTelegraph().
+]]
+function HazardManager.SpawnBeams()
 	if not initialized or not platformData then
 		warn("[HazardManager] Not initialized")
 		return
@@ -441,15 +607,36 @@ function HazardManager.SpawnTelegraphs()
 		
 		beam.Parent = beamsFolder
 		table.insert(spawnedBeams, beam)  -- Track for hit detection
+		
+		-- Attach storm particles to beam (same style as barrier, lower rate)
+		if HazardConfig.BeamParticlesEnabled then
+			local mistE, sparksE = StormFXConfig.CreateStormParticles(beam, HazardConfig.BeamParticleRateMultiplier)
+			
+			-- Debug: log details for first 2 beams only (gated behind config)
+			if i <= 2 and HazardConfig.BeamParticleDebugLogs then
+				log(string.format(
+					"[BEAM PARTICLE DEBUG] %s — Mist: Parent=%s Rate=%d Lifetime=%s Enabled=%s | Sparks: Parent=%s Rate=%d Enabled=%s",
+					beam.Name,
+					tostring(mistE.Parent and mistE.Parent.Name),
+					mistE.Rate,
+					tostring(mistE.Lifetime),
+					tostring(mistE.Enabled),
+					tostring(sparksE.Parent and sparksE.Parent.Name),
+					sparksE.Rate,
+					tostring(sparksE.Enabled)
+				))
+			end
+		end
 	end
 	
-	log(string.format("Spawned %d telegraph beams", #currentUnsafeZones))
+	log(string.format("Beams spawned: %d (particles: %s)", 
+		#currentUnsafeZones, tostring(HazardConfig.BeamParticlesEnabled)))
 end
 
 --[[
-	Clear all telegraph beams. Idempotent (safe to call multiple times).
+	Remove all beam columns. Idempotent (safe to call multiple times).
 ]]
-function HazardManager.ClearTelegraphs()
+function HazardManager.ClearBeams()
 	local folder = Workspace:FindFirstChild(HazardConfig.EffectsFolderName)
 	if not folder then 
 		spawnedBeams = {}
@@ -462,15 +649,13 @@ function HazardManager.ClearTelegraphs()
 		return 
 	end
 	
-	local childCount = #beamsFolder:GetChildren()
-	if childCount == 0 then 
-		spawnedBeams = {}
-		return  -- Already clean
-	end
-	
+	local count = #beamsFolder:GetChildren()
 	beamsFolder:ClearAllChildren()
-	spawnedBeams = {}  -- Clear references
-	log("Cleared telegraph beams")
+	spawnedBeams = {}
+	
+	if count > 0 then
+		log(string.format("Beams cleared: %d", count))
+	end
 end
 
 --[[
@@ -608,6 +793,11 @@ function HazardManager.Strike(): number
 		end
 	end
 	
+	-- Record eliminations BEFORE state change (so tracker sees them as InMatch)
+	for _, player in ipairs(eliminatedPlayers) do
+		EliminationTracker.RecordElimination(player, currentRoundIndex, "Beam")
+	end
+	
 	-- Send eliminated players to Lobby
 	for _, player in ipairs(eliminatedPlayers) do
 		PlayerStateService.SetState(player, PlayerState.States.Lobby)
@@ -630,9 +820,11 @@ end
 	Full cleanup (call on match end or cancel). Idempotent.
 ]]
 function HazardManager.Cleanup()
-	local hadData = #currentUnsafeZones > 0
+	local hadData = #currentUnsafeZones > 0 or #spawnedTileWarnings > 0 or #spawnedBeams > 0
 	
-	HazardManager.ClearTelegraphs()
+	-- Bulletproof: always hide telegraph AND clear beams
+	HazardManager.HideTelegraph()
+	HazardManager.ClearBeams()
 	currentUnsafeZones = {}
 	selectedCellsLookup = {}
 	

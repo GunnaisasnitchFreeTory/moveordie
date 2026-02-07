@@ -20,14 +20,14 @@ local Camera = workspace.CurrentCamera
 -- Wait for remotes
 local Remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
 if not Remotes then
-	warn("[SpectateController] Remotes folder not found")
-	return
+	warn("[SpectateController] Remotes folder not found — spectating disabled")
+	return {} -- Must return a value (ModuleScript requirement)
 end
 
 local SpectateTarget = Remotes:WaitForChild("SpectateTarget", 5)
 if not SpectateTarget then
-	warn("[SpectateController] SpectateTarget remote not found")
-	return
+	warn("[SpectateController] SpectateTarget remote not found — spectating disabled")
+	return {} -- Must return a value (ModuleScript requirement)
 end
 
 -- State
@@ -142,3 +142,4 @@ end)
 
 log("Initialized")
 
+return {} -- ModuleScript must return exactly one value

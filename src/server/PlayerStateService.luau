@@ -27,6 +27,10 @@ local playerStates: { [Player]: string } = {}
 local previousStates: { [Player]: string } = {} -- For AFK toggle to restore previous state
 local initialized = false
 
+-- Removal callbacks: fired BEFORE state is cleared in RemovePlayer
+-- Signature: fn(player: Player, oldState: string?)
+local removalCallbacks: { (Player, string?) -> () } = {}
+
 local PlayerStateService = {}
 
 --[[ 
@@ -71,6 +75,9 @@ function PlayerStateService.SetState(player: Player, state: string): boolean
 	end
 	
 	playerStates[player] = state
+	
+	-- Replicate to client via attribute (used by StormFXController, etc.)
+	player:SetAttribute("PlayerState", state)
 	
 	if DEBUG_LOG then
 		print(string.format("[PlayerStateService] %s: %s → %s", 
@@ -158,17 +165,37 @@ function PlayerStateService.RegisterPlayer(player: Player)
 	
 	playerStates[player] = PlayerState.DEFAULT
 	
+	-- Replicate to client via attribute (used by StormFXController, etc.)
+	player:SetAttribute("PlayerState", PlayerState.DEFAULT)
+	
 	if DEBUG_LOG then
 		print(string.format("[PlayerStateService] %s joined → %s", player.Name, PlayerState.DEFAULT))
 	end
 end
 
 --[[
+	Register a callback that fires BEFORE a player's state is cleared on removal.
+	Use this to react to player disconnects (e.g., elimination tracking).
+	Callback signature: fn(player: Player, oldState: string?)
+]]
+function PlayerStateService.OnPlayerRemoval(fn: (Player, string?) -> ())
+	table.insert(removalCallbacks, fn)
+end
+
+--[[
 	Remove a player (call on PlayerRemoving).
-	Cleans up all state.
+	Fires removal callbacks BEFORE clearing state, then cleans up.
 ]]
 function PlayerStateService.RemovePlayer(player: Player)
 	local state = playerStates[player]
+	
+	-- Fire removal callbacks BEFORE clearing state (so listeners can read old state)
+	for _, fn in ipairs(removalCallbacks) do
+		local ok, err = pcall(fn, player, state)
+		if not ok then
+			warn(string.format("[PlayerStateService] Removal callback error: %s", tostring(err)))
+		end
+	end
 	
 	playerStates[player] = nil
 	previousStates[player] = nil
