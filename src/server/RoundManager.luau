@@ -269,6 +269,13 @@ end
 local function runRoundCycle(): boolean
 	currentRound = currentRound + 1
 	log(string.format("=== Round %d starting ===", currentRound))
+
+	-- Replicate round number for client UI
+	local matchStatus = ReplicatedStorage:FindFirstChild("MatchStatus")
+	if matchStatus then
+		local rv = matchStatus:FindFirstChild("Round")
+		if rv then rv.Value = currentRound end
+	end
 	
 	-- Notify MapManager of round start (handles shrinking)
 	MapManager.OnRoundStart(currentRound)

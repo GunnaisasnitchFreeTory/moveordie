@@ -43,6 +43,11 @@ local phaseEndTime: number = 0
 local initialized = false
 local loopRunning = false
 
+-- Replicated status values (created in Init, read by client UI)
+local replicatedState: StringValue = nil     -- "Intermission" | "Playing" | "Ending"
+local replicatedRound: IntValue = nil        -- Current round number
+local replicatedPhaseEnd: NumberValue = nil  -- workspace:GetServerTimeNow() at phase end
+
 local MatchManager = {}
 
 --[[ HELPERS ]]
@@ -50,6 +55,31 @@ local MatchManager = {}
 local function log(...)
 	if Config.DebugLog then
 		print("[MatchManager]", ...)
+	end
+end
+
+--[[
+	Replicate the phase end time so the client HUD can show a countdown.
+	`durationSeconds` is the length of the phase starting NOW.
+]]
+local function replicatePhaseEnd(durationSeconds: number)
+	if replicatedPhaseEnd then
+		replicatedPhaseEnd.Value = workspace:GetServerTimeNow() + durationSeconds
+		log(string.format("Replicated PhaseEndTime → +%ds (value=%.1f)", durationSeconds, replicatedPhaseEnd.Value))
+	else
+		log("replicatedPhaseEnd is nil — skipping replication")
+	end
+end
+
+--[[
+	Replicate the current round number for the client HUD.
+]]
+local function replicateRound(round: number)
+	if replicatedRound then
+		replicatedRound.Value = round
+		log(string.format("Replicated Round → %d", round))
+	else
+		log("replicatedRound is nil — skipping replication")
 	end
 end
 
@@ -66,6 +96,11 @@ local function setMatchState(newState: string)
 	local oldState = currentState
 	currentState = newState
 	log(string.format("State: %s → %s", oldState, newState))
+
+	-- Replicate state for client UI
+	if replicatedState then
+		replicatedState.Value = newState
+	end
 end
 
 --[[
@@ -252,6 +287,8 @@ end
 local function runIntermission()
 	setMatchState(MatchState.States.Intermission)
 	phaseEndTime = tick() + Config.IntermissionSeconds
+	replicatePhaseEnd(Config.IntermissionSeconds)
+	replicateRound(0)
 	log(string.format("Intermission started (%ds)", Config.IntermissionSeconds))
 	
 	-- Main intermission loop
@@ -346,6 +383,7 @@ end
 local function runEnding()
 	setMatchState(MatchState.States.Ending)
 	phaseEndTime = tick() + Config.EndingSeconds
+	replicatePhaseEnd(Config.EndingSeconds)
 	
 	-- Log match result
 	local matchEndReason = RoundManager.GetMatchEndReason()
@@ -378,7 +416,29 @@ function MatchManager.Init()
 		warn("[MatchManager] Already initialized")
 		return
 	end
-	
+
+	-- Create replicated MatchStatus folder for client UI
+	local matchStatusFolder = Instance.new("Folder")
+	matchStatusFolder.Name = "MatchStatus"
+	matchStatusFolder.Parent = ReplicatedStorage
+
+	replicatedState = Instance.new("StringValue")
+	replicatedState.Name = "State"
+	replicatedState.Value = MatchState.States.Intermission
+	replicatedState.Parent = matchStatusFolder
+
+	replicatedRound = Instance.new("IntValue")
+	replicatedRound.Name = "Round"
+	replicatedRound.Value = 0
+	replicatedRound.Parent = matchStatusFolder
+
+	replicatedPhaseEnd = Instance.new("NumberValue")
+	replicatedPhaseEnd.Name = "PhaseEndTime"
+	replicatedPhaseEnd.Value = 0
+	replicatedPhaseEnd.Parent = matchStatusFolder
+
+	log("MatchStatus folder + replicated values created")
+
 	-- Initialize dependencies
 	MapManager.Init()
 	RoundManager.Init()

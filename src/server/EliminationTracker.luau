@@ -105,6 +105,15 @@ function EliminationTracker.RecordElimination(player: Player, roundNumber: numbe
 	table.insert(eliminations, record)
 	log(string.format("Recorded: %s eliminated (round %d, %s) — #%d this match",
 		player.Name, roundNumber, reason, #eliminations))
+
+	-- Broadcast to all clients for Kill Feed UI
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if remotes then
+		local killFeedEvent = remotes:FindFirstChild("KillFeedEvent")
+		if killFeedEvent then
+			killFeedEvent:FireAllClients(player.Name, reason)
+		end
+	end
 end
 
 --[[

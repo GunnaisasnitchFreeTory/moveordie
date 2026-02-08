@@ -30,4 +30,15 @@ else
 	warn("[Client] StormFXController FAILED:", stormErr)
 end
 
+-- 3. UIController (has Init method)
+local uiOk, uiErr = pcall(function()
+	local UIController = require(Client:WaitForChild("UIController"))
+	UIController.Init()
+end)
+if uiOk then
+	print("[Client] UIController loaded OK")
+else
+	warn("[Client] UIController FAILED:", uiErr)
+end
+
 print("[Client] Init complete")
