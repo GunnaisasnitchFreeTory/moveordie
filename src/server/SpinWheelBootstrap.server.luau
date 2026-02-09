@@ -6,11 +6,15 @@
 	  • RemoteFunction: SpinWheel_GetData
 	  • RemoteFunction: SpinWheel_RequestSpin
 	  • RemoteFunction: SpinWheel_BuySpins
-	  • ProximityPrompt on SpinTheWheel (E to open UI)
+	  • ProximityPrompt on a ground-level invisible anchor near SpinTheWheel
 
 	Also:
 	  • Removes ClickDetectors from SpinTheWheel (no click-to-spin)
 	  • Removes/disables embedded Scripts/LocalScripts (bad sound assets, old logic)
+
+	FIX: ProximityPrompt is now on a dedicated invisible anchor Part at ground level
+	     so the "Press E" UI is visible from all angles and distance measurements
+	     are consistent between the prompt trigger and the auto-close check.
 
 	Wires player join/leave for data persistence.
 ]]
@@ -146,20 +150,42 @@ task.defer(function()
 		end
 	end
 
-	-- D) CREATE a new ProximityPrompt on a BasePart inside the model
-	local triggerPart = nil
-	if spinModel:IsA("Model") and spinModel.PrimaryPart then
-		triggerPart = spinModel.PrimaryPart
-	end
-	if not triggerPart then
-		triggerPart = spinModel:FindFirstChildWhichIsA("BasePart", true)
+	-- D) Find the GROUND-LEVEL center position of the spin wheel model
+	--    The actual wheel is elevated (Y ~16.5 studs), which causes distance
+	--    mismatch between the prompt and auto-close checks.
+	--    We create an invisible anchor Part at GROUND LEVEL so:
+	--    1) The "Press E" prompt renders at a visible height (not behind the wheel)
+	--    2) Distance measurements are consistent (horizontal, not affected by elevation)
+	local wheelCenter = nil
+
+	-- Try to find the model center
+	local anyPart = spinModel:FindFirstChildWhichIsA("BasePart", true)
+	if anyPart then
+		-- Use horizontal position of any part, but force Y to near-ground level
+		wheelCenter = Vector3.new(anyPart.Position.X, 5, anyPart.Position.Z)
+		print("[SpinWheelBootstrap] Reference part:", anyPart:GetFullName(), "at", anyPart.Position)
 	end
 
-	if not triggerPart then
+	if not wheelCenter then
 		warn("[SpinWheelBootstrap] No BasePart found in SpinTheWheel — cannot create ProximityPrompt")
 		return
 	end
 
+	-- Create an invisible anchor Part at ground level
+	local anchor = Instance.new("Part")
+	anchor.Name = "SpinWheelPromptAnchor"
+	anchor.Size = Vector3.new(2, 2, 2)
+	anchor.Position = wheelCenter
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor.Transparency = 1 -- invisible
+	anchor.Parent = spinModel
+
+	print("[SpinWheelBootstrap] Created invisible anchor at:", wheelCenter)
+
+	-- Create ProximityPrompt on the ground-level anchor
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "SpinWheelPrompt"
 	prompt.ActionText = "Spin"
@@ -168,11 +194,10 @@ task.defer(function()
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 14
 	prompt.RequiresLineOfSight = false
-	prompt.Parent = triggerPart
+	prompt.Parent = anchor
 
-	print("[SpinWheelBootstrap] ProximityPrompt created on:", triggerPart:GetFullName())
+	print("[SpinWheelBootstrap] ProximityPrompt created on:", anchor:GetFullName(), "at Y =", wheelCenter.Y)
 	print("[SpinWheelBootstrap] Spin The Wheel system fully ready ✓")
 end)
 
 print("[SpinWheelBootstrap] Spin The Wheel remotes ready")
-

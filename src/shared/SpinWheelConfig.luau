@@ -118,8 +118,8 @@ SpinWheelConfig.MAX_FULL_SPINS     = 8     -- maximum full rotations
 -- PROXIMITY
 -- ═══════════════════════════════════════════
 
-SpinWheelConfig.OPEN_DISTANCE  = 14  -- studs to show "Press E" prompt
-SpinWheelConfig.CLOSE_DISTANCE = 20  -- studs to auto-close
+SpinWheelConfig.OPEN_DISTANCE     = 14  -- studs to show "Press E" prompt
+SpinWheelConfig.CLOSE_DISTANCE    = 50  -- studs to auto-close (generous — only when player clearly walks away)
+SpinWheelConfig.OPEN_GRACE_PERIOD = 3   -- seconds after opening before auto-close checks start
 
 return SpinWheelConfig
-

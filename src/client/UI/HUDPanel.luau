@@ -13,6 +13,10 @@
 	and a single horizontal bar shows "Game starting in X".
 	When playing, the bar hides and round badge returns.
 
+	FIX: Intermission bar stud texture now uses a BRIGHTER color
+	(light blue-white) and lower transparency so the studs are
+	actually visible on the blue gradient background.
+
 	Used by: UIController
 ]]
 
@@ -79,34 +83,37 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 
 	local coinStroke = Instance.new("UIStroke")
 	coinStroke.Color = C.Gold
-	coinStroke.Thickness = 3
-	coinStroke.Transparency = 0.15
+	coinStroke.Thickness = 2.5
+	coinStroke.Transparency = 0.18
 	coinStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	coinStroke.Parent = coinFrame
 
-	-- Color-based gradient (same approach as intermission bar — lighter → base → darker)
+	-- Color-based gradient
 	local coinGrad = Instance.new("UIGradient")
 	coinGrad.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(62, 68, 105)),     -- lighter navy
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(38, 42, 72)),    -- base navy
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 25, 52)),      -- slightly darker
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(58, 65, 100)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(36, 40, 70)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 25, 50)),
 	})
 	coinGrad.Rotation = 90
 	coinGrad.Parent = coinFrame
 
-	-- Drop shadow
+	-- Stud texture on coin frame
+	Components.AddStudTexture(coinFrame, S.HudCoinH / 2)
+
+	-- Drop shadow (softer)
 	local coinShadow = Instance.new("Frame")
 	coinShadow.Name = "Shadow"
 	coinShadow.AnchorPoint = Vector2.new(0.5, 0.5)
-	coinShadow.Position = UDim2.new(0.5, 2, 0.5, 4)
-	coinShadow.Size = UDim2.new(1, 14, 1, 14)
+	coinShadow.Position = UDim2.new(0.5, 2, 0.5, 3)
+	coinShadow.Size = UDim2.new(1, 12, 1, 12)
 	coinShadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	coinShadow.BackgroundTransparency = 0.45
+	coinShadow.BackgroundTransparency = 0.5
 	coinShadow.BorderSizePixel = 0
 	coinShadow.ZIndex = 0
 	coinShadow.Parent = coinFrame
 	local csc = Instance.new("UICorner")
-	csc.CornerRadius = UDim.new(0, S.HudCoinH / 2 + 7)
+	csc.CornerRadius = UDim.new(0, S.HudCoinH / 2 + 6)
 	csc.Parent = coinShadow
 
 	coinScale = Instance.new("UIScale")
@@ -115,13 +122,13 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	-- Gold circle with bold "F" for Fate Coins
 	local coinIcon = Instance.new("TextLabel")
 	coinIcon.Name = "CoinIcon"
-	coinIcon.Size = UDim2.fromOffset(38, 38)
-	coinIcon.Position = UDim2.fromOffset(6, (S.HudCoinH - 38) / 2)
+	coinIcon.Size = UDim2.fromOffset(36, 36)
+	coinIcon.Position = UDim2.fromOffset(7, (S.HudCoinH - 36) / 2)
 	coinIcon.BackgroundColor3 = C.Gold
 	coinIcon.Font = Enum.Font.GothamBold
 	coinIcon.Text = "F"
-	coinIcon.TextColor3 = Color3.fromRGB(110, 72, 0)
-	coinIcon.TextSize = 24
+	coinIcon.TextColor3 = Color3.fromRGB(105, 70, 0)
+	coinIcon.TextSize = 22
 	coinIcon.BorderSizePixel = 0
 	coinIcon.ZIndex = 2
 	coinIcon.Parent = coinFrame
@@ -129,9 +136,9 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	icCorner.CornerRadius = UDim.new(1, 0)
 	icCorner.Parent = coinIcon
 	local icStroke = Instance.new("UIStroke")
-	icStroke.Color = Color3.fromRGB(195, 158, 22)
-	icStroke.Thickness = 2.5
-	icStroke.Transparency = 0.12
+	icStroke.Color = Color3.fromRGB(190, 155, 22)
+	icStroke.Thickness = 2
+	icStroke.Transparency = 0.15
 	icStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	icStroke.Parent = coinIcon
 
@@ -142,14 +149,14 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	coinLabel.BackgroundTransparency = 1
 	coinLabel.Font = Enum.Font.GothamBold
 	coinLabel.TextColor3 = C.TextWhite
-	coinLabel.TextSize = 26
+	coinLabel.TextSize = 24
 	coinLabel.TextXAlignment = Enum.TextXAlignment.Left
 	coinLabel.Text = "0"
 	coinLabel.ZIndex = 2
 	coinLabel.Parent = coinFrame
 	local clStroke = Instance.new("UIStroke")
 	clStroke.Color = Color3.fromRGB(0, 0, 0)
-	clStroke.Thickness = 2
+	clStroke.Thickness = 1.8
 	clStroke.Transparency = 0.15
 	clStroke.Parent = coinLabel
 
@@ -167,34 +174,37 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	rCorner.CornerRadius = UDim.new(0, S.HudRoundH / 2)
 	rCorner.Parent = roundFrame
 	local rStroke = Instance.new("UIStroke")
-	rStroke.Color = Color3.fromRGB(255, 220, 120) -- warm gold border
-	rStroke.Thickness = 3.5
-	rStroke.Transparency = 0.1
+	rStroke.Color = Color3.fromRGB(255, 218, 115)
+	rStroke.Thickness = 2.5
+	rStroke.Transparency = 0.12
 	rStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	rStroke.Parent = roundFrame
 
-	-- Color-based gradient (same approach as intermission bar — lighter → base → darker)
+	-- Color-based gradient
 	local rGrad = Instance.new("UIGradient")
 	rGrad.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 210, 100)),   -- lighter orange
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 165, 42)),  -- base orange
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 110, 15)),    -- slightly darker orange
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 208, 98)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(248, 162, 42)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(195, 108, 15)),
 	})
 	rGrad.Rotation = 90
 	rGrad.Parent = roundFrame
 
+	-- Stud texture on round badge
+	Components.AddStudTexture(roundFrame, S.HudRoundH / 2)
+
 	local rShadow = Instance.new("Frame")
 	rShadow.Name = "Shadow"
 	rShadow.AnchorPoint = Vector2.new(0.5, 0.5)
-	rShadow.Position = UDim2.new(0.5, 2, 0.5, 4)
-	rShadow.Size = UDim2.new(1, 14, 1, 14)
+	rShadow.Position = UDim2.new(0.5, 2, 0.5, 3)
+	rShadow.Size = UDim2.new(1, 12, 1, 12)
 	rShadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	rShadow.BackgroundTransparency = 0.42
+	rShadow.BackgroundTransparency = 0.48
 	rShadow.BorderSizePixel = 0
 	rShadow.ZIndex = 0
 	rShadow.Parent = roundFrame
 	local rsc = Instance.new("UICorner")
-	rsc.CornerRadius = UDim.new(0, S.HudRoundH / 2 + 7)
+	rsc.CornerRadius = UDim.new(0, S.HudRoundH / 2 + 6)
 	rsc.Parent = rShadow
 
 	roundLabel = Instance.new("TextLabel")
@@ -203,13 +213,13 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	roundLabel.BackgroundTransparency = 1
 	roundLabel.Font = Enum.Font.GothamBold
 	roundLabel.TextColor3 = C.TextWhite
-	roundLabel.TextSize = 24
+	roundLabel.TextSize = 22
 	roundLabel.Text = ""
 	roundLabel.ZIndex = 2
 	roundLabel.Parent = roundFrame
 	local rlStroke = Instance.new("UIStroke")
 	rlStroke.Color = Color3.fromRGB(0, 0, 0)
-	rlStroke.Thickness = 2
+	rlStroke.Thickness = 1.8
 	rlStroke.Transparency = 0.15
 	rlStroke.Parent = roundLabel
 
@@ -222,19 +232,16 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	stateLabel.BackgroundTransparency = 1
 	stateLabel.Font = Enum.Font.GothamBold
 	stateLabel.TextColor3 = C.TextLight
-	stateLabel.TextSize = 19
+	stateLabel.TextSize = 18
 	stateLabel.Text = ""
 	stateLabel.Parent = screenGui
 	local slStroke = Instance.new("UIStroke")
 	slStroke.Color = Color3.fromRGB(0, 0, 0)
 	slStroke.Thickness = 1.5
-	slStroke.Transparency = 0.2
+	slStroke.Transparency = 0.22
 	slStroke.Parent = stateLabel
 
 	-- ────────── INTERMISSION BAR (single bright horizontal pill) ──────────
-	-- This is the ONLY intermission UI. It REPLACES the round badge.
-	-- During intermission: bar shows, round badge hides.
-	-- During playing: bar hides, round badge shows.
 	intermissionBar = Instance.new("Frame")
 	intermissionBar.Name = "IntermissionBar"
 	intermissionBar.AnchorPoint = Vector2.new(0.5, 0)
@@ -251,7 +258,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	ibCorner.CornerRadius = UDim.new(0, S.IntermissionCorner)
 	ibCorner.Parent = intermissionBar
 
-	-- Bright glossy gradient (light blue → darker blue)
+	-- Bright glossy gradient
 	local ibGrad = Instance.new("UIGradient")
 	ibGrad.Color = ColorSequence.new({
 		ColorSequenceKeypoint.new(0, C.IntermissionBg2),
@@ -261,11 +268,21 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	ibGrad.Rotation = 90
 	ibGrad.Parent = intermissionBar
 
-	-- White border with subtle transparency
+	-- Stud texture on intermission bar — VISIBLE on blue bg
+	-- (default global stud is dark/invisible on blue, so we customize here)
+	Components.AddStudTexture(intermissionBar, S.IntermissionCorner)
+	local ibStud = intermissionBar:FindFirstChild("StudTexture")
+	if ibStud then
+		ibStud.ImageColor3 = Color3.fromRGB(200, 225, 255) -- light blue-white: pops on blue gradient
+		ibStud.ImageTransparency = 0.72                      -- noticeably more visible (default is 0.82)
+		ibStud.ZIndex = 10                                   -- above bg, below text (ZIndex 11)
+	end
+
+	-- Border (refined — matches round badge)
 	local ibStroke = Instance.new("UIStroke")
-	ibStroke.Color = Color3.fromRGB(255, 220, 120) -- warm gold border (matches round badge)
-	ibStroke.Thickness = 3.5
-	ibStroke.Transparency = 0.1
+	ibStroke.Color = Color3.fromRGB(255, 218, 115)
+	ibStroke.Thickness = 2.5
+	ibStroke.Transparency = 0.12
 	ibStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	ibStroke.Parent = intermissionBar
 
@@ -273,39 +290,38 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	local ibShadow = Instance.new("Frame")
 	ibShadow.Name = "Shadow"
 	ibShadow.AnchorPoint = Vector2.new(0.5, 0.5)
-	ibShadow.Position = UDim2.new(0.5, 2, 0.5, 4)
-	ibShadow.Size = UDim2.new(1, 16, 1, 16)
+	ibShadow.Position = UDim2.new(0.5, 2, 0.5, 3)
+	ibShadow.Size = UDim2.new(1, 14, 1, 14)
 	ibShadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	ibShadow.BackgroundTransparency = 0.42
+	ibShadow.BackgroundTransparency = 0.48
 	ibShadow.BorderSizePixel = 0
 	ibShadow.ZIndex = 9
 	ibShadow.Parent = intermissionBar
 	local ibsc = Instance.new("UICorner")
-	ibsc.CornerRadius = UDim.new(0, S.IntermissionCorner + 6)
+	ibsc.CornerRadius = UDim.new(0, S.IntermissionCorner + 5)
 	ibsc.Parent = ibShadow
 
 	local ibScale = Instance.new("UIScale")
 	ibScale.Parent = intermissionBar
 
-	-- Single line: "Game starting in X" — all in one label
+	-- Intermission text
 	intermissionLabel = Instance.new("TextLabel")
 	intermissionLabel.Name = "IntermissionText"
 	intermissionLabel.Size = UDim2.fromScale(1, 1)
 	intermissionLabel.BackgroundTransparency = 1
 	intermissionLabel.Font = Enum.Font.GothamBold
 	intermissionLabel.TextColor3 = C.IntermissionText
-	intermissionLabel.TextSize = 26
+	intermissionLabel.TextSize = 24
 	intermissionLabel.Text = "Game starting in 10"
 	intermissionLabel.ZIndex = 11
 	intermissionLabel.Parent = intermissionBar
 	local ibls = Instance.new("UIStroke")
 	ibls.Color = Color3.fromRGB(0, 0, 0)
-	ibls.Thickness = 2
+	ibls.Thickness = 1.8
 	ibls.Transparency = 0.2
 	ibls.Parent = intermissionLabel
 
 	-- ────────── 2×4 SIDEBAR GRID (glossy, vibrant) ──────────
-	-- Subtle backdrop panel behind buttons for better visibility
 	local SIDEBAR_ROWS = 4
 	local sidebarBg = Instance.new("Frame")
 	sidebarBg.Name = "SidebarBg"
@@ -321,14 +337,17 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	sidebarBg.ZIndex = 0
 	sidebarBg.Parent = screenGui
 	local sbgCorner = Instance.new("UICorner")
-	sbgCorner.CornerRadius = UDim.new(0, 20)
+	sbgCorner.CornerRadius = UDim.new(0, 18)
 	sbgCorner.Parent = sidebarBg
 	local sbgStroke = Instance.new("UIStroke")
 	sbgStroke.Color = Color3.fromRGB(255, 255, 255)
-	sbgStroke.Thickness = 2.5
-	sbgStroke.Transparency = 0.55
+	sbgStroke.Thickness = 2
+	sbgStroke.Transparency = 0.65
 	sbgStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	sbgStroke.Parent = sidebarBg
+
+	-- Stud texture on sidebar backdrop
+	Components.AddStudTexture(sidebarBg, 18)
 
 	local sidebar = Instance.new("Frame")
 	sidebar.Name = "Sidebar"
@@ -395,7 +414,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 
 		-- SHOW intermission bar with animation
 		intermissionBar.Visible = true
-		ibScale.Scale = 0.85
+		ibScale.Scale = 0.88
 		local t = TweenService:Create(ibScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 })
 		t:Play()
 	end
@@ -405,7 +424,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		intermissionVisible = false
 
 		-- Animate out
-		local t = TweenService:Create(ibScale, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.85 })
+		local t = TweenService:Create(ibScale, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.88 })
 		t:Play()
 		task.spawn(function()
 			t.Completed:Wait()

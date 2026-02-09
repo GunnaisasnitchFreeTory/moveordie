@@ -111,14 +111,16 @@ local function refresh()
 	end
 
 	for i, player in ipairs(spectateTargets) do
+		local isSelected = (currentTargetIndex == i)
+
 		local btn = Instance.new("TextButton")
 		btn.Name = "Target_" .. player.Name
 		btn.Size = UDim2.new(1, -20, 0, 48)
-		btn.BackgroundColor3 = (currentTargetIndex == i) and C.EquipButton or C.CardBg
+		btn.BackgroundColor3 = isSelected and C.EquipButton or C.CardBg
 		btn.BorderSizePixel = 0
 		btn.AutoButtonColor = false
 		btn.Font = Enum.Font.GothamBold
-		btn.TextColor3 = C.TextWhite
+		btn.TextColor3 = isSelected and C.TextWhite or C.TextLight
 		btn.TextSize = 18
 		btn.Text = "  👤  " .. player.DisplayName
 		btn.TextXAlignment = Enum.TextXAlignment.Left
@@ -126,19 +128,21 @@ local function refresh()
 		btn.Parent = contentFrame
 
 		local co = Instance.new("UICorner")
-		co.CornerRadius = UDim.new(0, 10)
+		co.CornerRadius = UDim.new(0, S.BtnCorner)
 		co.Parent = btn
 
 		local st = Instance.new("UIStroke")
-		st.Color = (currentTargetIndex == i) and C.Blue or C.CardStroke
-		st.Thickness = 2
-		st.Transparency = 0.2
+		st.Color = isSelected and C.Blue or C.CardStroke
+		st.Thickness = S.PanelStroke
+		st.Transparency = isSelected and 0.15 or 0.35
+		st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		st.Parent = btn
 
+		-- Text stroke
 		local ts = Instance.new("UIStroke")
 		ts.Color = Color3.fromRGB(0, 0, 0)
 		ts.Thickness = 1.5
-		ts.Transparency = 0.2
+		ts.Transparency = 0.22
 		ts.Parent = btn
 
 		AnimUtil.WireButton(btn, function()
@@ -208,8 +212,15 @@ function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	bottomBar.Parent = canvas
 
 	local bbCorner = Instance.new("UICorner")
-	bbCorner.CornerRadius = UDim.new(0, 12)
+	bbCorner.CornerRadius = UDim.new(0, S.BtnCorner)
 	bbCorner.Parent = bottomBar
+
+	local bbStroke = Instance.new("UIStroke")
+	bbStroke.Color = C.CardStroke
+	bbStroke.Thickness = S.PanelStroke
+	bbStroke.Transparency = 0.4
+	bbStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	bbStroke.Parent = bottomBar
 
 	local bbLayout = Instance.new("UIListLayout")
 	bbLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -233,19 +244,25 @@ function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		b.LayoutOrder = order
 		b.ZIndex = 6
 		b.Parent = bottomBar
+
 		local bco = Instance.new("UICorner")
-		bco.CornerRadius = UDim.new(0, 10)
+		bco.CornerRadius = UDim.new(0, S.BtnCorner)
 		bco.Parent = b
+
 		local bst = Instance.new("UIStroke")
 		bst.Color = Color3.fromRGB(255, 255, 255)
-		bst.Thickness = 2
+		bst.Thickness = S.PanelStroke
 		bst.Transparency = 0.4
+		bst.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		bst.Parent = b
+
+		-- Text stroke
 		local bts = Instance.new("UIStroke")
 		bts.Color = Color3.fromRGB(0, 0, 0)
 		bts.Thickness = 1.5
-		bts.Transparency = 0.15
+		bts.Transparency = 0.2
 		bts.Parent = b
+
 		AnimUtil.WireButton(b, function()
 			SoundUtil.Click()
 			onClick()
@@ -312,4 +329,3 @@ function SpectatePanel.Toggle()
 end
 
 return SpectatePanel
-

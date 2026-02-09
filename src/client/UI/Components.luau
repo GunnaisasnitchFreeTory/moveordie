@@ -8,7 +8,7 @@
 	  • Animated sunburst glow (rotating gradient rays)
 	  • Centered radial glow (soft bright circle)
 	  • Floating sparkle dots
-	  • Thick vibrant coloured borders
+	  • Refined coloured borders (subtle, consistent)
 	  • Glossy gradient on headers & buttons
 	  • High-contrast text with dark strokes
 
@@ -37,17 +37,12 @@ local Components = {}
 -- ═══════════════════════════════════════════════════════════════════
 
 --[[
-	Subtle glossy sheen on DARK backgrounds:
-	  top = slight white highlight
-	  bottom = slight darkening
-]]
---[[
 	Subtle glossy sheen — white highlight at top, NO black darkening.
 	This preserves the actual background color so buttons stay vibrant.
 	topAlpha = how visible the white sheen is (lower = more visible)
 ]]
 local function addGloss(frame: GuiObject, topAlpha: number?, _bottomAlpha: number?)
-	topAlpha = topAlpha or 0.70
+	topAlpha = topAlpha or 0.72
 	local grad = Instance.new("UIGradient")
 	grad.Color = ColorSequence.new({
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
@@ -73,10 +68,10 @@ local function addHeaderGloss(frame: GuiObject)
 		ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0)),
 	})
 	grad.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.50),
+		NumberSequenceKeypoint.new(0, 0.52),
 		NumberSequenceKeypoint.new(0.35, 0.88),
 		NumberSequenceKeypoint.new(0.65, 0.95),
-		NumberSequenceKeypoint.new(1, 0.80),
+		NumberSequenceKeypoint.new(1, 0.82),
 	})
 	grad.Rotation = 90
 	grad.Parent = frame
@@ -87,15 +82,15 @@ end
 ]]
 local function addShadow(parent: GuiObject, radius: number?, ox: number?, oy: number?)
 	radius = radius or S.PanelCorner + 8
-	ox = ox or 4
-	oy = oy or 8
+	ox = ox or 3
+	oy = oy or 6
 	local shadow = Instance.new("Frame")
 	shadow.Name = "DropShadow"
 	shadow.AnchorPoint = Vector2.new(0.5, 0.5)
 	shadow.Position = UDim2.new(0.5, ox, 0.5, oy)
-	shadow.Size = UDim2.new(1, 24, 1, 24)
+	shadow.Size = UDim2.new(1, 20, 1, 20)
 	shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	shadow.BackgroundTransparency = 0.42
+	shadow.BackgroundTransparency = 0.48
 	shadow.BorderSizePixel = 0
 	shadow.ZIndex = 0
 	shadow.Parent = parent
@@ -127,19 +122,22 @@ local function addStudTexture(parent: GuiObject, radius: number?)
 	end
 end
 
+-- Expose addStudTexture so other modules can add stud texture to backgrounds
+Components.AddStudTexture = addStudTexture
+
 --[[
 	Centered radial glow — a big soft bright circle behind content.
 	Creates a warm "spotlight" effect on the dark panel.
 ]]
 local function addCenterGlow(parent: GuiObject, color: Color3?)
-	color = color or Color3.fromRGB(80, 110, 200)
+	color = color or Color3.fromRGB(75, 105, 195)
 	local glow = Instance.new("Frame")
 	glow.Name = "CenterGlow"
 	glow.Size = UDim2.new(1.4, 0, 1.2, 0)
 	glow.AnchorPoint = Vector2.new(0.5, 0.5)
 	glow.Position = UDim2.fromScale(0.5, 0.5)
 	glow.BackgroundColor3 = color
-	glow.BackgroundTransparency = 0.82
+	glow.BackgroundTransparency = 0.84
 	glow.BorderSizePixel = 0
 	glow.ZIndex = 1
 	glow.Parent = parent
@@ -150,14 +148,14 @@ local function addCenterGlow(parent: GuiObject, color: Color3?)
 	-- Pulse
 	task.spawn(function()
 		while glow and glow.Parent do
-			local t1 = TweenService:Create(glow, TweenInfo.new(2.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-				BackgroundTransparency = 0.82,
+			local t1 = TweenService:Create(glow, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+				BackgroundTransparency = 0.84,
 				Size = UDim2.new(1.5, 0, 1.3, 0),
 			})
 			t1:Play()
 			t1.Completed:Wait()
-			local t2 = TweenService:Create(glow, TweenInfo.new(2.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-				BackgroundTransparency = 0.86,
+			local t2 = TweenService:Create(glow, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+				BackgroundTransparency = 0.88,
 				Size = UDim2.new(1.3, 0, 1.1, 0),
 			})
 			t2:Play()
@@ -178,30 +176,30 @@ local function addSunburst(parent: GuiObject)
 	burst.AnchorPoint = Vector2.new(0.5, 0.5)
 	burst.Position = UDim2.fromScale(0.5, 0.5)
 	burst.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	burst.BackgroundTransparency = 0.82
+	burst.BackgroundTransparency = 0.85
 	burst.BorderSizePixel = 0
 	burst.ZIndex = 2
 	burst.Parent = parent
 
 	local grad = Instance.new("UIGradient")
 	grad.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.55),
+		NumberSequenceKeypoint.new(0, 0.58),
 		NumberSequenceKeypoint.new(0.08, 0.96),
-		NumberSequenceKeypoint.new(0.16, 0.58),
+		NumberSequenceKeypoint.new(0.16, 0.62),
 		NumberSequenceKeypoint.new(0.24, 0.96),
-		NumberSequenceKeypoint.new(0.33, 0.55),
+		NumberSequenceKeypoint.new(0.33, 0.58),
 		NumberSequenceKeypoint.new(0.41, 0.96),
-		NumberSequenceKeypoint.new(0.50, 0.58),
+		NumberSequenceKeypoint.new(0.50, 0.62),
 		NumberSequenceKeypoint.new(0.58, 0.96),
-		NumberSequenceKeypoint.new(0.66, 0.55),
+		NumberSequenceKeypoint.new(0.66, 0.58),
 		NumberSequenceKeypoint.new(0.75, 0.96),
-		NumberSequenceKeypoint.new(0.83, 0.58),
+		NumberSequenceKeypoint.new(0.83, 0.62),
 		NumberSequenceKeypoint.new(0.91, 0.96),
-		NumberSequenceKeypoint.new(1, 0.55),
+		NumberSequenceKeypoint.new(1, 0.58),
 	})
 	grad.Parent = burst
 
-	local speed = UIConfig.Anim.SunburstSpeed or 12
+	local speed = UIConfig.Anim.SunburstSpeed or 10
 
 	local conn
 	conn = RunService.Heartbeat:Connect(function(dt)
@@ -217,11 +215,11 @@ end
 	Floating sparkle dots that fade in/out at random positions.
 ]]
 local function addSparkles(parent: GuiObject, count: number?)
-	count = count or 8
+	count = count or 6
 	for i = 1, count do
 		local sparkle = Instance.new("Frame")
 		sparkle.Name = "Sparkle" .. i
-		sparkle.Size = UDim2.fromOffset(4, 4)
+		sparkle.Size = UDim2.fromOffset(3, 3)
 		sparkle.AnchorPoint = Vector2.new(0.5, 0.5)
 		sparkle.Position = UDim2.fromScale(math.random() * 0.8 + 0.1, math.random() * 0.8 + 0.1)
 		sparkle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -238,19 +236,19 @@ local function addSparkles(parent: GuiObject, count: number?)
 			task.wait(math.random() * 2)
 			while sparkle and sparkle.Parent do
 				sparkle.Position = UDim2.fromScale(math.random() * 0.8 + 0.1, math.random() * 0.8 + 0.1)
-				local fadeIn = TweenService:Create(sparkle, TweenInfo.new(0.5, Enum.EasingStyle.Quad), {
-					BackgroundTransparency = 0.15,
-					Size = UDim2.fromOffset(7, 7),
+				local fadeIn = TweenService:Create(sparkle, TweenInfo.new(0.6, Enum.EasingStyle.Quad), {
+					BackgroundTransparency = 0.20,
+					Size = UDim2.fromOffset(6, 6),
 				})
 				fadeIn:Play()
 				fadeIn.Completed:Wait()
-				local fadeOut = TweenService:Create(sparkle, TweenInfo.new(0.5, Enum.EasingStyle.Quad), {
+				local fadeOut = TweenService:Create(sparkle, TweenInfo.new(0.6, Enum.EasingStyle.Quad), {
 					BackgroundTransparency = 1,
 					Size = UDim2.fromOffset(3, 3),
 				})
 				fadeOut:Play()
 				fadeOut.Completed:Wait()
-				task.wait(math.random() * 1.5 + 0.5)
+				task.wait(math.random() * 2 + 0.8)
 			end
 		end)
 	end
@@ -322,15 +320,16 @@ function Components.CreatePanel(parent: Instance, title: string, headerColor: Co
 	corner.CornerRadius = UDim.new(0, S.PanelCorner)
 	corner.Parent = canvas
 
-	-- Thick coloured border
+	-- Refined coloured border (thinner, more transparent)
 	local stroke = Instance.new("UIStroke")
 	stroke.Color = headerColor
 	stroke.Thickness = S.PanelStroke
+	stroke.Transparency = 0.1
 	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	stroke.Parent = canvas
 
 	-- Drop shadow
-	addShadow(canvas, S.PanelCorner + 10, 5, 10)
+	addShadow(canvas, S.PanelCorner + 8, 4, 8)
 
 	-- Stud texture (visible on dark)
 	addStudTexture(canvas, S.PanelCorner)
@@ -341,8 +340,8 @@ function Components.CreatePanel(parent: Instance, title: string, headerColor: Co
 	-- Sunburst (rotating light rays)
 	addSunburst(canvas)
 
-	-- Sparkles (floating twinkle dots)
-	addSparkles(canvas, 8)
+	-- Sparkles (floating twinkle dots — reduced count for subtlety)
+	addSparkles(canvas, 6)
 
 	-- UIScale for open/close animation
 	local uiScale = Instance.new("UIScale")
@@ -375,13 +374,13 @@ function Components.CreatePanel(parent: Instance, title: string, headerColor: Co
 
 	addHeaderGloss(header)
 
-	-- Header bottom highlight line
+	-- Header bottom highlight line (softer)
 	local hLine = Instance.new("Frame")
 	hLine.Name = "HighlightLine"
-	hLine.Size = UDim2.new(1, -24, 0, 2)
-	hLine.Position = UDim2.new(0, 12, 1, -2)
+	hLine.Size = UDim2.new(1, -28, 0, 1)
+	hLine.Position = UDim2.new(0, 14, 1, -1)
 	hLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	hLine.BackgroundTransparency = 0.55
+	hLine.BackgroundTransparency = 0.6
 	hLine.BorderSizePixel = 0
 	hLine.ZIndex = 7
 	hLine.Parent = header
@@ -394,18 +393,18 @@ function Components.CreatePanel(parent: Instance, title: string, headerColor: Co
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextColor3 = C.TextWhite
-	titleLabel.TextSize = 32
+	titleLabel.TextSize = 30
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Text = title
 	titleLabel.ZIndex = 7
 	titleLabel.Parent = header
 	local ts = Instance.new("UIStroke")
 	ts.Color = Color3.fromRGB(0, 0, 0)
-	ts.Thickness = 2
-	ts.Transparency = 0.15
+	ts.Thickness = 1.8
+	ts.Transparency = 0.18
 	ts.Parent = titleLabel
 
-	-- Close button (big red circle with white X)
+	-- Close button (red circle with white X)
 	local closeBtn = Instance.new("TextButton")
 	closeBtn.Name = "CloseBtn"
 	closeBtn.AnchorPoint = Vector2.new(1, 0.5)
@@ -415,7 +414,7 @@ function Components.CreatePanel(parent: Instance, title: string, headerColor: Co
 	closeBtn.Font = Enum.Font.GothamBold
 	closeBtn.Text = "X"
 	closeBtn.TextColor3 = C.TextWhite
-	closeBtn.TextSize = 28
+	closeBtn.TextSize = 26
 	closeBtn.BorderSizePixel = 0
 	closeBtn.AutoButtonColor = false
 	closeBtn.ZIndex = 8
@@ -425,8 +424,8 @@ function Components.CreatePanel(parent: Instance, title: string, headerColor: Co
 	cbCorner.Parent = closeBtn
 	local cbStroke = Instance.new("UIStroke")
 	cbStroke.Color = Color3.fromRGB(255, 255, 255)
-	cbStroke.Thickness = 3
-	cbStroke.Transparency = 0.25
+	cbStroke.Thickness = 2
+	cbStroke.Transparency = 0.35
 	cbStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	cbStroke.Parent = closeBtn
 
@@ -437,8 +436,8 @@ function Components.CreatePanel(parent: Instance, title: string, headerColor: Co
 	content.Position = UDim2.new(0, 12, 0, S.PanelHeaderHeight + 8)
 	content.BackgroundTransparency = 1
 	content.BorderSizePixel = 0
-	content.ScrollBarThickness = 6
-	content.ScrollBarImageColor3 = Color3.fromRGB(80, 85, 110)
+	content.ScrollBarThickness = 5
+	content.ScrollBarImageColor3 = Color3.fromRGB(75, 82, 108)
 	content.CanvasSize = UDim2.fromScale(0, 0)
 	content.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	content.ScrollingDirection = Enum.ScrollingDirection.Y
@@ -494,7 +493,7 @@ function Components.CreateTabBar(parent: Instance, tabs: {{label: string}}, onSe
 		local btnStroke = Instance.new("UIStroke")
 		btnStroke.Color = Color3.fromRGB(255, 255, 255)
 		btnStroke.Thickness = 1.5
-		btnStroke.Transparency = 0.65
+		btnStroke.Transparency = 0.7
 		btnStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		btnStroke.Parent = btn
 
@@ -554,18 +553,21 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	cc.CornerRadius = UDim.new(0, S.CardCorner)
 	cc.Parent = card
 
-	-- Rarity-coloured border (thick + vibrant for owned, dim for locked)
+	-- Rarity-coloured border (refined — thinner, slightly more transparent)
 	local cStroke = Instance.new("UIStroke")
-	cStroke.Color = data.locked and Color3.fromRGB(45, 48, 68) or rarityColor
-	cStroke.Thickness = data.locked and 2 or 3
+	cStroke.Color = data.locked and Color3.fromRGB(42, 45, 62) or rarityColor
+	cStroke.Thickness = data.locked and 1.5 or 2.5
 	cStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	cStroke.Transparency = data.locked and 0.35 or 0.05
+	cStroke.Transparency = data.locked and 0.4 or 0.1
 	cStroke.Parent = card
 
 	-- Subtle card gloss
 	if not data.locked then
-		addGloss(card, 0.78, 0.92)
+		addGloss(card, 0.80, 0.92)
 	end
+
+	-- Stud texture on card backgrounds (very subtle)
+	addStudTexture(card, S.CardCorner)
 
 	-- Icon area
 	local iconFrame = Instance.new("Frame")
@@ -587,17 +589,17 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		q.BackgroundTransparency = 1
 		q.Font = Enum.Font.GothamBold
 		q.Text = "?"
-		q.TextColor3 = Color3.fromRGB(62, 65, 88)
-		q.TextSize = 44
+		q.TextColor3 = Color3.fromRGB(55, 58, 80)
+		q.TextSize = 42
 		q.Parent = iconFrame
 		local qs = Instance.new("UIStroke")
 		qs.Color = Color3.fromRGB(0, 0, 0)
-		qs.Thickness = 2
-		qs.Transparency = 0.3
+		qs.Thickness = 1.5
+		qs.Transparency = 0.35
 		qs.Parent = q
 	else
 		iconFrame.BackgroundColor3 = data.iconColor
-		addGloss(iconFrame, 0.45, 0.78)
+		addGloss(iconFrame, 0.48, 0.78)
 
 		local letter = Instance.new("TextLabel")
 		letter.Name = "Letter"
@@ -606,13 +608,13 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		letter.Font = Enum.Font.GothamBold
 		letter.Text = displayText
 		letter.TextColor3 = Color3.fromRGB(255, 255, 255)
-		letter.TextSize = 36
+		letter.TextSize = 34
 		letter.TextTransparency = 0.02
 		letter.Parent = iconFrame
 		local ls = Instance.new("UIStroke")
 		ls.Color = Color3.fromRGB(0, 0, 0)
-		ls.Thickness = 2
-		ls.Transparency = 0.18
+		ls.Thickness = 1.8
+		ls.Transparency = 0.2
 		ls.Parent = letter
 	end
 
@@ -625,7 +627,7 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		tagBadge.Size = UDim2.fromOffset(math.max(#data.tag * 8 + 18, 48), 22)
 		tagBadge.BackgroundColor3 = C.Gold
 		tagBadge.Font = Enum.Font.GothamBold
-		tagBadge.TextColor3 = Color3.fromRGB(65, 42, 0)
+		tagBadge.TextColor3 = Color3.fromRGB(62, 40, 0)
 		tagBadge.TextSize = 12
 		tagBadge.Text = data.tag
 		tagBadge.BorderSizePixel = 0
@@ -635,9 +637,9 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		tc.CornerRadius = UDim.new(0, 7)
 		tc.Parent = tagBadge
 		local tcs = Instance.new("UIStroke")
-		tcs.Color = Color3.fromRGB(180, 140, 0)
+		tcs.Color = Color3.fromRGB(175, 138, 0)
 		tcs.Thickness = 1.5
-		tcs.Transparency = 0.3
+		tcs.Transparency = 0.35
 		tcs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		tcs.Parent = tagBadge
 	end
@@ -648,12 +650,12 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		check.Name = "Equipped"
 		check.AnchorPoint = Vector2.new(1, 0)
 		check.Position = UDim2.new(1, -4, 0, 4)
-		check.Size = UDim2.fromOffset(28, 28)
+		check.Size = UDim2.fromOffset(26, 26)
 		check.BackgroundColor3 = C.Green
 		check.Font = Enum.Font.GothamBold
 		check.Text = "✓"
 		check.TextColor3 = C.TextWhite
-		check.TextSize = 16
+		check.TextSize = 15
 		check.BorderSizePixel = 0
 		check.ZIndex = 10
 		check.Parent = card
@@ -662,21 +664,21 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		chc.Parent = check
 		local chs = Instance.new("UIStroke")
 		chs.Color = Color3.fromRGB(255, 255, 255)
-		chs.Thickness = 2
-		chs.Transparency = 0.25
+		chs.Thickness = 1.5
+		chs.Transparency = 0.3
 		chs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		chs.Parent = check
 	end
 
-	-- Name (white text on dark card)
+	-- Name (white text on dark card — high contrast)
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "ItemName"
 	nameLabel.Size = UDim2.new(1, -10, 0, 20)
 	nameLabel.Position = UDim2.new(0, 5, 0, 102)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.TextColor3 = data.locked and Color3.fromRGB(62, 65, 88) or C.TextWhite
-	nameLabel.TextSize = 16
+	nameLabel.TextColor3 = data.locked and Color3.fromRGB(55, 58, 80) or C.TextWhite
+	nameLabel.TextSize = 15
 	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
 	nameLabel.Text = data.locked and "???" or data.name
@@ -684,20 +686,20 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	if not data.locked then
 		local ns = Instance.new("UIStroke")
 		ns.Color = Color3.fromRGB(0, 0, 0)
-		ns.Thickness = 1.8
-		ns.Transparency = 0.12
+		ns.Thickness = 1.5
+		ns.Transparency = 0.15
 		ns.Parent = nameLabel
 	end
 
-	-- Rarity label (coloured)
+	-- Rarity label (coloured, slightly softer than name)
 	local rarLabel = Instance.new("TextLabel")
 	rarLabel.Name = "Rarity"
 	rarLabel.Size = UDim2.new(1, -10, 0, 16)
 	rarLabel.Position = UDim2.new(0, 5, 0, 120)
 	rarLabel.BackgroundTransparency = 1
 	rarLabel.Font = Enum.Font.GothamBold
-	rarLabel.TextColor3 = data.locked and Color3.fromRGB(48, 50, 72) or rarityColor
-	rarLabel.TextSize = 14
+	rarLabel.TextColor3 = data.locked and Color3.fromRGB(42, 45, 65) or rarityColor
+	rarLabel.TextSize = 13
 	rarLabel.TextXAlignment = Enum.TextXAlignment.Center
 	rarLabel.Text = data.locked and "" or rarityInfo.label
 	rarLabel.Parent = card
@@ -713,7 +715,7 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		btn.BackgroundColor3 = btnColor
 		btn.Font = Enum.Font.GothamBold
 		btn.TextColor3 = C.TextWhite
-		btn.TextSize = 16
+		btn.TextSize = 15
 		btn.Text = data.actionText
 		btn.BorderSizePixel = 0
 		btn.AutoButtonColor = false
@@ -725,14 +727,14 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		-- Color-based gradient (lighter → base → darker) — NO white/black overlay
 		local abr, abg, abb = btnColor.R, btnColor.G, btnColor.B
 		local lighterAB = Color3.new(
-			math.min(abr + 0.22, 1),
-			math.min(abg + 0.22, 1),
-			math.min(abb + 0.22, 1)
+			math.min(abr + 0.20, 1),
+			math.min(abg + 0.20, 1),
+			math.min(abb + 0.20, 1)
 		)
 		local darkerAB = Color3.new(
-			math.max(abr - 0.12, 0),
-			math.max(abg - 0.12, 0),
-			math.max(abb - 0.12, 0)
+			math.max(abr - 0.10, 0),
+			math.max(abg - 0.10, 0),
+			math.max(abb - 0.10, 0)
 		)
 		local abGrad = Instance.new("UIGradient")
 		abGrad.Color = ColorSequence.new({
@@ -745,16 +747,16 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 
 		local bs = Instance.new("UIStroke")
 		bs.Color = Color3.fromRGB(255, 255, 255)
-		bs.Thickness = 2
-		bs.Transparency = 0.30
+		bs.Thickness = 1.5
+		bs.Transparency = 0.4
 		bs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		bs.Parent = btn
 
 		-- Bold text stroke for readability
 		local bts = Instance.new("UIStroke")
 		bts.Color = Color3.fromRGB(0, 0, 0)
-		bts.Thickness = 2
-		bts.Transparency = 0.1
+		bts.Thickness = 1.5
+		bts.Transparency = 0.12
 		bts.Parent = btn
 
 		AnimUtil.WireButton(btn, function()
@@ -793,12 +795,15 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 	sc.Parent = section
 	local ss = Instance.new("UIStroke")
 	ss.Color = accent
-	ss.Thickness = 3
-	ss.Transparency = 0.08
+	ss.Thickness = 2.5
+	ss.Transparency = 0.12
 	ss.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	ss.Parent = section
 
-	addGloss(section, 0.80, 0.94)
+	addGloss(section, 0.82, 0.94)
+
+	-- Stud texture on crate section
+	addStudTexture(section, S.CardCorner)
 
 	-- Left: crate icon area (big, glossy, vibrant)
 	local iconArea = Instance.new("Frame")
@@ -811,11 +816,11 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 	local iac = Instance.new("UICorner")
 	iac.CornerRadius = UDim.new(0, 14)
 	iac.Parent = iconArea
-	addGloss(iconArea, 0.35, 0.75)
+	addGloss(iconArea, 0.38, 0.75)
 	local ias = Instance.new("UIStroke")
 	ias.Color = Color3.fromRGB(255, 255, 255)
-	ias.Thickness = 2
-	ias.Transparency = 0.45
+	ias.Thickness = 1.5
+	ias.Transparency = 0.5
 	ias.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	ias.Parent = iconArea
 
@@ -826,13 +831,13 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 	crateEmoji.BackgroundTransparency = 1
 	crateEmoji.Font = Enum.Font.GothamBold
 	crateEmoji.Text = "📦"
-	crateEmoji.TextSize = 48
+	crateEmoji.TextSize = 46
 	crateEmoji.TextColor3 = C.TextWhite
 	crateEmoji.Parent = iconArea
 	local ces = Instance.new("UIStroke")
 	ces.Color = Color3.fromRGB(0, 0, 0)
-	ces.Thickness = 2
-	ces.Transparency = 0.2
+	ces.Thickness = 1.8
+	ces.Transparency = 0.22
 	ces.Parent = crateEmoji
 
 	-- Crate name
@@ -844,14 +849,14 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 	crateName.BackgroundTransparency = 1
 	crateName.Font = Enum.Font.GothamBold
 	crateName.TextColor3 = C.TextWhite
-	crateName.TextSize = 16
+	crateName.TextSize = 15
 	crateName.Text = data.name
 	crateName.TextWrapped = true
 	crateName.Parent = iconArea
 	local cns = Instance.new("UIStroke")
 	cns.Color = Color3.fromRGB(0, 0, 0)
 	cns.Thickness = 1.5
-	cns.Transparency = 0.2
+	cns.Transparency = 0.22
 	cns.Parent = crateName
 
 	-- Right: crate title
@@ -862,17 +867,17 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 	titleR.BackgroundTransparency = 1
 	titleR.Font = Enum.Font.GothamBold
 	titleR.TextColor3 = C.TextWhite
-	titleR.TextSize = 20
+	titleR.TextSize = 19
 	titleR.TextXAlignment = Enum.TextXAlignment.Left
 	titleR.Text = data.name
 	titleR.Parent = section
 	local trs = Instance.new("UIStroke")
 	trs.Color = Color3.fromRGB(0, 0, 0)
 	trs.Thickness = 1.5
-	trs.Transparency = 0.2
+	trs.Transparency = 0.22
 	trs.Parent = titleR
 
-	-- Drop chances (colour-coded by rarity)
+	-- Drop chances (colour-coded by rarity — secondary text style)
 	for i, drop in ipairs(data.drops) do
 		local dRarity = UIConfig.RarityInfo[drop.rarity] or UIConfig.RarityInfo.Common
 		local dLabel = Instance.new("TextLabel")
@@ -882,14 +887,14 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 		dLabel.BackgroundTransparency = 1
 		dLabel.Font = Enum.Font.GothamBold
 		dLabel.TextColor3 = dRarity.color
-		dLabel.TextSize = 15
+		dLabel.TextSize = 14
 		dLabel.TextXAlignment = Enum.TextXAlignment.Left
 		dLabel.Text = string.format("%d%%  %s", drop.chance, drop.name)
 		dLabel.Parent = section
 		local ds = Instance.new("UIStroke")
 		ds.Color = Color3.fromRGB(0, 0, 0)
-		ds.Thickness = 1.5
-		ds.Transparency = 0.15
+		ds.Thickness = 1.2
+		ds.Transparency = 0.18
 		ds.Parent = dLabel
 	end
 
@@ -921,7 +926,7 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 		pBtn.BackgroundColor3 = btnColor
 		pBtn.Font = Enum.Font.GothamBold
 		pBtn.TextColor3 = C.TextWhite
-		pBtn.TextSize = 16
+		pBtn.TextSize = 15
 		pBtn.Text = priceText .. "\n" .. price.label
 		pBtn.TextYAlignment = Enum.TextYAlignment.Center
 		pBtn.BorderSizePixel = 0
@@ -932,17 +937,17 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 		pbc.CornerRadius = UDim.new(0, S.SmBtnCorner)
 		pbc.Parent = pBtn
 
-		-- Color-based gradient (lighter → base → darker) — NO white/black overlay
+		-- Color-based gradient (lighter → base → darker)
 		local br, bg, bb = btnColor.R, btnColor.G, btnColor.B
 		local lighterBtn = Color3.new(
-			math.min(br + 0.22, 1),
-			math.min(bg + 0.22, 1),
-			math.min(bb + 0.22, 1)
+			math.min(br + 0.20, 1),
+			math.min(bg + 0.20, 1),
+			math.min(bb + 0.20, 1)
 		)
 		local darkerBtn = Color3.new(
-			math.max(br - 0.15, 0),
-			math.max(bg - 0.15, 0),
-			math.max(bb - 0.15, 0)
+			math.max(br - 0.12, 0),
+			math.max(bg - 0.12, 0),
+			math.max(bb - 0.12, 0)
 		)
 		local pbGrad = Instance.new("UIGradient")
 		pbGrad.Color = ColorSequence.new({
@@ -955,16 +960,16 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 
 		local pbs = Instance.new("UIStroke")
 		pbs.Color = Color3.fromRGB(255, 255, 255)
-		pbs.Thickness = 2
-		pbs.Transparency = 0.30
+		pbs.Thickness = 1.5
+		pbs.Transparency = 0.4
 		pbs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		pbs.Parent = pBtn
 
 		-- Bold text stroke for readability
 		local pbts = Instance.new("UIStroke")
 		pbts.Color = Color3.fromRGB(0, 0, 0)
-		pbts.Thickness = 1.5
-		pbts.Transparency = 0.15
+		pbts.Thickness = 1.2
+		pbts.Transparency = 0.18
 		pbts.Parent = pBtn
 
 		AnimUtil.WireButton(pBtn, function()
@@ -993,8 +998,8 @@ function Components.AddGridLayout(parent: Instance, cellSize: Vector2?, padding:
 	local pad = Instance.new("UIPadding")
 	pad.PaddingTop = UDim.new(0, 10)
 	pad.PaddingBottom = UDim.new(0, 10)
-	pad.PaddingLeft = UDim.new(0, 6)
-	pad.PaddingRight = UDim.new(0, 6)
+	pad.PaddingLeft = UDim.new(0, 8)
+	pad.PaddingRight = UDim.new(0, 8)
 	pad.Parent = parent
 	return grid
 end
@@ -1014,13 +1019,13 @@ function Components.AddListLayout(parent: Instance, padding: number?)
 	local pad = Instance.new("UIPadding")
 	pad.PaddingTop = UDim.new(0, 10)
 	pad.PaddingBottom = UDim.new(0, 10)
-	pad.PaddingLeft = UDim.new(0, 6)
-	pad.PaddingRight = UDim.new(0, 6)
+	pad.PaddingLeft = UDim.new(0, 8)
+	pad.PaddingRight = UDim.new(0, 8)
 	pad.Parent = parent
 end
 
 -- ═══════════════════════════════════════════════════════════════════
--- SIDEBAR BUTTON  (dark, chunky, cartoonish, glossy)
+-- SIDEBAR BUTTON  (dark, chunky, glossy — refined strokes)
 -- ═══════════════════════════════════════════════════════════════════
 
 function Components.CreateSideButton(parent: Instance, label: string, iconText: string, bgColor: Color3, layoutOrder: number, onClick: () -> ()): TextButton
@@ -1038,26 +1043,25 @@ function Components.CreateSideButton(parent: Instance, label: string, iconText: 
 	co.CornerRadius = UDim.new(0, S.SideBtnCorner)
 	co.Parent = btn
 
-	-- Thick white border (very visible)
+	-- White border (refined — thinner, more transparent)
 	local st = Instance.new("UIStroke")
 	st.Color = Color3.fromRGB(255, 255, 255)
-	st.Thickness = 4
-	st.Transparency = 0.15
+	st.Thickness = 2.5
+	st.Transparency = 0.28
 	st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	st.Parent = btn
 
 	-- Color-based gradient (lighter → base → slightly darker of the SAME color)
-	-- This is the same technique as the intermission bar — NO black overlay!
 	local r, g, b = bgColor.R, bgColor.G, bgColor.B
 	local lighterColor = Color3.new(
-		math.min(r + 0.25, 1),
-		math.min(g + 0.25, 1),
-		math.min(b + 0.25, 1)
+		math.min(r + 0.22, 1),
+		math.min(g + 0.22, 1),
+		math.min(b + 0.22, 1)
 	)
 	local darkerColor = Color3.new(
-		math.max(r - 0.12, 0),
-		math.max(g - 0.12, 0),
-		math.max(b - 0.12, 0)
+		math.max(r - 0.10, 0),
+		math.max(g - 0.10, 0),
+		math.max(b - 0.10, 0)
 	)
 	local sideGrad = Instance.new("UIGradient")
 	sideGrad.Color = ColorSequence.new({
@@ -1068,19 +1072,19 @@ function Components.CreateSideButton(parent: Instance, label: string, iconText: 
 	sideGrad.Rotation = 90
 	sideGrad.Parent = btn
 
-	-- Drop shadow
+	-- Drop shadow (softer)
 	local shadow = Instance.new("Frame")
 	shadow.Name = "Shadow"
 	shadow.AnchorPoint = Vector2.new(0.5, 0.5)
-	shadow.Position = UDim2.new(0.5, 2, 0.5, 5)
-	shadow.Size = UDim2.new(1, 12, 1, 12)
+	shadow.Position = UDim2.new(0.5, 2, 0.5, 4)
+	shadow.Size = UDim2.new(1, 10, 1, 10)
 	shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	shadow.BackgroundTransparency = 0.45
+	shadow.BackgroundTransparency = 0.5
 	shadow.BorderSizePixel = 0
 	shadow.ZIndex = 0
 	shadow.Parent = btn
 	local shc = Instance.new("UICorner")
-	shc.CornerRadius = UDim.new(0, S.SideBtnCorner + 5)
+	shc.CornerRadius = UDim.new(0, S.SideBtnCorner + 4)
 	shc.Parent = shadow
 
 	-- Icon (emoji — large, bold, high contrast)
@@ -1091,17 +1095,17 @@ function Components.CreateSideButton(parent: Instance, label: string, iconText: 
 	icon.BackgroundTransparency = 1
 	icon.Font = Enum.Font.GothamBold
 	icon.TextColor3 = C.TextWhite
-	icon.TextSize = 38
+	icon.TextSize = 36
 	icon.Text = iconText
 	icon.ZIndex = 2
 	icon.Parent = btn
 	local is = Instance.new("UIStroke")
 	is.Color = Color3.fromRGB(0, 0, 0)
-	is.Thickness = 2.5
-	is.Transparency = 0.12
+	is.Thickness = 2
+	is.Transparency = 0.15
 	is.Parent = icon
 
-	-- Label (bold, readable, larger)
+	-- Label (bold, readable)
 	local lbl = Instance.new("TextLabel")
 	lbl.Name = "Label"
 	lbl.Size = UDim2.new(1, 0, 0, 20)
@@ -1109,14 +1113,14 @@ function Components.CreateSideButton(parent: Instance, label: string, iconText: 
 	lbl.BackgroundTransparency = 1
 	lbl.Font = Enum.Font.GothamBold
 	lbl.TextColor3 = C.TextWhite
-	lbl.TextSize = 15
+	lbl.TextSize = 14
 	lbl.Text = label
 	lbl.ZIndex = 2
 	lbl.Parent = btn
 	local ls = Instance.new("UIStroke")
 	ls.Color = Color3.fromRGB(0, 0, 0)
-	ls.Thickness = 2
-	ls.Transparency = 0.18
+	ls.Thickness = 1.5
+	ls.Transparency = 0.2
 	ls.Parent = lbl
 
 	AnimUtil.WireButton(btn, function()

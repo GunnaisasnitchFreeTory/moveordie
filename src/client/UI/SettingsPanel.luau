@@ -122,18 +122,26 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	row1.Parent = canvas
 
 	local r1c = Instance.new("UICorner")
-	r1c.CornerRadius = UDim.new(0, 12)
+	r1c.CornerRadius = UDim.new(0, S.BtnCorner)
 	r1c.Parent = row1
 
 	local r1s = Instance.new("UIStroke")
 	r1s.Color = C.CardStroke
-	r1s.Thickness = 2
-	r1s.Transparency = 0.3
+	r1s.Thickness = S.PanelStroke
+	r1s.Transparency = 0.35
 	r1s.Parent = row1
+
+	-- Stud texture on row
+	Components.AddStudTexture(row1, S.BtnCorner)
+
+	local r1pad = Instance.new("UIPadding")
+	r1pad.PaddingLeft = UDim.new(0, 16)
+	r1pad.PaddingRight = UDim.new(0, 14)
+	r1pad.Parent = row1
 
 	local musicText = Instance.new("TextLabel")
 	musicText.Size = UDim2.new(0.6, 0, 1, 0)
-	musicText.Position = UDim2.fromOffset(16, 0)
+	musicText.Position = UDim2.fromOffset(0, 0)
 	musicText.BackgroundTransparency = 1
 	musicText.Font = Enum.Font.GothamBold
 	musicText.TextColor3 = C.TextWhite
@@ -145,14 +153,14 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	local mts = Instance.new("UIStroke")
 	mts.Color = Color3.fromRGB(0, 0, 0)
 	mts.Thickness = 1.5
-	mts.Transparency = 0.2
+	mts.Transparency = 0.22
 	mts.Parent = musicText
 
 	toggleBtn = Instance.new("TextButton")
 	toggleBtn.Name = "ToggleBtn"
 	toggleBtn.Size = UDim2.fromOffset(80, 36)
 	toggleBtn.AnchorPoint = Vector2.new(1, 0.5)
-	toggleBtn.Position = UDim2.new(1, -14, 0.5, 0)
+	toggleBtn.Position = UDim2.new(1, 0, 0.5, 0)
 	toggleBtn.BackgroundColor3 = C.Green
 	toggleBtn.BorderSizePixel = 0
 	toggleBtn.AutoButtonColor = false
@@ -160,13 +168,13 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	toggleBtn.Parent = row1
 
 	local tbc = Instance.new("UICorner")
-	tbc.CornerRadius = UDim.new(0, 10)
+	tbc.CornerRadius = UDim.new(0, S.BtnCorner)
 	tbc.Parent = toggleBtn
 
 	local tbs = Instance.new("UIStroke")
 	tbs.Color = Color3.fromRGB(255, 255, 255)
-	tbs.Thickness = 2
-	tbs.Transparency = 0.35
+	tbs.Thickness = S.PanelStroke
+	tbs.Transparency = 0.4
 	tbs.Parent = toggleBtn
 
 	toggleLabel = Instance.new("TextLabel")
@@ -181,7 +189,7 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	local tls = Instance.new("UIStroke")
 	tls.Color = Color3.fromRGB(0, 0, 0)
 	tls.Thickness = 1.5
-	tls.Transparency = 0.15
+	tls.Transparency = 0.2
 	tls.Parent = toggleLabel
 
 	AnimUtil.WireButton(toggleBtn, function()
@@ -201,18 +209,26 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	row2.Parent = canvas
 
 	local r2c = Instance.new("UICorner")
-	r2c.CornerRadius = UDim.new(0, 12)
+	r2c.CornerRadius = UDim.new(0, S.BtnCorner)
 	r2c.Parent = row2
 
 	local r2s = Instance.new("UIStroke")
 	r2s.Color = C.CardStroke
-	r2s.Thickness = 2
-	r2s.Transparency = 0.3
+	r2s.Thickness = S.PanelStroke
+	r2s.Transparency = 0.35
 	r2s.Parent = row2
+
+	-- Stud texture on row
+	Components.AddStudTexture(row2, S.BtnCorner)
+
+	local r2pad = Instance.new("UIPadding")
+	r2pad.PaddingLeft = UDim.new(0, 16)
+	r2pad.PaddingRight = UDim.new(0, 14)
+	r2pad.Parent = row2
 
 	local volText = Instance.new("TextLabel")
 	volText.Size = UDim2.new(0, 120, 1, 0)
-	volText.Position = UDim2.fromOffset(16, 0)
+	volText.Position = UDim2.fromOffset(0, 0)
 	volText.BackgroundTransparency = 1
 	volText.Font = Enum.Font.GothamBold
 	volText.TextColor3 = C.TextWhite
@@ -224,14 +240,14 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	local vts = Instance.new("UIStroke")
 	vts.Color = Color3.fromRGB(0, 0, 0)
 	vts.Thickness = 1.5
-	vts.Transparency = 0.2
+	vts.Transparency = 0.22
 	vts.Parent = volText
 
 	-- Volume percentage label
 	volumeLabel = Instance.new("TextLabel")
 	volumeLabel.Size = UDim2.fromOffset(50, 30)
 	volumeLabel.AnchorPoint = Vector2.new(1, 0.5)
-	volumeLabel.Position = UDim2.new(1, -14, 0.5, 0)
+	volumeLabel.Position = UDim2.new(1, 0, 0.5, 0)
 	volumeLabel.BackgroundTransparency = 1
 	volumeLabel.Font = Enum.Font.GothamBold
 	volumeLabel.TextColor3 = C.Gold
@@ -242,7 +258,7 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	local vls = Instance.new("UIStroke")
 	vls.Color = Color3.fromRGB(0, 0, 0)
 	vls.Thickness = 1.5
-	vls.Transparency = 0.2
+	vls.Transparency = 0.22
 	vls.Parent = volumeLabel
 
 	-- Slider track
@@ -250,7 +266,7 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	sliderTrack.Name = "SliderTrack"
 	sliderTrack.Size = UDim2.new(1, -220, 0, 16)
 	sliderTrack.AnchorPoint = Vector2.new(0, 0.5)
-	sliderTrack.Position = UDim2.new(0, 150, 0.5, 0)
+	sliderTrack.Position = UDim2.new(0, 134, 0.5, 0)
 	sliderTrack.BackgroundColor3 = C.CardBgDark
 	sliderTrack.BorderSizePixel = 0
 	sliderTrack.AutoButtonColor = false
@@ -343,4 +359,3 @@ function SettingsPanel.Toggle()
 end
 
 return SettingsPanel
-

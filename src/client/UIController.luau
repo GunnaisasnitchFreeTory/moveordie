@@ -19,6 +19,11 @@
 	  4. Tries GetBoundingBox()
 	  5. Retries multiple times with delays
 
+	FIX (SpinWheel):
+	  • Auto-close now uses the PROMPT's parent Part position (not the model root)
+	  • Grace period after opening before auto-close kicks in
+	  • CLOSE_DISTANCE increased to 50 studs (player must clearly walk away)
+
 	Called from Client init.client.luau via UIController.Init().
 ]]
 
@@ -359,6 +364,10 @@ function UIController.Init()
 	-- 9. Walk-up SpinTheWheel — ProximityPrompt-based (server creates prompt)
 	--    Player walks near → Roblox shows "E to Spin" natively → opens panel.
 	--    Auto-closes when player walks out of range.
+	--
+	--    FIX: Uses the PROMPT's parent Part position for distance checks,
+	--         not the model root (which could resolve to an elevated Part).
+	--         Also adds a grace period to prevent same-frame open+close.
 	task.spawn(function()
 		local SpinWheelCfg = require(Shared:WaitForChild("SpinWheelConfig"))
 		local spinModel = nil
@@ -437,17 +446,25 @@ function UIController.Init()
 		-- Fallback: create client-side ProximityPrompt if server didn't
 		if not prompt then
 			log("[SpinWheel] Server ProximityPrompt not found — creating client-side fallback")
-			local triggerPart = nil
-			if spinModel:IsA("Model") and spinModel.PrimaryPart then
-				triggerPart = spinModel.PrimaryPart
-			end
-			if not triggerPart then
-				triggerPart = spinModel:FindFirstChildWhichIsA("BasePart", true)
-			end
-			if not triggerPart then
+
+			-- Create an invisible anchor at ground level near the model
+			local refPart = spinModel:FindFirstChildWhichIsA("BasePart", true)
+			if not refPart then
 				log("[SpinWheel] No BasePart found in SpinTheWheel — spin wheel disabled")
 				return
 			end
+
+			-- Put anchor at ground level (Y=5) using the reference part's XZ
+			local anchor = Instance.new("Part")
+			anchor.Name = "SpinWheelPromptAnchor"
+			anchor.Size = Vector3.new(2, 2, 2)
+			anchor.Position = Vector3.new(refPart.Position.X, 5, refPart.Position.Z)
+			anchor.Anchored = true
+			anchor.CanCollide = false
+			anchor.CanQuery = false
+			anchor.CanTouch = false
+			anchor.Transparency = 1
+			anchor.Parent = spinModel
 
 			prompt = Instance.new("ProximityPrompt")
 			prompt.Name = "SpinWheelPrompt"
@@ -457,41 +474,61 @@ function UIController.Init()
 			prompt.HoldDuration = 0
 			prompt.MaxActivationDistance = SpinWheelCfg.OPEN_DISTANCE
 			prompt.RequiresLineOfSight = false
-			prompt.Parent = triggerPart
-			log("[SpinWheel] Client-side ProximityPrompt created on: " .. triggerPart:GetFullName())
+			prompt.Parent = anchor
+			log("[SpinWheel] Client-side ProximityPrompt created on anchor at Y=5 near: " .. refPart:GetFullName())
 		else
 			log("[SpinWheel] ProximityPrompt found on: " .. prompt.Parent:GetFullName())
 		end
 
+		-- IMPORTANT: Store the prompt's parent Part as the distance reference
+		-- This ensures open-trigger and auto-close both use the SAME point.
+		local promptPart = prompt.Parent
+		log("[SpinWheel] Distance reference Part: " .. promptPart:GetFullName() .. " at " .. tostring(promptPart.Position))
+
 		-- Listen for ProximityPrompt activation → open the SpinWheel UI panel
+		local spinOpenTime = 0 -- track when panel was opened for grace period
+
 		prompt.Triggered:Connect(function(playerWhoTriggered)
 			if playerWhoTriggered ~= LocalPlayer then return end
 			log("[SpinWheel] ProximityPrompt triggered (E pressed) — opening panel")
+			spinOpenTime = tick() -- record open time for grace period
 			openPanel("SpinWheel")
 		end)
 
 		-- Auto-close when player walks out of range
+		-- FIX: Use promptPart position (not spinModel) and add grace period
 		local CLOSE_DIST = SpinWheelCfg.CLOSE_DISTANCE
+		local GRACE_PERIOD = SpinWheelCfg.OPEN_GRACE_PERIOD or 3
 
 		RunService.Heartbeat:Connect(function()
 			if currentPanel ~= "SpinWheel" then return end
+
+			-- Grace period: don't auto-close for N seconds after opening
+			if (tick() - spinOpenTime) < GRACE_PERIOD then return end
 
 			local char = LocalPlayer.Character
 			if not char then return end
 			local root = char:FindFirstChild("HumanoidRootPart")
 			if not root then return end
 
-			local pos = getInstancePosition(spinModel)
-			if not pos then return end
+			-- Use the PROMPT'S PARENT PART for distance (not the model root!)
+			local promptPos = nil
+			if promptPart and promptPart:IsA("BasePart") then
+				promptPos = promptPart.Position
+			else
+				-- Fallback: try model position
+				promptPos = getInstancePosition(spinModel)
+			end
+			if not promptPos then return end
 
-			local dist = (root.Position - pos).Magnitude
+			local dist = (root.Position - promptPos).Magnitude
 			if dist > CLOSE_DIST then
 				closeCurrentPanel()
-				log("[SpinWheel] Auto-closed (out of range, dist: " .. string.format("%.1f", dist) .. ")")
+				log("[SpinWheel] Auto-closed (out of range, dist: " .. string.format("%.1f", dist) .. ", threshold: " .. CLOSE_DIST .. ")")
 			end
 		end)
 
-		log("[SpinWheel] ProximityPrompt walk-up detection ACTIVE (E to open, auto-close at " .. CLOSE_DIST .. " studs)")
+		log("[SpinWheel] ProximityPrompt walk-up detection ACTIVE (E to open, auto-close at " .. CLOSE_DIST .. " studs, grace: " .. GRACE_PERIOD .. "s)")
 	end)
 
 	log("Initialized — HUD + 9 panels + KillFeed ready (Shop, Crowns, Pets, CrateShop, Index, Spectate, Settings, Icons, SpinWheel)")

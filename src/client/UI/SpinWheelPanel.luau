@@ -128,7 +128,7 @@ local function updateSpinButton()
 	end
 	local totalSpins = (freeSpinAvailable and 1 or 0) + purchasedSpins
 	if totalSpins > 0 then
-		spinBtn.BackgroundColor3 = Color3.fromRGB(85, 230, 85)
+		spinBtn.BackgroundColor3 = C.BuyButton
 		if spinBtnLabel then spinBtnLabel.Text = "SPIN (" .. tostring(totalSpins) .. ")" end
 	else
 		spinBtn.BackgroundColor3 = C.DisabledBtn
@@ -140,10 +140,10 @@ local function updateTimerLabel()
 	if not timerLabel then return end
 	if freeSpinAvailable then
 		timerLabel.Text = "Free Spin Available!"
-		timerLabel.TextColor3 = Color3.fromRGB(85, 255, 85)
+		timerLabel.TextColor3 = C.Green
 	else
 		timerLabel.Text = "Next Free Spin in " .. formatTime(nextFreeSpinTime)
-		timerLabel.TextColor3 = Color3.fromRGB(200, 210, 230)
+		timerLabel.TextColor3 = C.TextLight
 	end
 end
 
@@ -178,14 +178,14 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 	pointer.Position = UDim2.new(0.5, 0, 0, -2)
 	pointer.BackgroundTransparency = 1
 	pointer.Font = Enum.Font.GothamBold
-	pointer.TextColor3 = Color3.fromRGB(255, 255, 255)
+	pointer.TextColor3 = C.TextWhite
 	pointer.TextSize = 36
 	pointer.Text = "▼"
 	pointer.ZIndex = 20
 	pointer.Parent = container
 	local ps = Instance.new("UIStroke")
 	ps.Color = Color3.fromRGB(0, 0, 0)
-	ps.Thickness = 3
+	ps.Thickness = 2.5
 	ps.Transparency = 0.1
 	ps.Parent = pointer
 
@@ -195,7 +195,7 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 	disc.Size = UDim2.fromOffset(WHEEL_SIZE, WHEEL_SIZE)
 	disc.AnchorPoint = Vector2.new(0.5, 0)
 	disc.Position = UDim2.new(0.5, 0, 0, 32)
-	disc.BackgroundColor3 = Color3.fromRGB(35, 40, 65)
+	disc.BackgroundColor3 = C.PanelBgInner
 	disc.BackgroundTransparency = 0
 	disc.BorderSizePixel = 0
 	disc.Rotation = -SEG_ANGLE / 2  -- offset so segment 1 is centered at pointer
@@ -275,7 +275,7 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 		line.AnchorPoint = Vector2.new(0.5, 1)
 		line.Position = UDim2.fromScale(0.5, 0.5)
 		line.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		line.BackgroundTransparency = 0.3
+		line.BackgroundTransparency = 0.35
 		line.Rotation = angle
 		line.BorderSizePixel = 0
 		line.ZIndex = 8
@@ -313,7 +313,7 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 		icon.Size = UDim2.new(1, 0, 0, 22)
 		icon.BackgroundTransparency = 1
 		icon.Font = Enum.Font.GothamBold
-		icon.TextColor3 = Color3.fromRGB(255, 255, 255)
+		icon.TextColor3 = C.TextWhite
 		icon.TextSize = 16
 		icon.Text = segData.icon
 		icon.ZIndex = 10
@@ -325,7 +325,7 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 		label.Position = UDim2.fromOffset(0, 20)
 		label.BackgroundTransparency = 1
 		label.Font = Enum.Font.GothamBold
-		label.TextColor3 = Color3.fromRGB(255, 255, 255)
+		label.TextColor3 = C.TextWhite
 		label.TextSize = 10
 		label.Text = segData.name .. "\n" .. segData.chance .. "%"
 		label.TextWrapped = true
@@ -334,7 +334,7 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 		local ls = Instance.new("UIStroke")
 		ls.Color = Color3.fromRGB(0, 0, 0)
 		ls.Thickness = 1.2
-		ls.Transparency = 0.15
+		ls.Transparency = 0.18
 		ls.Parent = label
 	end
 
@@ -344,7 +344,7 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 	hub.Size = UDim2.fromScale(0.14, 0.14)
 	hub.AnchorPoint = Vector2.new(0.5, 0.5)
 	hub.Position = UDim2.fromScale(0.5, 0.5)
-	hub.BackgroundColor3 = Color3.fromRGB(80, 200, 255)
+	hub.BackgroundColor3 = Color3.fromRGB(75, 195, 248)
 	hub.BorderSizePixel = 0
 	hub.ZIndex = 12
 	hub.Parent = disc
@@ -353,8 +353,8 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 	hubCorner.Parent = hub
 	local hubStroke = Instance.new("UIStroke")
 	hubStroke.Color = Color3.fromRGB(255, 255, 255)
-	hubStroke.Thickness = 4
-	hubStroke.Transparency = 0.1
+	hubStroke.Thickness = 3.5
+	hubStroke.Transparency = 0.12
 	hubStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	hubStroke.Parent = hub
 	-- Inner glow
@@ -362,7 +362,7 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 	hubInner.Size = UDim2.fromScale(0.6, 0.6)
 	hubInner.AnchorPoint = Vector2.new(0.5, 0.5)
 	hubInner.Position = UDim2.fromScale(0.5, 0.5)
-	hubInner.BackgroundColor3 = Color3.fromRGB(200, 240, 255)
+	hubInner.BackgroundColor3 = Color3.fromRGB(195, 235, 255)
 	hubInner.BorderSizePixel = 0
 	hubInner.ZIndex = 13
 	hubInner.Parent = hub
@@ -384,9 +384,9 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 	borderCorner.CornerRadius = UDim.new(1, 0)
 	borderCorner.Parent = border
 	local borderStroke = Instance.new("UIStroke")
-	borderStroke.Color = Color3.fromRGB(80, 210, 255)
-	borderStroke.Thickness = 6
-	borderStroke.Transparency = 0
+	borderStroke.Color = Color3.fromRGB(75, 200, 248)
+	borderStroke.Thickness = 5
+	borderStroke.Transparency = 0.08
 	borderStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	borderStroke.Parent = border
 
@@ -397,46 +397,49 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 	spinBtn.Size = UDim2.fromOffset(220, 56)
 	spinBtn.AnchorPoint = Vector2.new(0.5, 0)
 	spinBtn.Position = UDim2.new(0.5, 0, 0, sBtnY)
-	spinBtn.BackgroundColor3 = Color3.fromRGB(85, 230, 85)
+	spinBtn.BackgroundColor3 = C.BuyButton
 	spinBtn.BorderSizePixel = 0
 	spinBtn.AutoButtonColor = false
 	spinBtn.Text = ""
 	spinBtn.ZIndex = 15
 	spinBtn.Parent = container
 	local sbCorner = Instance.new("UICorner")
-	sbCorner.CornerRadius = UDim.new(0, 14)
+	sbCorner.CornerRadius = UDim.new(0, S.BtnCorner)
 	sbCorner.Parent = spinBtn
 	local sbStroke = Instance.new("UIStroke")
 	sbStroke.Color = Color3.fromRGB(255, 255, 255)
-	sbStroke.Thickness = 4
-	sbStroke.Transparency = 0.15
+	sbStroke.Thickness = 3
+	sbStroke.Transparency = 0.2
 	sbStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	sbStroke.Parent = spinBtn
 
 	-- Gradient on spin button
 	local sbGrad = Instance.new("UIGradient")
 	sbGrad.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(130, 255, 130)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(85, 230, 85)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(45, 180, 45)),
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 245, 120)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(78, 218, 78)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(42, 170, 42)),
 	})
 	sbGrad.Rotation = 90
 	sbGrad.Parent = spinBtn
+
+	-- Stud texture on spin button
+	Components.AddStudTexture(spinBtn, S.BtnCorner)
 
 	spinBtnLabel = Instance.new("TextLabel")
 	spinBtnLabel.Name = "Label"
 	spinBtnLabel.Size = UDim2.fromScale(1, 1)
 	spinBtnLabel.BackgroundTransparency = 1
 	spinBtnLabel.Font = Enum.Font.GothamBold
-	spinBtnLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	spinBtnLabel.TextColor3 = C.TextWhite
 	spinBtnLabel.TextSize = 28
 	spinBtnLabel.Text = "SPIN (1)"
 	spinBtnLabel.ZIndex = 16
 	spinBtnLabel.Parent = spinBtn
 	local sbls = Instance.new("UIStroke")
 	sbls.Color = Color3.fromRGB(0, 0, 0)
-	sbls.Thickness = 2.5
-	sbls.Transparency = 0.1
+	sbls.Thickness = 2.2
+	sbls.Transparency = 0.12
 	sbls.Parent = spinBtnLabel
 
 	-- ─── TIMER LABEL ───
@@ -447,7 +450,7 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 	timerLabel.Position = UDim2.new(0.5, 0, 0, sBtnY + 62)
 	timerLabel.BackgroundTransparency = 1
 	timerLabel.Font = Enum.Font.GothamBold
-	timerLabel.TextColor3 = Color3.fromRGB(200, 210, 230)
+	timerLabel.TextColor3 = C.TextLight
 	timerLabel.TextSize = 16
 	timerLabel.Text = "Next Free Spin in 00:00:00"
 	timerLabel.ZIndex = 15
@@ -455,7 +458,7 @@ local function buildWheel(parent: GuiObject): (CanvasGroup, Frame)
 	local tls = Instance.new("UIStroke")
 	tls.Color = Color3.fromRGB(0, 0, 0)
 	tls.Thickness = 1.5
-	tls.Transparency = 0.2
+	tls.Transparency = 0.22
 	tls.Parent = timerLabel
 
 	wheelDisc = disc
@@ -472,20 +475,23 @@ local function buildPurchasePanel(parent: GuiObject)
 	panel.Size = UDim2.fromOffset(260, WHEEL_SIZE + 20)
 	panel.AnchorPoint = Vector2.new(1, 0)
 	panel.Position = UDim2.new(1, -20, 0, S.PanelHeaderHeight + 40)
-	panel.BackgroundColor3 = Color3.fromRGB(35, 42, 72)
+	panel.BackgroundColor3 = C.PanelBgInner
 	panel.BackgroundTransparency = 0.1
 	panel.BorderSizePixel = 0
 	panel.ZIndex = 5
 	panel.Parent = parent
 	local pCorner = Instance.new("UICorner")
-	pCorner.CornerRadius = UDim.new(0, 16)
+	pCorner.CornerRadius = UDim.new(0, S.PanelCorner)
 	pCorner.Parent = panel
 	local pStroke = Instance.new("UIStroke")
-	pStroke.Color = Color3.fromRGB(80, 210, 255)
-	pStroke.Thickness = 3
-	pStroke.Transparency = 0.15
+	pStroke.Color = Color3.fromRGB(75, 200, 248)
+	pStroke.Thickness = 2.5
+	pStroke.Transparency = 0.18
 	pStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	pStroke.Parent = panel
+
+	-- Stud texture on purchase panel
+	Components.AddStudTexture(panel, S.PanelCorner)
 
 	-- Title
 	local title = Instance.new("TextLabel")
@@ -500,7 +506,7 @@ local function buildPurchasePanel(parent: GuiObject)
 	title.Parent = panel
 	local tts = Instance.new("UIStroke")
 	tts.Color = Color3.fromRGB(0, 0, 0)
-	tts.Thickness = 2
+	tts.Thickness = 1.8
 	tts.Transparency = 0.15
 	tts.Parent = title
 
@@ -510,19 +516,22 @@ local function buildPurchasePanel(parent: GuiObject)
 		card.Name = "Pkg" .. i
 		card.Size = UDim2.new(1, -24, 0, 78)
 		card.Position = UDim2.fromOffset(12, 48 + (i - 1) * 90)
-		card.BackgroundColor3 = Color3.fromRGB(42, 52, 85)
+		card.BackgroundColor3 = C.CardBg
 		card.BorderSizePixel = 0
 		card.ZIndex = 6
 		card.Parent = panel
 		local cc = Instance.new("UICorner")
-		cc.CornerRadius = UDim.new(0, 12)
+		cc.CornerRadius = UDim.new(0, S.BtnCorner)
 		cc.Parent = card
 		local cs = Instance.new("UIStroke")
-		cs.Color = Color3.fromRGB(60, 180, 80)
-		cs.Thickness = 2
-		cs.Transparency = 0.25
+		cs.Color = C.BuyButton
+		cs.Thickness = S.PanelStroke
+		cs.Transparency = 0.28
 		cs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		cs.Parent = card
+
+		-- Stud texture on card
+		Components.AddStudTexture(card, S.BtnCorner)
 
 		-- Robux icon + price
 		local robuxLabel = Instance.new("TextLabel")
@@ -530,14 +539,14 @@ local function buildPurchasePanel(parent: GuiObject)
 		robuxLabel.Position = UDim2.fromOffset(0, 8)
 		robuxLabel.BackgroundTransparency = 1
 		robuxLabel.Font = Enum.Font.GothamBold
-		robuxLabel.TextColor3 = Color3.fromRGB(85, 255, 130)
+		robuxLabel.TextColor3 = C.BuyButton
 		robuxLabel.TextSize = 24
 		robuxLabel.Text = "◎ " .. tostring(pkg.robux)
 		robuxLabel.ZIndex = 7
 		robuxLabel.Parent = card
 		local rls = Instance.new("UIStroke")
 		rls.Color = Color3.fromRGB(0, 0, 0)
-		rls.Thickness = 2
+		rls.Thickness = 1.8
 		rls.Transparency = 0.15
 		rls.Parent = robuxLabel
 
@@ -547,7 +556,7 @@ local function buildPurchasePanel(parent: GuiObject)
 		countLabel.Position = UDim2.fromOffset(0, 40)
 		countLabel.BackgroundTransparency = 1
 		countLabel.Font = Enum.Font.GothamBold
-		countLabel.TextColor3 = Color3.fromRGB(180, 190, 220)
+		countLabel.TextColor3 = C.TextLight
 		countLabel.TextSize = 16
 		countLabel.Text = pkg.label
 		countLabel.ZIndex = 7
@@ -555,7 +564,7 @@ local function buildPurchasePanel(parent: GuiObject)
 		local cls = Instance.new("UIStroke")
 		cls.Color = Color3.fromRGB(0, 0, 0)
 		cls.Thickness = 1.2
-		cls.Transparency = 0.2
+		cls.Transparency = 0.22
 		cls.Parent = countLabel
 
 		-- Alt: Fate Coins price (smaller text)
@@ -564,7 +573,7 @@ local function buildPurchasePanel(parent: GuiObject)
 		coinLabel.Position = UDim2.fromOffset(0, 60)
 		coinLabel.BackgroundTransparency = 1
 		coinLabel.Font = Enum.Font.Gotham
-		coinLabel.TextColor3 = Color3.fromRGB(140, 150, 175)
+		coinLabel.TextColor3 = C.TextMuted
 		coinLabel.TextSize = 12
 		coinLabel.Text = "or F " .. tostring(pkg.coins) .. " Coins"
 		coinLabel.ZIndex = 7
@@ -611,7 +620,7 @@ local function buildResultPopup(parent: GuiObject)
 	frame.Size = UDim2.fromOffset(320, 160)
 	frame.AnchorPoint = Vector2.new(0.5, 0.5)
 	frame.Position = UDim2.fromScale(0.5, 0.5)
-	frame.BackgroundColor3 = Color3.fromRGB(28, 35, 62)
+	frame.BackgroundColor3 = C.PanelBg
 	frame.BackgroundTransparency = 0
 	frame.GroupTransparency = 1
 	frame.Visible = false
@@ -620,15 +629,18 @@ local function buildResultPopup(parent: GuiObject)
 	frame.Parent = parent
 
 	local rc = Instance.new("UICorner")
-	rc.CornerRadius = UDim.new(0, 20)
+	rc.CornerRadius = UDim.new(0, S.PanelCorner)
 	rc.Parent = frame
 
 	local rs = Instance.new("UIStroke")
-	rs.Color = Color3.fromRGB(255, 215, 65)
-	rs.Thickness = 4
-	rs.Transparency = 0
+	rs.Color = C.Gold
+	rs.Thickness = 3
+	rs.Transparency = 0.05
 	rs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	rs.Parent = frame
+
+	-- Stud texture on popup
+	Components.AddStudTexture(frame, S.PanelCorner)
 
 	-- "You Won!" title
 	local wonLabel = Instance.new("TextLabel")
@@ -637,14 +649,14 @@ local function buildResultPopup(parent: GuiObject)
 	wonLabel.Position = UDim2.fromOffset(0, 12)
 	wonLabel.BackgroundTransparency = 1
 	wonLabel.Font = Enum.Font.GothamBold
-	wonLabel.TextColor3 = Color3.fromRGB(255, 215, 65)
+	wonLabel.TextColor3 = C.Gold
 	wonLabel.TextSize = 28
 	wonLabel.Text = "🎉 You Won!"
 	wonLabel.ZIndex = 31
 	wonLabel.Parent = frame
 	local ws = Instance.new("UIStroke")
 	ws.Color = Color3.fromRGB(0, 0, 0)
-	ws.Thickness = 2.5
+	ws.Thickness = 2.2
 	ws.Transparency = 0.1
 	ws.Parent = wonLabel
 
@@ -660,11 +672,11 @@ local function buildResultPopup(parent: GuiObject)
 	rewardLabel.Text = ""
 	rewardLabel.ZIndex = 31
 	rewardLabel.Parent = frame
-	local rls = Instance.new("UIStroke")
-	rls.Color = Color3.fromRGB(0, 0, 0)
-	rls.Thickness = 2
-	rls.Transparency = 0.12
-	rls.Parent = rewardLabel
+	local rls2 = Instance.new("UIStroke")
+	rls2.Color = Color3.fromRGB(0, 0, 0)
+	rls2.Thickness = 1.8
+	rls2.Transparency = 0.12
+	rls2.Parent = rewardLabel
 
 	-- Coins awarded
 	local coinsLabel = Instance.new("TextLabel")
@@ -673,7 +685,7 @@ local function buildResultPopup(parent: GuiObject)
 	coinsLabel.Position = UDim2.fromOffset(10, 95)
 	coinsLabel.BackgroundTransparency = 1
 	coinsLabel.Font = Enum.Font.GothamBold
-	coinsLabel.TextColor3 = Color3.fromRGB(255, 230, 100)
+	coinsLabel.TextColor3 = C.Gold
 	coinsLabel.TextSize = 20
 	coinsLabel.Text = ""
 	coinsLabel.ZIndex = 31
@@ -685,7 +697,7 @@ local function buildResultPopup(parent: GuiObject)
 	okBtn.Size = UDim2.fromOffset(120, 36)
 	okBtn.AnchorPoint = Vector2.new(0.5, 1)
 	okBtn.Position = UDim2.new(0.5, 0, 1, -12)
-	okBtn.BackgroundColor3 = Color3.fromRGB(55, 210, 55)
+	okBtn.BackgroundColor3 = C.BuyButton
 	okBtn.Font = Enum.Font.GothamBold
 	okBtn.TextColor3 = C.TextWhite
 	okBtn.TextSize = 18
@@ -695,12 +707,12 @@ local function buildResultPopup(parent: GuiObject)
 	okBtn.ZIndex = 32
 	okBtn.Parent = frame
 	local obc = Instance.new("UICorner")
-	obc.CornerRadius = UDim.new(0, 10)
+	obc.CornerRadius = UDim.new(0, S.BtnCorner)
 	obc.Parent = okBtn
 	local obs = Instance.new("UIStroke")
 	obs.Color = Color3.fromRGB(255, 255, 255)
-	obs.Thickness = 2
-	obs.Transparency = 0.3
+	obs.Thickness = S.PanelStroke
+	obs.Transparency = 0.35
 	obs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	obs.Parent = okBtn
 
@@ -908,7 +920,7 @@ function SpinWheelPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	canvas, uiScale, content, closeBtn = Components.CreatePanel(
 		screenGui,
 		"🎡 SPIN THE WHEEL",
-		Color3.fromRGB(72, 180, 255) -- wheel accent
+		Color3.fromRGB(68, 172, 245) -- wheel accent (slightly desaturated)
 	)
 
 	-- Make panel wider for wheel + purchase layout
@@ -983,4 +995,3 @@ function SpinWheelPanel.Toggle()
 end
 
 return SpinWheelPanel
-
