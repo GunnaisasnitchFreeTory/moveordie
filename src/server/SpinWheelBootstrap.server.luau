@@ -11,6 +11,7 @@
 	Also:
 	  • Removes ClickDetectors from SpinTheWheel (no click-to-spin)
 	  • Removes/disables embedded Scripts/LocalScripts (bad sound assets, old logic)
+	  • Handles MarketplaceService.ProcessReceipt for Robux spin purchases
 
 	FIX: ProximityPrompt is now on a dedicated invisible anchor Part at ground level
 	     so the "Press E" UI is visible from all angles and distance measurements
@@ -22,6 +23,7 @@
 local Players = game:GetService("Players")
 local ServerScriptService = game:GetService("ServerScriptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 -- Ensure Remotes folder
 local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
@@ -46,9 +48,12 @@ local getDataRF    = ensureRemoteFunc("SpinWheel_GetData")
 local requestSpinRF = ensureRemoteFunc("SpinWheel_RequestSpin")
 local buySpinsRF    = ensureRemoteFunc("SpinWheel_BuySpins")
 
--- Load service
+-- Load service + config
 local Server = ServerScriptService:WaitForChild("Server")
 local SpinWheelService = require(Server:WaitForChild("SpinWheelService"))
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local SpinWheelConfig = require(Shared:WaitForChild("SpinWheelConfig"))
 
 SpinWheelService.Init()
 
@@ -91,6 +96,67 @@ end)
 game:BindToClose(function()
 	SpinWheelService.SaveAll()
 end)
+
+-- ═══════════════════════════════════════════════════════════════════
+-- ROBUX DEVELOPER PRODUCT RECEIPT HANDLING
+--
+-- Idempotent: tracks PurchaseId in-memory to prevent double-granting.
+-- Maps productId → SpinWheelConfig.SpinPrices entry → spins to grant.
+-- ═══════════════════════════════════════════════════════════════════
+
+-- Build reverse lookup: productId → spins count
+local productIdToSpins: { [number]: number } = {}
+for _, pkg in ipairs(SpinWheelConfig.SpinPrices) do
+	if pkg.productId and pkg.productId > 0 then
+		productIdToSpins[pkg.productId] = pkg.spins
+	end
+end
+
+-- In-memory receipt tracking (prevents double-granting if Roblox retries)
+local processedReceipts: { [string]: boolean } = {}
+
+MarketplaceService.ProcessReceipt = function(receiptInfo)
+	local receiptKey = tostring(receiptInfo.PurchaseId)
+
+	-- Already processed this exact receipt → acknowledge
+	if processedReceipts[receiptKey] then
+		print("[SpinWheelBootstrap] Receipt already processed:", receiptKey)
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
+
+	local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
+	if not player then
+		-- Player left; Roblox will retry later when they rejoin
+		print("[SpinWheelBootstrap] Player not in game for receipt:", receiptKey, "userId:", receiptInfo.PlayerId)
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
+	local productId = receiptInfo.ProductId
+	local spinsToGrant = productIdToSpins[productId]
+
+	if spinsToGrant then
+		-- This is a spin wheel product
+		local success = SpinWheelService.GrantRobuxSpins(player, spinsToGrant)
+		if success then
+			processedReceipts[receiptKey] = true
+			print(string.format(
+				"[SpinWheelBootstrap] Robux purchase granted: productId=%d, spins=+%d, newPurchased=?, player=%s, receipt=%s",
+				productId, spinsToGrant, player.Name, receiptKey
+			))
+			return Enum.ProductPurchaseDecision.PurchaseGranted
+		else
+			warn("[SpinWheelBootstrap] GrantRobuxSpins failed for", player.Name, "receipt:", receiptKey)
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+	end
+
+	-- Not a spin wheel product — if you have other products, handle them here.
+	-- For now, acknowledge unknown products to avoid infinite retries.
+	warn("[SpinWheelBootstrap] Unknown productId in receipt:", productId, "receipt:", receiptKey)
+	return Enum.ProductPurchaseDecision.NotProcessedYet
+end
+
+print("[SpinWheelBootstrap] ProcessReceipt handler installed for Robux spin purchases")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- SPIN THE WHEEL: CLEANUP + PROXIMITY PROMPT SETUP

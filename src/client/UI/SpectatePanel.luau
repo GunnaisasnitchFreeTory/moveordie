@@ -166,7 +166,7 @@ function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "👁 SPECTATE", C.HeaderSpectate)
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "👁 SPECTATE", C.HeaderSpectate, "Spectate")
 	contentFrame = content
 
 	-- List layout for player entries

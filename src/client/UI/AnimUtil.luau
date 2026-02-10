@@ -9,6 +9,11 @@
 	  • NEVER use Tween:Wait() — always use tween.Completed:Wait()
 	  • Returns tweens so callers can yield if needed
 
+	POLISH:
+	  • WireButton now includes BackgroundColor3 brightness feedback:
+	    hover = brighten 12% toward white, press = darken 10% toward black.
+	    Transparent buttons (BackgroundTransparency > 0.9) are skipped.
+
 	Used by: HUDPanel, ShopPanel, FateCrownsPanel, PetsPanel,
 	         CrateShopPanel, IndexPanel, Components
 ]]
@@ -89,11 +94,12 @@ function AnimUtil.ClosePanel(canvas: CanvasGroup, uiScale: UIScale): Tween
 end
 
 -- ───────────────────────────────────────────────
--- BUTTON EFFECTS  (hover, click, hover SFX)
+-- BUTTON EFFECTS  (hover, click, hover SFX, color feedback)
 -- ───────────────────────────────────────────────
 
 --[[
-	Call once per button to wire up hover + click animations + hover sound.
+	Call once per button to wire up hover + click animations + hover sound
+	+ BackgroundColor3 brightness feedback.
 	`btn` – any GuiButton
 	`onClick` – optional callback fired after click animation
 ]]
@@ -105,22 +111,62 @@ function AnimUtil.WireButton(btn: GuiButton, onClick: (() -> ())?)
 		scale.Parent = btn
 	end
 
+	-- Skip color changes for transparent buttons (overlays, invisible hit areas)
+	local skipColor = btn.BackgroundTransparency > 0.9
+
+	-- IMPORTANT:
+	-- Buttons like toggles/tabs change BackgroundColor3 over time.
+	-- So we must not cache "origColor" once, otherwise MouseLeave snaps
+	-- back to the wrong state color.
+	local baseColor = btn.BackgroundColor3
+	local hoverColor = baseColor
+	local pressColor = baseColor
+
+	local function recomputeColors()
+		baseColor = btn.BackgroundColor3
+		hoverColor = baseColor:Lerp(Color3.new(1, 1, 1), 0.12)
+		pressColor = baseColor:Lerp(Color3.new(0, 0, 0), 0.10)
+	end
+
+	recomputeColors()
+
 	btn.MouseEnter:Connect(function()
 		AnimUtil.Tween(scale, { Scale = cfg.HoverScale }, cfg.HoverDuration, cfg.BtnEase)
+		if not skipColor then
+			recomputeColors()
+			AnimUtil.Tween(btn, { BackgroundColor3 = hoverColor }, cfg.HoverDuration, cfg.BtnEase)
+		end
 		local su = getSoundUtil()
 		if su then su.Hover() end
 	end)
 
 	btn.MouseLeave:Connect(function()
 		AnimUtil.Tween(scale, { Scale = 1 }, cfg.HoverDuration, cfg.BtnEase)
+		if not skipColor then
+			-- Restore to the current "base" color for this interaction.
+			AnimUtil.Tween(btn, { BackgroundColor3 = baseColor }, cfg.HoverDuration, cfg.BtnEase)
+		end
 	end)
 
 	btn.MouseButton1Down:Connect(function()
 		AnimUtil.Tween(scale, { Scale = cfg.ClickScale }, cfg.ClickDuration, cfg.BtnEase, Enum.EasingDirection.Out)
+		if not skipColor then
+			recomputeColors()
+			AnimUtil.Tween(btn, { BackgroundColor3 = pressColor }, cfg.ClickDuration, cfg.BtnEase)
+		end
 	end)
 
 	btn.MouseButton1Up:Connect(function()
 		AnimUtil.Tween(scale, { Scale = cfg.HoverScale }, cfg.BounceDuration, Enum.EasingStyle.Back)
+		if not skipColor then
+			-- Defer so if the click handler changes BackgroundColor3 (tabs/toggles),
+			-- we recompute from the NEW state color and don't snap back.
+			task.defer(function()
+				if not btn or not btn.Parent then return end
+				recomputeColors()
+				AnimUtil.Tween(btn, { BackgroundColor3 = hoverColor }, cfg.BounceDuration, Enum.EasingStyle.Back)
+			end)
+		end
 	end)
 
 	if onClick then

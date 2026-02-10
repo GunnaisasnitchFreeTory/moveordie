@@ -86,11 +86,11 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "💎 PREMIUM SHOP", C.HeaderShop)
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "💎 PREMIUM SHOP", C.HeaderShop, "Shop")
 	contentFrame = content
 
-	-- Wire close button
-	AnimUtil.WireButton(closeBtn, function()
+	-- Wire close button click (visual feedback handled by UIStyle.WireCloseButton in Components)
+	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()
 		ShopPanel.Hide()
 	end)

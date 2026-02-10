@@ -4,17 +4,23 @@
 
 	DARK + VIBRANT theme — front-page quality:
 	  • Dark card backgrounds with rarity-glow borders
-	  • Cute pet icons, glossy icon areas
+	  • Pet icons using ItemCatalog images
 	  • Equip / Equipped buttons
 	  • Locked pets shown as "???" with dim styling
+
+	Data source: ItemCatalog (single source of truth)
+	Ownership:   Player "OwnedPets" attribute (JSON array of catalog IDs)
 
 	Used by: UIController (sidebar "Pets" button)
 ]]
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local UIConfig = require(Shared:WaitForChild("UIConfig"))
+local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 
 local Client = script.Parent
 local AnimUtil   = require(Client:WaitForChild("AnimUtil"))
@@ -23,6 +29,8 @@ local Components = require(Client:WaitForChild("Components"))
 
 local C = UIConfig.Colors
 
+local player = Players.LocalPlayer
+
 local canvas: CanvasGroup = nil
 local uiScale: UIScale = nil
 local overlay: Frame = nil
@@ -30,9 +38,21 @@ local contentFrame: ScrollingFrame = nil
 local visible = false
 local closeCallback: (() -> ())? = nil
 
-local equippedId: string = "pet_chick"
+local equippedId: string? = nil
 
 local PetsPanel = {}
+
+-- Helper: read OwnedPets attribute → set of catalog IDs
+local function getOwnedPetSet(): { [string]: boolean }
+	local json = player:GetAttribute("OwnedPets") or "[]"
+	local ok, list = pcall(HttpService.JSONDecode, HttpService, json)
+	if not ok or type(list) ~= "table" then return {} end
+	local set = {}
+	for _, id in ipairs(list) do
+		set[id] = true
+	end
+	return set
+end
 
 local function clearContent()
 	for _, child in ipairs(contentFrame:GetChildren()) do
@@ -43,32 +63,37 @@ end
 local function refresh()
 	clearContent()
 
-	for i, item in ipairs(UIConfig.MockPets) do
-		local isEquipped = item.owned and (item.id == equippedId)
+	local ownedSet = getOwnedPetSet()
+	local allPets = ItemCatalog.GetAllPetsSorted()
+
+	for i, pet in ipairs(allPets) do
+		local isOwned = ownedSet[pet.id] == true
+		local isEquipped = isOwned and (pet.id == equippedId)
 		local actionText = nil
 		local actionColor = nil
 
-		if item.owned then
+		if isOwned then
 			actionText = isEquipped and "Equipped" or "Equip"
 			actionColor = isEquipped and C.Green or C.EquipButton
 		end
 
 		Components.CreateItemCard(contentFrame, {
-			name = item.name,
-			rarity = item.rarity,
-			iconColor = item.iconColor,
-			iconText = "🐾",
-			locked = not item.owned,
+			name = pet.name,
+			rarity = pet.rarity,
+			iconColor = pet.iconColor,
+			iconText = pet.iconText or "🐾",
+			image = ItemCatalog.GetImage(pet),
+			locked = not isOwned,
 			equipped = isEquipped,
-			owned = item.owned,
+			owned = isOwned,
 			actionText = actionText,
 			actionColor = actionColor,
 			onAction = function()
-				if item.owned and not isEquipped then
-					equippedId = item.id
+				if isOwned and not isEquipped then
+					equippedId = pet.id
 					SoundUtil.Equip()
 					if UIConfig.DebugLog then
-						print(string.format("[PetsPanel] Equipped: %s", item.name))
+						print(string.format("[PetsPanel] Equipped: %s", pet.name))
 					end
 					refresh()
 				end
@@ -85,14 +110,20 @@ function PetsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "🐾 PETS", C.HeaderPets)
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "🐾 PETS", C.HeaderPets, "Pets")
 	contentFrame = content
 
 	Components.AddGridLayout(content)
 
-	AnimUtil.WireButton(closeBtn, function()
+	-- Wire close button click (visual feedback handled by UIStyle.WireCloseButton in Components)
+	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()
 		PetsPanel.Hide()
+	end)
+
+	-- Listen for OwnedPets attribute changes to auto-refresh
+	player:GetAttributeChangedSignal("OwnedPets"):Connect(function()
+		if visible then refresh() end
 	end)
 
 	refresh()

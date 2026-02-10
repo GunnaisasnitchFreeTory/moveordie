@@ -6,10 +6,11 @@
 	  • Dark, clean panel backgrounds with subtle depth
 	  • Thin refined borders (NOT heavy/thick outlines)
 	  • Smooth gradients, soft shadows
-	  • Subtle stud texture overlay
-	  • Animated sunburst / radial glow (subtle)
+	  • VISIBLE stud texture overlay (lighter, more opaque)
+	  • Per-panel unique animations (via UIStyle)
 	  • High-contrast white text with dark strokes
 	  • Consistent corner radius and spacing
+	  • BRIGHTER, more vibrant accent colors
 
 	Used by every UI module.
 ]]
@@ -17,7 +18,7 @@
 local UIConfig = {}
 
 -- ═══════════════════════════════════════════════════════════════════
--- COLOURS
+-- COLOURS (brighter, more vivid accents)
 -- ═══════════════════════════════════════════════════════════════════
 
 UIConfig.Colors = {
@@ -31,23 +32,23 @@ UIConfig.Colors = {
 	Overlay         = Color3.fromRGB(0, 0, 0),
 	OverlayTransparency = 0.35,
 
-	-- Per-panel accent (header gradient base)
-	HeaderShop    = Color3.fromRGB(235, 55, 80),
-	HeaderCrowns  = Color3.fromRGB(152, 48, 225),
-	HeaderPets    = Color3.fromRGB(238, 138, 30),
-	HeaderIndex   = Color3.fromRGB(38, 182, 62),
-	HeaderCrate   = Color3.fromRGB(238, 158, 25),
-	HeaderSpin    = Color3.fromRGB(68, 168, 242),
+	-- Per-panel accent (header gradient base) — BRIGHTER
+	HeaderShop    = Color3.fromRGB(245, 48, 72),
+	HeaderCrowns  = Color3.fromRGB(162, 42, 238),
+	HeaderPets    = Color3.fromRGB(248, 145, 25),
+	HeaderIndex   = Color3.fromRGB(35, 195, 58),
+	HeaderCrate   = Color3.fromRGB(248, 168, 18),
+	HeaderSpin    = Color3.fromRGB(62, 178, 252),
 
-	-- Accents
-	Gold   = Color3.fromRGB(250, 210, 42),
-	Blue   = Color3.fromRGB(58, 168, 248),
-	Green  = Color3.fromRGB(60, 218, 72),
-	Red    = Color3.fromRGB(232, 45, 45),
-	Pink   = Color3.fromRGB(248, 98, 145),
-	Orange = Color3.fromRGB(248, 148, 35),
-	Cyan   = Color3.fromRGB(50, 222, 222),
-	Purple = Color3.fromRGB(168, 72, 248),
+	-- Accents (slightly more vivid)
+	Gold   = Color3.fromRGB(255, 215, 38),
+	Blue   = Color3.fromRGB(55, 175, 255),
+	Green  = Color3.fromRGB(55, 228, 68),
+	Red    = Color3.fromRGB(240, 42, 42),
+	Pink   = Color3.fromRGB(255, 95, 148),
+	Orange = Color3.fromRGB(255, 152, 32),
+	Cyan   = Color3.fromRGB(45, 228, 228),
+	Purple = Color3.fromRGB(175, 68, 255),
 
 	-- Text hierarchy
 	TextWhite = Color3.fromRGB(255, 255, 255),
@@ -55,46 +56,46 @@ UIConfig.Colors = {
 	TextMuted = Color3.fromRGB(155, 162, 192),
 	TextDark  = Color3.fromRGB(18, 18, 32),
 
-	-- Buttons
-	BuyButton        = Color3.fromRGB(52, 205, 52),
-	BuyButtonHover   = Color3.fromRGB(75, 235, 75),
-	EquipButton      = Color3.fromRGB(55, 162, 248),
-	EquipButtonHover = Color3.fromRGB(85, 190, 248),
-	RobuxButton      = Color3.fromRGB(45, 195, 90),
-	RobuxButtonHover = Color3.fromRGB(62, 225, 110),
-	CloseBtn         = Color3.fromRGB(235, 42, 55),
-	CloseBtnHover    = Color3.fromRGB(248, 65, 78),
+	-- Buttons (brighter greens/blues)
+	BuyButton        = Color3.fromRGB(48, 215, 48),
+	BuyButtonHover   = Color3.fromRGB(72, 242, 72),
+	EquipButton      = Color3.fromRGB(50, 168, 255),
+	EquipButtonHover = Color3.fromRGB(82, 198, 255),
+	RobuxButton      = Color3.fromRGB(42, 200, 88),
+	RobuxButtonHover = Color3.fromRGB(58, 232, 108),
+	CloseBtn         = Color3.fromRGB(240, 38, 52),
+	CloseBtnHover    = Color3.fromRGB(255, 62, 75),
 	DisabledBtn      = Color3.fromRGB(68, 72, 95),
 
 	-- HUD
 	HudCoinBg  = Color3.fromRGB(32, 38, 65),
-	HudRoundBg = Color3.fromRGB(248, 162, 42),
+	HudRoundBg = Color3.fromRGB(255, 168, 38),
 
 	-- Sidebar
 	SidebarBg      = Color3.fromRGB(42, 48, 78),
 	SidebarBgAlpha = 0.08,
 
-	-- Sidebar button colors
-	SideShop     = Color3.fromRGB(232, 62, 80),
-	SideCrowns   = Color3.fromRGB(178, 70, 242),
-	SidePets     = Color3.fromRGB(235, 148, 45),
-	SideIndex    = Color3.fromRGB(55, 200, 72),
-	SideSpectate = Color3.fromRGB(58, 165, 242),
-	SideSettings = Color3.fromRGB(128, 138, 158),
-	SideAFK      = Color3.fromRGB(242, 192, 50),
-	SideIcons    = Color3.fromRGB(238, 100, 168),
+	-- Sidebar button colors (BRIGHTER, more vivid)
+	SideShop     = Color3.fromRGB(248, 55, 72),
+	SideCrowns   = Color3.fromRGB(188, 62, 255),
+	SidePets     = Color3.fromRGB(252, 158, 35),
+	SideIndex    = Color3.fromRGB(48, 218, 68),
+	SideSpectate = Color3.fromRGB(48, 175, 255),
+	SideSettings = Color3.fromRGB(135, 145, 168),
+	SideAFK      = Color3.fromRGB(255, 205, 42),
+	SideIcons    = Color3.fromRGB(252, 95, 178),
 
 	-- Extra panel header accents
-	HeaderSpectate = Color3.fromRGB(58, 165, 242),
-	HeaderSettings = Color3.fromRGB(128, 138, 158),
-	HeaderIcons    = Color3.fromRGB(238, 100, 168),
+	HeaderSpectate = Color3.fromRGB(48, 172, 252),
+	HeaderSettings = Color3.fromRGB(135, 145, 168),
+	HeaderIcons    = Color3.fromRGB(248, 95, 172),
 
-	-- Rarity palette
-	Common    = Color3.fromRGB(165, 172, 195),
-	Uncommon  = Color3.fromRGB(60, 218, 65),
-	Rare      = Color3.fromRGB(42, 145, 248),
-	Epic      = Color3.fromRGB(172, 45, 248),
-	Legendary = Color3.fromRGB(250, 192, 20),
+	-- Rarity palette (slightly brighter)
+	Common    = Color3.fromRGB(170, 178, 200),
+	Uncommon  = Color3.fromRGB(58, 225, 62),
+	Rare      = Color3.fromRGB(38, 150, 255),
+	Epic      = Color3.fromRGB(178, 42, 255),
+	Legendary = Color3.fromRGB(255, 198, 18),
 
 	-- Tab pills
 	TabActive       = Color3.fromRGB(255, 255, 255),
@@ -103,10 +104,10 @@ UIConfig.Colors = {
 	TabTextInactive = Color3.fromRGB(178, 185, 212),
 
 	-- Intermission
-	IntermissionBg     = Color3.fromRGB(32, 155, 248),
-	IntermissionBg2    = Color3.fromRGB(78, 188, 248),
+	IntermissionBg     = Color3.fromRGB(32, 160, 255),
+	IntermissionBg2    = Color3.fromRGB(75, 195, 255),
 	IntermissionText   = Color3.fromRGB(255, 255, 255),
-	IntermissionStroke = Color3.fromRGB(18, 92, 172),
+	IntermissionStroke = Color3.fromRGB(15, 92, 178),
 }
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -153,14 +154,14 @@ UIConfig.Sizes = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════
--- STUD TEXTURE  (very subtle — barely visible)
+-- STUD TEXTURE  (MUCH MORE VISIBLE — lighter color, lower transparency)
 -- ═══════════════════════════════════════════════════════════════════
 
 UIConfig.StudTexture = {
 	AssetId      = "rbxassetid://14861368908",
-	TileSize     = UDim2.fromOffset(78, 78),
-	Transparency = 0.82,
-	Color        = Color3.fromRGB(68, 75, 110),
+	TileSize     = UDim2.fromOffset(64, 64),
+	Transparency = 0.55,
+	Color        = Color3.fromRGB(85, 98, 145),
 }
 
 -- ═══════════════════════════════════════════════════════════════════

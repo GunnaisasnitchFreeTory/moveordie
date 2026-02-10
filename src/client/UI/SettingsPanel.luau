@@ -106,7 +106,7 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "⚙ SETTINGS", C.HeaderSettings)
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "⚙ SETTINGS", C.HeaderSettings, "Settings")
 
 	-- Hide scrolling, use fixed layout
 	content.ScrollBarThickness = 0

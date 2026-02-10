@@ -61,9 +61,10 @@ function CrateShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "📦 CRATE SHOP", C.HeaderCrate)
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "📦 CRATE SHOP", C.HeaderCrate, "Crate")
 
-	AnimUtil.WireButton(closeBtn, function()
+	-- Wire close button click (visual feedback handled by UIStyle.WireCloseButton in Components)
+	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()
 		CrateShopPanel.Hide()
 	end)

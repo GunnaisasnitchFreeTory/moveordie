@@ -85,12 +85,13 @@ function FateCrownsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "👑 FATE CROWNS", C.HeaderCrowns)
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "👑 FATE CROWNS", C.HeaderCrowns, "Crowns")
 	contentFrame = content
 
 	Components.AddGridLayout(content)
 
-	AnimUtil.WireButton(closeBtn, function()
+	-- Wire close button click (visual feedback handled by UIStyle.WireCloseButton in Components)
+	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()
 		FateCrownsPanel.Hide()
 	end)

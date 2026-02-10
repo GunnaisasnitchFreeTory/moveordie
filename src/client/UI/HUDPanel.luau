@@ -17,6 +17,10 @@
 	(light blue-white) and lower transparency so the studs are
 	actually visible on the blue gradient background.
 
+	FIX: SetBannerOverrideHidden allows other panels (e.g. SpinWheel)
+	to temporarily hide the intermission banner without stopping the
+	countdown logic.
+
 	Used by: UIController
 ]]
 
@@ -47,6 +51,7 @@ local stateLabel: TextLabel = nil
 local intermissionBar: Frame = nil
 local intermissionLabel: TextLabel = nil
 local intermissionVisible = false
+local bannerOverrideHidden = false
 
 local HUDPanel = {}
 
@@ -386,6 +391,31 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	local afkIcon = afkBtn:FindFirstChild("Icon")
 	local isAFK = false
 
+	local function setSideButtonColor(btn: GuiObject, baseColor: Color3)
+		-- Some buttons use UIGradient (generated in Components.CreateSideButton). If we only
+		-- set BackgroundColor3, the gradient will still tint it with the old color.
+		btn.BackgroundColor3 = baseColor
+		local grad = btn:FindFirstChildOfClass("UIGradient")
+		if grad then
+			local r, g, b = baseColor.R, baseColor.G, baseColor.B
+			local lighterColor = Color3.new(
+				math.min(r + 0.22, 1),
+				math.min(g + 0.22, 1),
+				math.min(b + 0.22, 1)
+			)
+			local darkerColor = Color3.new(
+				math.max(r - 0.10, 0),
+				math.max(g - 0.10, 0),
+				math.max(b - 0.10, 0)
+			)
+			grad.Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, lighterColor),
+				ColorSequenceKeypoint.new(0.5, baseColor),
+				ColorSequenceKeypoint.new(1, darkerColor),
+			})
+		end
+	end
+
 	-- React to PlayerState attribute changes (set by server)
 	local function updateAFKVisual()
 		local state = LocalPlayer:GetAttribute("PlayerState")
@@ -396,7 +426,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		if afkIcon then
 			afkIcon.Text = isAFK and "🏃" or "💤"
 		end
-		afkBtn.BackgroundColor3 = isAFK and C.Green or C.SideAFK
+		setSideButtonColor(afkBtn, isAFK and C.Green or C.SideAFK)
 	end
 	updateAFKVisual()
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(updateAFKVisual)
@@ -412,11 +442,13 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		roundFrame.Visible = false
 		stateLabel.Visible = false
 
-		-- SHOW intermission bar with animation
-		intermissionBar.Visible = true
-		ibScale.Scale = 0.88
-		local t = TweenService:Create(ibScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 })
-		t:Play()
+		-- SHOW intermission bar with animation (unless overridden by SpinWheel etc.)
+		if not bannerOverrideHidden then
+			intermissionBar.Visible = true
+			ibScale.Scale = 0.88
+			local t = TweenService:Create(ibScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 })
+			t:Play()
+		end
 	end
 
 	local function hideIntermission()
@@ -517,6 +549,26 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 					end
 				end
 			end)
+		end
+	end
+end
+
+-- ────────── BANNER OVERRIDE (for SpinWheel etc.) ──────────
+-- Allows other panels to temporarily hide the intermission banner
+-- without stopping the countdown logic. The text keeps updating
+-- so when the banner becomes visible again, it shows the correct time.
+
+function HUDPanel.SetBannerOverrideHidden(hidden: boolean)
+	bannerOverrideHidden = hidden
+	if hidden then
+		-- Immediately hide the intermission bar
+		if intermissionBar then
+			intermissionBar.Visible = false
+		end
+	else
+		-- Restore: show intermission bar if it SHOULD be visible
+		if intermissionVisible and intermissionBar then
+			intermissionBar.Visible = true
 		end
 	end
 end

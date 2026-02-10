@@ -23,6 +23,7 @@
 	  • Auto-close now uses the PROMPT's parent Part position (not the model root)
 	  • Grace period after opening before auto-close kicks in
 	  • CLOSE_DISTANCE increased to 50 studs (player must clearly walk away)
+	  • "Game starting in X" banner is hidden while SpinWheel is open
 
 	Called from Client init.client.luau via UIController.Init().
 ]]
@@ -86,6 +87,11 @@ local function closeCurrentPanel()
 		SpinWheelPanel.Hide()
 	end
 	currentPanel = nil
+
+	-- Single source of truth:
+	-- If ANY panel/modal is open, hide the intermission banner.
+	-- When all panels are closed, restore it (countdown logic continues regardless).
+	HUDPanel.SetBannerOverrideHidden(false)
 end
 
 local function openPanel(name: string)
@@ -115,6 +121,9 @@ local function openPanel(name: string)
 	elseif name == "SpinWheel" then
 		SpinWheelPanel.Show()
 	end
+
+	-- Single source of truth: any open panel hides the banner.
+	HUDPanel.SetBannerOverrideHidden(true)
 
 	log("Opened:", name)
 end
@@ -188,6 +197,7 @@ function UIController.Init()
 	-- 3. Panel close callback
 	local function onPanelClosed()
 		currentPanel = nil
+		HUDPanel.SetBannerOverrideHidden(false)
 	end
 
 	-- 4. Init all panels

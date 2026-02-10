@@ -5,12 +5,12 @@
 	DARK + VIBRANT theme — front-page Roblox quality:
 	  • Dark opaque panel backgrounds
 	  • Visible stud texture overlay (lighter pattern on dark)
-	  • Animated sunburst glow (rotating gradient rays)
-	  • Centered radial glow (soft bright circle)
-	  • Floating sparkle dots
+	  • PER-PANEL unique background animations (via UIStyle themes)
+	  • Centered radial glow (soft bright circle, color from theme)
 	  • Refined coloured borders (subtle, consistent)
 	  • Glossy gradient on headers & buttons
 	  • High-contrast text with dark strokes
+	  • Close button hover/press feedback (via UIStyle)
 
 	Used by: every panel + HUDPanel + UIController
 ]]
@@ -26,6 +26,7 @@ local UIConfig = require(Shared:WaitForChild("UIConfig"))
 local Client = script.Parent
 local AnimUtil  = require(Client:WaitForChild("AnimUtil"))
 local SoundUtil = require(Client:WaitForChild("SoundUtil"))
+local UIStyle   = require(Client:WaitForChild("UIStyle"))
 
 local C = UIConfig.Colors
 local S = UIConfig.Sizes
@@ -128,16 +129,19 @@ Components.AddStudTexture = addStudTexture
 --[[
 	Centered radial glow — a big soft bright circle behind content.
 	Creates a warm "spotlight" effect on the dark panel.
+	Now accepts optional alpha and size from theme.
 ]]
-local function addCenterGlow(parent: GuiObject, color: Color3?)
+local function addCenterGlow(parent: GuiObject, color: Color3?, alpha: number?, glowSize: number?)
 	color = color or Color3.fromRGB(75, 105, 195)
+	alpha = alpha or 0.84
+	glowSize = glowSize or 1.4
 	local glow = Instance.new("Frame")
 	glow.Name = "CenterGlow"
-	glow.Size = UDim2.new(1.4, 0, 1.2, 0)
+	glow.Size = UDim2.new(glowSize, 0, glowSize * 0.85, 0)
 	glow.AnchorPoint = Vector2.new(0.5, 0.5)
 	glow.Position = UDim2.fromScale(0.5, 0.5)
 	glow.BackgroundColor3 = color
-	glow.BackgroundTransparency = 0.84
+	glow.BackgroundTransparency = alpha
 	glow.BorderSizePixel = 0
 	glow.ZIndex = 1
 	glow.Parent = parent
@@ -146,17 +150,19 @@ local function addCenterGlow(parent: GuiObject, color: Color3?)
 	gc.Parent = glow
 
 	-- Pulse
+	local expandSize = glowSize + 0.1
+	local shrinkSize = glowSize - 0.1
 	task.spawn(function()
 		while glow and glow.Parent do
 			local t1 = TweenService:Create(glow, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-				BackgroundTransparency = 0.84,
-				Size = UDim2.new(1.5, 0, 1.3, 0),
+				BackgroundTransparency = alpha,
+				Size = UDim2.new(expandSize, 0, expandSize * 0.85, 0),
 			})
 			t1:Play()
 			t1.Completed:Wait()
 			local t2 = TweenService:Create(glow, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-				BackgroundTransparency = 0.88,
-				Size = UDim2.new(1.3, 0, 1.1, 0),
+				BackgroundTransparency = alpha + 0.04,
+				Size = UDim2.new(shrinkSize, 0, shrinkSize * 0.85, 0),
 			})
 			t2:Play()
 			t2.Completed:Wait()
@@ -166,17 +172,19 @@ end
 
 --[[
 	Slow-rotating "sunburst" light rays behind content.
-	Alternating transparency bands in a UIGradient that rotates continuously.
-	Parent must clip descendants (CanvasGroup does this automatically).
+	Now accepts optional speed and alpha from theme.
 ]]
-local function addSunburst(parent: GuiObject)
+local function addSunburst(parent: GuiObject, speed: number?, alpha: number?)
+	speed = speed or (UIConfig.Anim.SunburstSpeed or 10)
+	alpha = alpha or 0.85
+
 	local burst = Instance.new("Frame")
 	burst.Name = "Sunburst"
 	burst.Size = UDim2.new(2.5, 0, 2.5, 0)
 	burst.AnchorPoint = Vector2.new(0.5, 0.5)
 	burst.Position = UDim2.fromScale(0.5, 0.5)
 	burst.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	burst.BackgroundTransparency = 0.85
+	burst.BackgroundTransparency = alpha
 	burst.BorderSizePixel = 0
 	burst.ZIndex = 2
 	burst.Parent = parent
@@ -199,8 +207,6 @@ local function addSunburst(parent: GuiObject)
 	})
 	grad.Parent = burst
 
-	local speed = UIConfig.Anim.SunburstSpeed or 10
-
 	local conn
 	conn = RunService.Heartbeat:Connect(function(dt)
 		if not burst.Parent then
@@ -213,16 +219,18 @@ end
 
 --[[
 	Floating sparkle dots that fade in/out at random positions.
+	Now accepts optional sparkle color from theme.
 ]]
-local function addSparkles(parent: GuiObject, count: number?)
+local function addSparkles(parent: GuiObject, count: number?, sparkleColor: Color3?)
 	count = count or 6
+	sparkleColor = sparkleColor or Color3.fromRGB(255, 255, 255)
 	for i = 1, count do
 		local sparkle = Instance.new("Frame")
 		sparkle.Name = "Sparkle" .. i
 		sparkle.Size = UDim2.fromOffset(3, 3)
 		sparkle.AnchorPoint = Vector2.new(0.5, 0.5)
 		sparkle.Position = UDim2.fromScale(math.random() * 0.8 + 0.1, math.random() * 0.8 + 0.1)
-		sparkle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		sparkle.BackgroundColor3 = sparkleColor
 		sparkle.BackgroundTransparency = 1
 		sparkle.BorderSizePixel = 0
 		sparkle.ZIndex = 3
@@ -294,12 +302,18 @@ function Components.CreateDimOverlay(parent: Instance, onClose: () -> ()): Frame
 end
 
 -- ═══════════════════════════════════════════════════════════════════
--- PANEL  (dark opaque bg + stud texture + coloured border + sunburst + glow)
+-- PANEL  (dark opaque bg + stud texture + coloured border + theme-specific animation)
+-- 4th param: themeName (optional) — e.g. "Shop", "Crate", "Spectate"
+-- Uses UIStyle to select unique background animation per panel.
 -- Returns: canvasGroup, uiScale, contentScroll, closeBtn
 -- ═══════════════════════════════════════════════════════════════════
 
-function Components.CreatePanel(parent: Instance, title: string, headerColor: Color3?)
-	headerColor = headerColor or C.HeaderShop
+function Components.CreatePanel(parent: Instance, title: string, headerColor: Color3?, themeName: string?)
+	-- Resolve theme from UIStyle (defaults to "Default" if not provided)
+	local theme = UIStyle.GetTheme(themeName or "Default")
+
+	-- Use theme accent if no explicit headerColor was passed
+	headerColor = headerColor or theme.accentColor or C.HeaderShop
 
 	-- Canvas root (dark, opaque)
 	local canvas = Instance.new("CanvasGroup")
@@ -334,14 +348,27 @@ function Components.CreatePanel(parent: Instance, title: string, headerColor: Co
 	-- Stud texture (visible on dark)
 	addStudTexture(canvas, S.PanelCorner)
 
-	-- Center glow (subtle bright pulse behind content)
-	addCenterGlow(canvas, headerColor)
+	-- Center glow (color + alpha from theme)
+	addCenterGlow(canvas, theme.glowColor, theme.glowAlpha, theme.glowSize)
 
-	-- Sunburst (rotating light rays)
-	addSunburst(canvas)
+	-- ─── THEME-SPECIFIC BACKGROUND ANIMATION ───
+	-- Instead of always sunburst+sparkles, each panel gets its own animation.
+	local bgAnim = theme.bgAnimation or "sunburst"
 
-	-- Sparkles (floating twinkle dots — reduced count for subtlety)
-	addSparkles(canvas, 6)
+	if bgAnim == "sunburst" then
+		-- Classic rotating light rays
+		addSunburst(canvas, theme.sunburstSpeed, theme.sunburstAlpha)
+		addSparkles(canvas, theme.sparkleCount, theme.sparkleColor)
+	elseif bgAnim == "none" then
+		-- Clean / minimal — no animated background (Settings)
+	else
+		-- Use UIStyle's animated variants (shimmer, waves, stars, bubbles)
+		UIStyle.ApplyBgAnimation(canvas, theme)
+		-- Still add themed sparkles for most panels (except "none")
+		if theme.sparkleCount and theme.sparkleCount > 0 then
+			addSparkles(canvas, theme.sparkleCount, theme.sparkleColor)
+		end
+	end
 
 	-- UIScale for open/close animation
 	local uiScale = Instance.new("UIScale")
@@ -428,6 +455,9 @@ function Components.CreatePanel(parent: Instance, title: string, headerColor: Co
 	cbStroke.Transparency = 0.35
 	cbStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	cbStroke.Parent = closeBtn
+
+	-- Close button hover/press feedback (via UIStyle)
+	UIStyle.WireCloseButton(closeBtn, theme)
 
 	-- Content scrolling area
 	local content = Instance.new("ScrollingFrame")
@@ -522,6 +552,8 @@ end
 
 -- ═══════════════════════════════════════════════════════════════════
 -- ITEM CARD  (dark bg, vibrant rarity border, glossy icon, white text)
+-- Now supports optional `image` field — shows ImageLabel when provided,
+-- falls back to text icon otherwise.
 -- ═══════════════════════════════════════════════════════════════════
 
 export type CardConfig = {
@@ -529,6 +561,7 @@ export type CardConfig = {
 	rarity: string,
 	iconColor: Color3,
 	iconText: string?,
+	image: string?,
 	locked: boolean?,
 	owned: boolean?,
 	equipped: boolean?,
@@ -601,21 +634,37 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		iconFrame.BackgroundColor3 = data.iconColor
 		addGloss(iconFrame, 0.48, 0.78)
 
-		local letter = Instance.new("TextLabel")
-		letter.Name = "Letter"
-		letter.Size = UDim2.fromScale(1, 1)
-		letter.BackgroundTransparency = 1
-		letter.Font = Enum.Font.GothamBold
-		letter.Text = displayText
-		letter.TextColor3 = Color3.fromRGB(255, 255, 255)
-		letter.TextSize = 34
-		letter.TextTransparency = 0.02
-		letter.Parent = iconFrame
-		local ls = Instance.new("UIStroke")
-		ls.Color = Color3.fromRGB(0, 0, 0)
-		ls.Thickness = 1.8
-		ls.Transparency = 0.2
-		ls.Parent = letter
+		-- Item image from ItemCatalog (preferred) or fallback to text icon
+		if data.image and data.image ~= "" then
+			local img = Instance.new("ImageLabel")
+			img.Name = "ItemImage"
+			img.Size = UDim2.new(1, -8, 1, -8)
+			img.Position = UDim2.fromOffset(4, 4)
+			img.BackgroundTransparency = 1
+			img.Image = data.image
+			img.ScaleType = Enum.ScaleType.Fit
+			img.ZIndex = 2
+			img.Parent = iconFrame
+			local ic = Instance.new("UICorner")
+			ic.CornerRadius = UDim.new(0, 8)
+			ic.Parent = img
+		else
+			local letter = Instance.new("TextLabel")
+			letter.Name = "Letter"
+			letter.Size = UDim2.fromScale(1, 1)
+			letter.BackgroundTransparency = 1
+			letter.Font = Enum.Font.GothamBold
+			letter.Text = displayText
+			letter.TextColor3 = Color3.fromRGB(255, 255, 255)
+			letter.TextSize = 34
+			letter.TextTransparency = 0.02
+			letter.Parent = iconFrame
+			local ls = Instance.new("UIStroke")
+			ls.Color = Color3.fromRGB(0, 0, 0)
+			ls.Thickness = 1.8
+			ls.Transparency = 0.2
+			ls.Parent = letter
+		end
 	end
 
 	-- Tag badge (POPULAR, EXCLUSIVE, VIP, etc.)
