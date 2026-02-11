@@ -16,28 +16,8 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
-if not Shared then
-	warn("[CrateShopPanel] Shared not found after 60s -- disabled")
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
-
-local CDPModule = Shared:WaitForChild("ClientDepsProvider", 60)
-if not CDPModule then
-	local _children = {}
-	for _, c in ipairs(Shared:GetChildren()) do table.insert(_children, c.Name.."("..c.ClassName..")") end
-	warn("[CrateShopPanel] ClientDepsProvider MISSING. Shared path:", Shared:GetFullName(), "| Shared children:", table.concat(_children, ", "))
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
-
-local ok, Deps = pcall(require, CDPModule)
-if not ok or not Deps then
-	warn("[CrateShopPanel] require(ClientDepsProvider) FAILED:", Deps)
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
+local Shared = ReplicatedStorage:WaitForChild("Shared", 5)
+local Deps = require(Shared.ClientDepsProvider)
 local UIConfig = Deps.UIConfig
 local ItemCatalog = Deps.ItemCatalog
 
@@ -75,18 +55,21 @@ local function populateCrates(content: ScrollingFrame)
 		})
 		section.LayoutOrder = i
 
+		-- Post-process: overlay crate image from ItemCatalog if available
 		local catEntry = crate.id and ItemCatalog.Get("Crates", crate.id) or nil
 		if catEntry then
 			local img = ItemCatalog.GetImage(catEntry)
 			if img ~= "" then
 				local iconArea = section:FindFirstChild("IconArea")
 				if iconArea then
+					-- Hide the default emoji TextLabel
 					for _, child in ipairs(iconArea:GetChildren()) do
 						if child:IsA("TextLabel") and child.Name ~= "Name" then
 							child.Visible = false
 							break
 						end
 					end
+					-- Add catalog image
 					local imgLabel = Instance.new("ImageLabel")
 					imgLabel.Name = "CrateImage"
 					imgLabel.Size = UDim2.new(1, -8, 0, 70)
@@ -115,6 +98,7 @@ function CrateShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	local content, closeBtn
 	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "📦 CRATE SHOP", C.HeaderCrate, "Crate")
 
+	-- Wire close button click (visual feedback handled by UIStyle.WireCloseButton in Components)
 	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()
 		CrateShopPanel.Hide()

@@ -17,33 +17,24 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 
-local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
+local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
 if not Shared then
-	warn("[IndexPanel] Shared not found after 60s -- disabled")
+	warn("[IndexPanel] ReplicatedStorage.Shared not found — panel disabled")
 	return { Init = function() end, Show = function() end, Hide = function() end,
 		IsVisible = function() return false end, Toggle = function() end }
 end
-
-local CDPModule = Shared:WaitForChild("ClientDepsProvider", 60)
+local CDPModule = Shared:WaitForChild("ClientDepsProvider", 10)
 if not CDPModule then
-	local _children = {}
-	for _, c in ipairs(Shared:GetChildren()) do table.insert(_children, c.Name.."("..c.ClassName..")") end
-	warn("[IndexPanel] ClientDepsProvider MISSING. Shared path:", Shared:GetFullName(), "| Shared children:", table.concat(_children, ", "))
+	warn("[IndexPanel] ClientDepsProvider not found — panel disabled")
 	return { Init = function() end, Show = function() end, Hide = function() end,
 		IsVisible = function() return false end, Toggle = function() end }
 end
-
-local ok, Deps = pcall(require, CDPModule)
-if not ok or not Deps then
-	warn("[IndexPanel] require(ClientDepsProvider) FAILED:", Deps)
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
+local Deps = require(CDPModule)
 local UIConfig = Deps.UIConfig
 local ItemCatalog = Deps.ItemCatalog
 
 if not UIConfig then
-	warn("[IndexPanel] UIConfig not available -- disabled")
+	warn("[IndexPanel] UIConfig not available — panel disabled")
 	return { Init = function() end, Show = function() end, Hide = function() end,
 		IsVisible = function() return false end, Toggle = function() end }
 end
@@ -99,6 +90,7 @@ local function ensureGrid()
 	end
 end
 
+-- Helper: read OwnedPets attribute → set of catalog IDs
 local function getOwnedPetSet(): { [string]: boolean }
 	local json = player:GetAttribute("OwnedPets") or "[]"
 	local ok, list = pcall(HttpService.JSONDecode, HttpService, json)
@@ -139,6 +131,7 @@ local function populatePets()
 	local allPets = ItemCatalog.GetAllPetsSorted()
 
 	if #allPets == 0 then
+		-- Placeholder so the tab never looks "broken" even if data is empty.
 		safeCall("CreateItemCard", Components.CreateItemCard, contentFrame, {
 			name = "No pets yet",
 			rarity = "Common",
@@ -192,6 +185,8 @@ function IndexPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		end)
 	end
 
+	-- Tab bar
+	-- NOTE: Pre-declare `setActiveTab` so the callback captures the local (Luau scoping).
 	local setActiveTab: ((number) -> ())? = nil
 	local tabBar
 	tabBar, setActiveTab = safeCall("CreateTabBar", Components.CreateTabBar, canvas, TABS, function(idx)
@@ -212,6 +207,7 @@ function IndexPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		tabBar.Size = UDim2.new(1, -20, 0, S.TabHeight + 8)
 	end
 
+	-- Shift content below tabs
 	if content then
 		content.Position = UDim2.new(0, 12, 0, S.PanelHeaderHeight + S.TabHeight + 18)
 		content.Size = UDim2.new(1, -24, 1, -(S.PanelHeaderHeight + S.TabHeight + 28))
@@ -223,6 +219,7 @@ function IndexPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end
 	showTab(1)
 
+	-- Listen for OwnedPets changes to auto-refresh if Pets tab is active
 	player:GetAttributeChangedSignal("OwnedPets"):Connect(function()
 		if visible and activeTab == 2 then showTab(2) end
 	end)

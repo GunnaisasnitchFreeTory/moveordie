@@ -3,14 +3,14 @@
 	Server-authoritative spin wheel logic.
 
 	Responsibilities:
-	  • Track per-player spin data (free spin timer, purchased spins)
-	  • Validate spin requests
-	  • Weighted RNG for reward selection (uses segment.weight)
-	  • Award rewards AFTER spin animation completes (pending spin system)
-	    – Coins → player "Coins" attribute
-	    – Pets  → player "OwnedPets" attribute (JSON array of catalog IDs)
-	  • Persist data via DataStore (with pcall fallback)
-	  • Grant spins purchased via Robux (called from ProcessReceipt)
+	  * Track per-player spin data (free spin timer, purchased spins)
+	  * Validate spin requests
+	  * Weighted RNG for reward selection (uses segment.weight)
+	  * Award rewards AFTER spin animation completes (pending spin system)
+	    – Coins → EconomyService.AwardCoins
+	    – Pets  → InventoryService.GrantItem
+	  * Persist spin data via DataStore (with pcall fallback)
+	  * Grant spins purchased via Robux (called from ProcessReceipt)
 
 	API:
 	  Init()
@@ -28,28 +28,80 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local ServerScriptService = game:GetService("ServerScriptService")
 
-local Shared = ReplicatedStorage:WaitForChild("Shared")
-local SpinWheelConfig = require(Shared:WaitForChild("SpinWheelConfig"))
-local ItemCatalog     = require(Shared:WaitForChild("ItemCatalog"))
+local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
+if not Shared then
+	warn("[SpinWheelService] ReplicatedStorage.Shared not found after 10s — spin wheel disabled")
+	return {
+		Init = function() end, OnPlayerJoined = function() end, OnPlayerLeaving = function() end,
+		GetPlayerData = function() return { freeSpinAvailable = false, nextFreeSpinTime = 0, purchasedSpins = 0 } end,
+		RequestSpin = function() return { success = false, reason = "Service unavailable" } end,
+		BuySpins = function() return { success = false, reason = "Service unavailable" } end,
+		GrantRobuxSpins = function() return false end, SaveAll = function() end,
+	}
+end
+
+local SpinWheelConfigModule = Shared:WaitForChild("SpinWheelConfig", 10)
+local SpinWheelConfig
+if SpinWheelConfigModule then
+	local ok, mod = pcall(require, SpinWheelConfigModule)
+	if ok then SpinWheelConfig = mod else warn("[SpinWheelService] SpinWheelConfig failed to load:", mod) end
+end
+if not SpinWheelConfig then
+	warn("[SpinWheelService] SpinWheelConfig not found — spin wheel will not function")
+	return {
+		Init = function() end, OnPlayerJoined = function() end, OnPlayerLeaving = function() end,
+		GetPlayerData = function() return { freeSpinAvailable = false, nextFreeSpinTime = 0, purchasedSpins = 0 } end,
+		RequestSpin = function() return { success = false, reason = "Config missing" } end,
+		BuySpins = function() return { success = false, reason = "Config missing" } end,
+		GrantRobuxSpins = function() return false end, SaveAll = function() end,
+	}
+end
+
+local ItemCatalogModule = Shared:WaitForChild("ItemCatalog", 10)
+local ItemCatalog
+if ItemCatalogModule then
+	local ok, mod = pcall(require, ItemCatalogModule)
+	if ok then ItemCatalog = mod else warn("[SpinWheelService] ItemCatalog failed to load:", mod) end
+end
+if not ItemCatalog then
+	warn("[SpinWheelService] ItemCatalog not found — pet rewards will use raw catalog IDs")
+	ItemCatalog = { GetPet = function() return nil end }
+end
 
 local spinDataStore = nil
 pcall(function()
 	spinDataStore = DataStoreService:GetDataStore("SpinWheelData_v1")
 end)
 
--- NOTE:
--- Server payout is deliberately delayed until the wheel finishes animating.
--- This must match the client wheel animation duration (currently `spinDuration = 11` in SpinWheelScript).
+local _EconomyService = nil
+local _InventoryService = nil
+
+local function getEconomyService()
+	if _EconomyService ~= nil then return _EconomyService end
+	local ok, mod = pcall(function()
+		local Server = ServerScriptService:WaitForChild("Server", 5)
+		return require(Server:WaitForChild("EconomyService", 5))
+	end)
+	if ok and mod then _EconomyService = mod else _EconomyService = false end
+	return _EconomyService
+end
+
+local function getInventoryService()
+	if _InventoryService ~= nil then return _InventoryService end
+	local ok, mod = pcall(function()
+		local Server = ServerScriptService:WaitForChild("Server", 5)
+		return require(Server:WaitForChild("InventoryService", 5))
+	end)
+	if ok and mod then _InventoryService = mod else _InventoryService = false end
+	return _InventoryService
+end
+
 local SPIN_DURATION_SECONDS = 11
 
--- In-memory cache: [userId] → { lastFreeSpinTime: number, purchasedSpins: number }
 local playerCache: { [number]: { lastFreeSpinTime: number, purchasedSpins: number } } = {}
-
--- Anti-spam: track players currently mid-spin
 local spinInProgress: { [number]: boolean } = {}
-
--- Pending spins: [userId] → pending record
 local pendingSpin: {
 	[number]: {
 		spinId: string,
@@ -74,54 +126,33 @@ local function isUnlimitedSpinsEnabled(): boolean
 end
 
 -- ═══════════════════════════════════════════
--- PET OWNERSHIP HELPERS
--- Pets are stored as a JSON array in player attribute "OwnedPets".
--- e.g. ["PUPPY_COMMON","CHICK_COMMON"]
+-- PET GRANT (delegates to InventoryService)
 -- ═══════════════════════════════════════════
-
-local function getOwnedPets(player: Player): { string }
-	local raw = player:GetAttribute("OwnedPets")
-	if raw and type(raw) == "string" and raw ~= "" then
-		local ok, list = pcall(function() return HttpService:JSONDecode(raw) end)
-		if ok and type(list) == "table" then
-			return list
-		end
-	end
-	return {}
-end
-
-local function setOwnedPets(player: Player, list: { string })
-	local json = HttpService:JSONEncode(list)
-	player:SetAttribute("OwnedPets", json)
-end
 
 local function grantPet(player: Player, catalogId: string)
-	local pets = getOwnedPets(player)
-	-- Allow duplicates (player can win the same pet twice); if you
-	-- prefer unique-only, add a check here.
-	table.insert(pets, catalogId)
-	setOwnedPets(player, pets)
-	log(string.format("PET GRANTED: %s now owns %s (total pets: %d)", player.Name, catalogId, #pets))
-end
-
--- Initialise a new player with default owned pets (matching UIConfig.MockPets owned=true)
-local function ensureDefaultPets(player: Player)
-	local pets = getOwnedPets(player)
-	if #pets == 0 then
-		-- Give starter pets so the Pets UI isn't empty on first login
-		local starters = { "CHICK_COMMON", "PUPPY_COMMON" }
-		setOwnedPets(player, starters)
-		log(player.Name .. " received starter pets: " .. table.concat(starters, ", "))
+	local IS = getInventoryService()
+	if IS and type(IS.GrantItem) == "function" then
+		IS.GrantItem(player, "Pets", catalogId)
+		log(string.format("PET GRANTED via InventoryService: %s → %s", player.Name, catalogId))
+	else
+		local raw = player:GetAttribute("OwnedPets")
+		local pets = {}
+		if raw and type(raw) == "string" and raw ~= "" then
+			local ok2, list = pcall(function() return HttpService:JSONDecode(raw) end)
+			if ok2 and type(list) == "table" then pets = list end
+		end
+		table.insert(pets, catalogId)
+		player:SetAttribute("OwnedPets", HttpService:JSONEncode(pets))
+		log(string.format("PET GRANTED via fallback: %s → %s (total: %d)", player.Name, catalogId, #pets))
 	end
 end
 
 -- ═══════════════════════════════════════════
--- DATA PERSISTENCE
+-- DATA PERSISTENCE (spin-specific)
 -- ═══════════════════════════════════════════
 
 local function loadData(userId: number): { lastFreeSpinTime: number, purchasedSpins: number }
 	local data = { lastFreeSpinTime = 0, purchasedSpins = 0 }
-
 	if spinDataStore then
 		local ok, saved = pcall(function()
 			return spinDataStore:GetAsync("SpinWheel_" .. tostring(userId))
@@ -131,13 +162,11 @@ local function loadData(userId: number): { lastFreeSpinTime: number, purchasedSp
 			data.purchasedSpins = saved.purchasedSpins or 0
 		end
 	end
-
 	return data
 end
 
 local function saveData(userId: number, data: { lastFreeSpinTime: number, purchasedSpins: number })
 	if not spinDataStore then return end
-
 	pcall(function()
 		spinDataStore:SetAsync("SpinWheel_" .. tostring(userId), {
 			lastFreeSpinTime = data.lastFreeSpinTime,
@@ -147,7 +176,7 @@ local function saveData(userId: number, data: { lastFreeSpinTime: number, purcha
 end
 
 -- ═══════════════════════════════════════════
--- WEIGHTED RNG  (uses segment.weight)
+-- WEIGHTED RNG
 -- ═══════════════════════════════════════════
 
 local function getRandomSegment(): number
@@ -156,7 +185,6 @@ local function getRandomSegment(): number
 	for _, seg in ipairs(segments) do
 		totalWeight = totalWeight + (seg.weight or seg.chance or 1)
 	end
-
 	local roll = math.random() * totalWeight
 	local cumulative = 0
 	for i, seg in ipairs(segments) do
@@ -165,7 +193,7 @@ local function getRandomSegment(): number
 			return i
 		end
 	end
-	return 1 -- fallback
+	return 1
 end
 
 local function clearPending(userId: number, reason: string?)
@@ -186,30 +214,26 @@ end
 function SpinWheelService.Init()
 	log("Initialized")
 	if isUnlimitedSpinsEnabled() then
-		log("DEBUG: Unlimited spins ENABLED (Studio or SpinWheelConfig.DEBUG_UNLIMITED_SPINS)")
+		log("DEBUG: Unlimited spins ENABLED")
 	end
 end
 
 function SpinWheelService.OnPlayerJoined(player: Player)
 	local data = loadData(player.UserId)
 	playerCache[player.UserId] = data
-	ensureDefaultPets(player)
 	log(string.format("%s loaded — lastFreeSpin: %d, purchasedSpins: %d",
 		player.Name, data.lastFreeSpinTime, data.purchasedSpins))
 end
 
 function SpinWheelService.OnPlayerLeaving(player: Player)
 	local userId = player.UserId
-
-	-- Cleanup pending spin so no delayed payout can occur after leaving
 	clearPending(userId, "PlayerLeaving")
-
 	local data = playerCache[userId]
 	if data then
 		saveData(userId, data)
 		playerCache[userId] = nil
 		spinInProgress[userId] = nil
-		log(player.Name .. " data saved")
+		log(player.Name .. " spin data saved")
 	end
 end
 
@@ -233,9 +257,6 @@ function SpinWheelService.GetPlayerData(player: Player): { freeSpinAvailable: bo
 	local freeAvailable = elapsed >= SpinWheelConfig.FREE_SPIN_COOLDOWN
 	local nextFreeTime = freeAvailable and 0 or (data.lastFreeSpinTime + SpinWheelConfig.FREE_SPIN_COOLDOWN - now)
 
-	log(string.format("Status for %s: freeReady=%s, nextFree=%ds, purchased=%d",
-		player.Name, tostring(freeAvailable), math.max(0, nextFreeTime), data.purchasedSpins))
-
 	return {
 		freeSpinAvailable = freeAvailable,
 		nextFreeSpinTime = math.max(0, nextFreeTime),
@@ -248,25 +269,19 @@ function SpinWheelService.RequestSpin(player: Player)
 
 	local userId = player.UserId
 
-	-- Anti-spam: prevent concurrent spins
 	if spinInProgress[userId] then
-		log(player.Name .. " — DENIED: spin already in progress")
 		return { success = false, reason = "Spin already in progress" }
 	end
-
 	if pendingSpin[userId] then
-		log(player.Name .. " — DENIED: pending spin exists")
 		return { success = false, reason = "Spin already in progress" }
 	end
 
 	local data = playerCache[userId]
 	if not data then
-		log(player.Name .. " — DENIED: data not loaded")
 		return { success = false, reason = "Data not loaded" }
 	end
 
 	local debugUnlimited = isUnlimitedSpinsEnabled()
-
 	local now = os.time()
 	local hasFree = (now - data.lastFreeSpinTime) >= SpinWheelConfig.FREE_SPIN_COOLDOWN
 	local hasPurchased = data.purchasedSpins > 0
@@ -276,19 +291,12 @@ function SpinWheelService.RequestSpin(player: Player)
 		hasPurchased = true
 	end
 
-	log(string.format("  %s — hasFree: %s (elapsed: %ds), hasPurchased: %s (%d)%s",
-		player.Name, tostring(hasFree), now - data.lastFreeSpinTime, tostring(hasPurchased), data.purchasedSpins,
-		debugUnlimited and " [DEBUG unlimited]" or ""))
-
 	if not hasFree and not hasPurchased then
-		log(player.Name .. " — DENIED: no spins available")
 		return { success = false, reason = "No spins available" }
 	end
 
-	-- Mark spin in progress
 	spinInProgress[userId] = true
 
-	-- Consume spin
 	local spinType = "free"
 	if debugUnlimited then
 		spinType = "debug"
@@ -301,16 +309,14 @@ function SpinWheelService.RequestSpin(player: Player)
 		end
 	end
 
-	-- RNG
 	local segIndex = getRandomSegment()
 	local segment = SpinWheelConfig.Segments[segIndex]
-	local rewardType = segment.reward -- "Coins" or "Pet"
+	local rewardType = segment.reward
 	local rewardName = segment.name
 	local coinsToAward = segment.amount or 0
-	local catalogId = segment.catalogId -- nil for Coins segments
+	local catalogId = segment.catalogId
 	local rarity = segment.rarity or "Common"
 
-	-- Build display-friendly reward name
 	if rewardType == "Pet" and catalogId then
 		local petInfo = ItemCatalog.GetPet(catalogId)
 		if petInfo then
@@ -333,26 +339,14 @@ function SpinWheelService.RequestSpin(player: Player)
 		grantAtTime = grantAtTime,
 	}
 
-	log(string.format(
-		"APPROVED (PENDING) spinId=%s player=%s segment=%d (%s) rewardType=%s catalogId=%s amount=%d grantIn=%ds [%s spin]",
-		spinId, player.Name, segIndex, rewardName, rewardType, tostring(catalogId), coinsToAward, SPIN_DURATION_SECONDS, spinType
-	))
-
-	-- Save
 	if not debugUnlimited then
-		task.spawn(function()
-			saveData(userId, data)
-		end)
+		task.spawn(function() saveData(userId, data) end)
 	end
 
-	-- Schedule server-side payout after the spin animation duration.
 	task.delay(SPIN_DURATION_SECONDS, function()
 		local pending = pendingSpin[userId]
-		if not pending or pending.spinId ~= spinId then
-			return
-		end
+		if not pending or pending.spinId ~= spinId then return end
 
-		-- Remove pending first
 		pendingSpin[userId] = nil
 
 		local livePlayer = Players:GetPlayerByUserId(userId)
@@ -361,22 +355,18 @@ function SpinWheelService.RequestSpin(player: Player)
 			return
 		end
 
-		-- Grant reward based on type
 		if pending.rewardType == "Pet" and pending.catalogId then
-			-- Grant pet ownership
 			grantPet(livePlayer, pending.catalogId)
-			log(string.format(
-				"GRANTED (AFTER SPIN) spinId=%s Pet=%s to %s",
-				spinId, pending.catalogId, livePlayer.Name
-			))
 		else
-			-- Grant coins
-			local currentCoins = livePlayer:GetAttribute("Coins") or 0
-			livePlayer:SetAttribute("Coins", currentCoins + pending.coinsAwarded)
-			log(string.format(
-				"GRANTED (AFTER SPIN) spinId=%s %s to %s (+%d Fate Coins, balance: %d → %d)",
-				spinId, pending.rewardName, livePlayer.Name, pending.coinsAwarded, currentCoins, currentCoins + pending.coinsAwarded
-			))
+			local ES = getEconomyService()
+			if ES and type(ES.AwardCoins) == "function" then
+				ES.AwardCoins(livePlayer, pending.coinsAwarded, "SpinWheel")
+			else
+				local currentCoins = livePlayer:GetAttribute("Coins") or 0
+				livePlayer:SetAttribute("Coins", currentCoins + pending.coinsAwarded)
+			end
+			log(string.format("GRANTED spinId=%s %s to %s (+%d coins)",
+				spinId, pending.rewardName, livePlayer.Name, pending.coinsAwarded))
 		end
 
 		spinInProgress[userId] = nil
@@ -405,20 +395,25 @@ function SpinWheelService.BuySpins(player: Player, packageIndex: number): { succ
 		return { success = false, reason = "Invalid package" }
 	end
 
-	-- Deduct Fate Coins
-	local currentCoins = player:GetAttribute("Coins") or 0
-	if currentCoins < pkg.coins then
-		return { success = false, reason = "Not enough Fate Coins" }
+	local ES = getEconomyService()
+	if ES and type(ES.DeductCoins) == "function" then
+		local ok = ES.DeductCoins(player, pkg.coins, "BuySpins")
+		if not ok then
+			return { success = false, reason = "Not enough Fate Coins" }
+		end
+	else
+		local currentCoins = player:GetAttribute("Coins") or 0
+		if currentCoins < pkg.coins then
+			return { success = false, reason = "Not enough Fate Coins" }
+		end
+		player:SetAttribute("Coins", currentCoins - pkg.coins)
 	end
 
-	player:SetAttribute("Coins", currentCoins - pkg.coins)
 	data.purchasedSpins = data.purchasedSpins + pkg.spins
 
-	task.spawn(function()
-		saveData(player.UserId, data)
-	end)
+	task.spawn(function() saveData(player.UserId, data) end)
 
-	log(string.format("Bought spins with coins: option=%d, cost=%d, spins=+%d, newPurchased=%d (player=%s)",
+	log(string.format("Bought spins: option=%d cost=%d spins=+%d total=%d player=%s",
 		packageIndex, pkg.coins, pkg.spins, data.purchasedSpins, player.Name))
 
 	return {
@@ -427,8 +422,6 @@ function SpinWheelService.BuySpins(player: Player, packageIndex: number): { succ
 	}
 end
 
---- Grant spins from a Robux Developer Product purchase.
---- Called by SpinWheelBootstrap's ProcessReceipt handler.
 function SpinWheelService.GrantRobuxSpins(player: Player, spinsToAdd: number): boolean
 	local data = playerCache[player.UserId]
 	if not data then
@@ -438,11 +431,9 @@ function SpinWheelService.GrantRobuxSpins(player: Player, spinsToAdd: number): b
 
 	data.purchasedSpins = data.purchasedSpins + spinsToAdd
 
-	task.spawn(function()
-		saveData(player.UserId, data)
-	end)
+	task.spawn(function() saveData(player.UserId, data) end)
 
-	log(string.format("Robux purchase granted: spins=+%d, newPurchased=%d (player=%s)",
+	log(string.format("Robux spins granted: +%d total=%d player=%s",
 		spinsToAdd, data.purchasedSpins, player.Name))
 
 	return true
@@ -452,7 +443,7 @@ function SpinWheelService.SaveAll()
 	for userId, data in pairs(playerCache) do
 		saveData(userId, data)
 	end
-	log("All player data saved")
+	log("All spin data saved")
 end
 
 return SpinWheelService

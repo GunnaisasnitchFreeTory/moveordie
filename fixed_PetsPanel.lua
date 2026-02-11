@@ -18,33 +18,24 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 
-local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
+local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
 if not Shared then
-	warn("[PetsPanel] Shared not found after 60s -- disabled")
+	warn("[PetsPanel] ReplicatedStorage.Shared not found — panel disabled")
 	return { Init = function() end, Show = function() end, Hide = function() end,
 		IsVisible = function() return false end, Toggle = function() end }
 end
-
-local CDPModule = Shared:WaitForChild("ClientDepsProvider", 60)
+local CDPModule = Shared:WaitForChild("ClientDepsProvider", 10)
 if not CDPModule then
-	local _children = {}
-	for _, c in ipairs(Shared:GetChildren()) do table.insert(_children, c.Name.."("..c.ClassName..")") end
-	warn("[PetsPanel] ClientDepsProvider MISSING. Shared path:", Shared:GetFullName(), "| Shared children:", table.concat(_children, ", "))
+	warn("[PetsPanel] ClientDepsProvider not found — panel disabled")
 	return { Init = function() end, Show = function() end, Hide = function() end,
 		IsVisible = function() return false end, Toggle = function() end }
 end
-
-local ok, Deps = pcall(require, CDPModule)
-if not ok or not Deps then
-	warn("[PetsPanel] require(ClientDepsProvider) FAILED:", Deps)
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
+local Deps = require(CDPModule)
 local UIConfig = Deps.UIConfig
 local ItemCatalog = Deps.ItemCatalog
 
 if not UIConfig then
-	warn("[PetsPanel] UIConfig not available -- disabled")
+	warn("[PetsPanel] UIConfig not available — panel disabled")
 	return { Init = function() end, Show = function() end, Hide = function() end,
 		IsVisible = function() return false end, Toggle = function() end }
 end
@@ -69,6 +60,7 @@ local equippedId: string? = nil
 
 local PetsPanel = {}
 
+-- Helper: read OwnedPets attribute → set of catalog IDs
 local function getOwnedPetSet(): { [string]: boolean }
 	local json = player:GetAttribute("OwnedPets") or "[]"
 	local ok, list = pcall(HttpService.JSONDecode, HttpService, json)
@@ -141,11 +133,13 @@ function PetsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 
 	Components.AddGridLayout(content)
 
+	-- Wire close button click (visual feedback handled by UIStyle.WireCloseButton in Components)
 	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()
 		PetsPanel.Hide()
 	end)
 
+	-- Listen for OwnedPets attribute changes to auto-refresh
 	player:GetAttributeChangedSignal("OwnedPets"):Connect(function()
 		if visible then refresh() end
 	end)

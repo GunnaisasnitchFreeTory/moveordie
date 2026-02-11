@@ -3,11 +3,47 @@
 	Initializes all client-side controllers.
 	Each require is wrapped in pcall so one failing controller
 	does not break the others.
+
+	Boot order:
+	  0. game.Loaded
+	  1. ClientDepsProvider.WaitUntilReady(5) — one signal for all deps
+	  2. SpectateController
+	  3. StormFXController
+	  4. UIController (panels use cached deps — instant)
 ]]
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Client = script
 
-print("[Client] Initializing...")
+local _bootTime = tick()
+local function ts() return string.format("%.3f", tick() - _bootTime) end
+
+print(string.format("[UIBoot] t=%s Client init starting", ts()))
+
+-- 0. Wait for game to load (assets replicated)
+if not game:IsLoaded() then
+	game.Loaded:Wait()
+end
+print(string.format("[UIBoot] t=%s Loaded", ts()))
+
+-- 0b. Pre-load ClientDepsProvider (populates shared deps once for all panels)
+local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
+if Shared then
+	local cdpMod = Shared:FindFirstChild("ClientDepsProvider")
+	if cdpMod then
+		local cdpOk, CDP = pcall(require, cdpMod)
+		if cdpOk and CDP and CDP.WaitUntilReady then
+			local depsOk = CDP.WaitUntilReady(5)
+			print(string.format("[UIBoot] t=%s DepsReady=%s", ts(), tostring(depsOk)))
+		else
+			warn(string.format("[UIBoot] t=%s ClientDepsProvider require failed: %s", ts(), tostring(CDP)))
+		end
+	else
+		warn(string.format("[UIBoot] t=%s ClientDepsProvider not in Shared", ts()))
+	end
+else
+	warn(string.format("[UIBoot] t=%s Shared folder not found", ts()))
+end
 
 -- 1. SpectateController (self-executing on require)
 local spectateOk, spectateErr = pcall(function()
@@ -30,15 +66,15 @@ else
 	warn("[Client] StormFXController FAILED:", stormErr)
 end
 
--- 3. UIController (has Init method)
+-- 3. UIController (has Init method — panels use cached deps)
 local uiOk, uiErr = pcall(function()
 	local UIController = require(Client:WaitForChild("UIController"))
 	UIController.Init()
 end)
 if uiOk then
-	print("[Client] UIController loaded OK")
+	print(string.format("[UIBoot] t=%s UIController READY", ts()))
 else
-	warn("[Client] UIController FAILED:", uiErr)
+	warn(string.format("[UIBoot] t=%s UIController FAILED: %s", ts(), tostring(uiErr)))
 end
 
-print("[Client] Init complete")
+print(string.format("[Client] Init complete (t=%s)", ts()))

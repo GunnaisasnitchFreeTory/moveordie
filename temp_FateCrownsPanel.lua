@@ -13,28 +13,8 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
-if not Shared then
-	warn("[FateCrownsPanel] Shared not found after 60s -- disabled")
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
-
-local CDPModule = Shared:WaitForChild("ClientDepsProvider", 60)
-if not CDPModule then
-	local _children = {}
-	for _, c in ipairs(Shared:GetChildren()) do table.insert(_children, c.Name.."("..c.ClassName..")") end
-	warn("[FateCrownsPanel] ClientDepsProvider MISSING. Shared path:", Shared:GetFullName(), "| Shared children:", table.concat(_children, ", "))
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
-
-local ok, Deps = pcall(require, CDPModule)
-if not ok or not Deps then
-	warn("[FateCrownsPanel] require(ClientDepsProvider) FAILED:", Deps)
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
+local Shared = ReplicatedStorage:WaitForChild("Shared", 5)
+local Deps = require(Shared.ClientDepsProvider)
 local UIConfig = Deps.UIConfig
 local ItemCatalog = Deps.ItemCatalog
 
@@ -126,6 +106,7 @@ function FateCrownsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 
 	Components.AddGridLayout(content)
 
+	-- Wire close button click (visual feedback handled by UIStyle.WireCloseButton in Components)
 	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()
 		FateCrownsPanel.Hide()

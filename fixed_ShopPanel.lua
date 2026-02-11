@@ -14,28 +14,19 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
+local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
 if not Shared then
-	warn("[ShopPanel] Shared not found after 60s -- disabled")
+	warn("[ShopPanel] ReplicatedStorage.Shared not found — panel disabled")
 	return { Init = function() end, Show = function() end, Hide = function() end,
 		IsVisible = function() return false end, Toggle = function() end }
 end
-
-local CDPModule = Shared:WaitForChild("ClientDepsProvider", 60)
+local CDPModule = Shared:WaitForChild("ClientDepsProvider", 10)
 if not CDPModule then
-	local _children = {}
-	for _, c in ipairs(Shared:GetChildren()) do table.insert(_children, c.Name.."("..c.ClassName..")") end
-	warn("[ShopPanel] ClientDepsProvider MISSING. Shared path:", Shared:GetFullName(), "| Shared children:", table.concat(_children, ", "))
+	warn("[ShopPanel] ClientDepsProvider not found — panel disabled")
 	return { Init = function() end, Show = function() end, Hide = function() end,
 		IsVisible = function() return false end, Toggle = function() end }
 end
-
-local ok, Deps = pcall(require, CDPModule)
-if not ok or not Deps then
-	warn("[ShopPanel] require(ClientDepsProvider) FAILED:", Deps)
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
+local Deps = require(CDPModule)
 local UIConfig = Deps.UIConfig
 local ItemCatalog = Deps.ItemCatalog
 
@@ -64,6 +55,7 @@ local CATEGORIES = {
 
 local ShopPanel = {}
 
+-- Track warned IDs so we only warn once per missing catalog entry
 local _warnedMissing = {}
 
 local function clearCards()
@@ -72,6 +64,8 @@ local function clearCards()
 	end
 end
 
+-- Resolve the Fate Coin image once at module load.
+-- Uses the canonical Currency.FATE_COINS entry as the single source of truth.
 local _fateCoinImage: string = ""
 do
 	local entry = ItemCatalog.Get and ItemCatalog.Get("Currency", "FATE_COINS") or nil
@@ -96,14 +90,23 @@ do
 	end
 end
 
+--[[
+	fixCoinCardLayout: post-process a Currency card's ItemImage so the
+	Fate Coin image visually fills the Icon frame at the correct scale.
+
+	Icon frame is left UNCHANGED — only the ItemImage (ImageLabel) inside
+	it is configured.  No UIAspectRatioConstraint or UIScale added.
+]]
 local _coinLayoutLogged = false
 
 local function fixCoinCardLayout(card: Frame, imageId: string)
 	local iconFrame = card:FindFirstChild("Icon")
 	if not iconFrame then return end
 
+	-- ── ItemImage: configure to fill Icon at the correct visual scale ──
 	local imgLabel = iconFrame:FindFirstChild("ItemImage")
 	if not imgLabel or not imgLabel:IsA("ImageLabel") then
+		-- Safety net: inject if Components didn't create one
 		local letterLabel = iconFrame:FindFirstChild("Letter")
 		if letterLabel then letterLabel.Visible = false end
 
@@ -113,6 +116,7 @@ local function fixCoinCardLayout(card: Frame, imageId: string)
 		imgLabel.Parent = iconFrame
 	end
 
+	-- Exact properties from the playtest-verified reference
 	imgLabel.BackgroundTransparency = 1
 	imgLabel.ImageTransparency      = 0
 	imgLabel.AnchorPoint            = Vector2.new(0.25, 0.25)
@@ -125,17 +129,21 @@ local function fixCoinCardLayout(card: Frame, imageId: string)
 		imgLabel.Image = imageId
 	end
 
+	-- Remove any UIAspectRatioConstraint or UIScale on the ImageLabel
+	-- (must not be present per spec)
 	for _, child in ipairs(imgLabel:GetChildren()) do
 		if child:IsA("UIAspectRatioConstraint") or child:IsA("UIScale") then
 			child:Destroy()
 		end
 	end
 
+	-- Hide fallback Letter text (do not delete)
 	local letterLabel = iconFrame:FindFirstChild("Letter")
 	if letterLabel then
 		letterLabel.Visible = false
 	end
 
+	-- One-time debug log
 	if not _coinLayoutLogged then
 		_coinLayoutLogged = true
 		print(string.format(
@@ -148,6 +156,7 @@ end
 local function populateCards(filterType: string)
 	clearCards()
 
+	-- Ensure grid layout exists (or recreate)
 	if not contentFrame:FindFirstChildOfClass("UIGridLayout") then
 		Components.AddGridLayout(contentFrame)
 	end
@@ -158,12 +167,16 @@ local function populateCards(filterType: string)
 			order += 1
 			local actionText = string.format("R$ %d", item.robux)
 
+			-- Look up ItemCatalog.Premium for metadata + iconText
 			local catEntry = ItemCatalog.Get("Premium", item.id)
 			if not catEntry and not _warnedMissing[item.id] then
 				_warnedMissing[item.id] = true
 				warn(string.format("[ShopPanel] No ItemCatalog.Premium entry for '%s' — using placeholder", item.id))
 			end
 
+			-- Resolve the card image.
+			-- Currency items: always use the canonical FATE_COINS image.
+			-- Other types: use the per-item Premium entry image.
 			local catalogImage: string
 			if filterType == "Currency" then
 				catalogImage = _fateCoinImage
@@ -190,6 +203,7 @@ local function populateCards(filterType: string)
 			})
 			card.LayoutOrder = order
 
+			-- Post-process: fix ItemImage for Currency cards only
 			if filterType == "Currency" and catalogImage ~= "" then
 				fixCoinCardLayout(card, catalogImage)
 			end

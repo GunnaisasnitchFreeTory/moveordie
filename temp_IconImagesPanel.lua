@@ -12,28 +12,8 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
-if not Shared then
-	warn("[IconImagesPanel] Shared not found after 60s -- disabled")
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
-
-local CDPModule = Shared:WaitForChild("ClientDepsProvider", 60)
-if not CDPModule then
-	local _children = {}
-	for _, c in ipairs(Shared:GetChildren()) do table.insert(_children, c.Name.."("..c.ClassName..")") end
-	warn("[IconImagesPanel] ClientDepsProvider MISSING. Shared path:", Shared:GetFullName(), "| Shared children:", table.concat(_children, ", "))
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
-
-local ok, Deps = pcall(require, CDPModule)
-if not ok or not Deps then
-	warn("[IconImagesPanel] require(ClientDepsProvider) FAILED:", Deps)
-	return { Init = function() end, Show = function() end, Hide = function() end,
-		IsVisible = function() return false end, Toggle = function() end }
-end
+local Shared = ReplicatedStorage:WaitForChild("Shared", 5)
+local Deps = require(Shared.ClientDepsProvider)
 local UIConfig = Deps.UIConfig
 local ItemCatalog = Deps.ItemCatalog
 
@@ -54,6 +34,7 @@ local closeCallback: (() -> ())? = nil
 
 local IconImagesPanel = {}
 
+-- Rarity -> UIConfig Color mapping (for icon placeholder cards)
 local RARITY_COLORS = {
 	Common    = C.Common,
 	Uncommon  = C.Uncommon,
@@ -62,6 +43,7 @@ local RARITY_COLORS = {
 	Legendary = C.Legendary,
 }
 
+-- Fallback icons if ItemCatalog has no Icons entries
 local FALLBACK_ICONS = {
 	{ name = "???", iconText = "🖼", rarity = "Common" },
 	{ name = "???", iconText = "🖼", rarity = "Uncommon" },
@@ -82,6 +64,7 @@ local function populateGrid()
 		if child:IsA("Frame") then child:Destroy() end
 	end
 
+	-- Use ItemCatalog icons if available, else fall back to local placeholders
 	local icons = {}
 	if ItemCatalog.GetAllIconsSorted then
 		icons = ItemCatalog.GetAllIconsSorted()
@@ -120,6 +103,7 @@ function IconImagesPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 
 	Components.AddGridLayout(content)
 
+	-- Wire close button click (visual feedback handled by UIStyle.WireCloseButton in Components)
 	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()
 		IconImagesPanel.Hide()

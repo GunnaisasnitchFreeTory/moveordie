@@ -1,25 +1,20 @@
 --[[
 	HUDPanel
 	Always-visible heads-up display:
-	  • Coin counter (top-left) — glossy capsule, gold "F" icon
-	  • Round badge (top-center) — shows "Lobby" / "Round X" / "Results"
-	  • Timer label (below round badge) — shows seconds left
-	  • 2×4 sidebar grid (left) — Shop, Crowns, Pets, Index,
+	  * Coin counter (top-left) -- glossy capsule, gold "F" icon
+	  * Round badge (top-center) -- shows "Lobby" / "Round X" / "Results"
+	  * Timer label (below round badge) -- shows seconds left
+	  * 2x4 sidebar grid (left) -- Shop, Crowns, Pets, Index,
 	    Spectate, Settings, AFK toggle, Icon Images
-	  • Intermission bar (top-center) — single bright horizontal pill
+	  * Intermission bar (top-center) -- single bright horizontal pill
 	    REPLACES the round badge during intermission (no duplicate!)
 
 	KEY FIX: During intermission, the round badge + state label HIDE,
 	and a single horizontal bar shows "Game starting in X".
 	When playing, the bar hides and round badge returns.
 
-	FIX: Intermission bar stud texture now uses a BRIGHTER color
-	(light blue-white) and lower transparency so the studs are
-	actually visible on the blue gradient background.
-
-	FIX: SetBannerOverrideHidden allows other panels (e.g. SpinWheel)
-	to temporarily hide the intermission banner without stopping the
-	countdown logic.
+	FIX: SetBannerOverrideHidden hides ALL top-center banners
+	(intermission bar + round badge + timer) when a panel is open.
 
 	Used by: UIController
 ]]
@@ -29,8 +24,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
-local Shared = ReplicatedStorage:WaitForChild("Shared")
-local UIConfig = require(Shared:WaitForChild("UIConfig"))
+local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
+local UIConfig = require(Shared:WaitForChild("UIConfig", 10))
 
 local Client = script.Parent
 local AnimUtil   = require(Client:WaitForChild("AnimUtil"))
@@ -71,7 +66,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	onAFK: () -> (),
 	onIcons: () -> (),
 })
-	-- ────────── COIN COUNTER (glossy capsule) ──────────
+	-- COIN COUNTER (glossy capsule)
 	local coinFrame = Instance.new("Frame")
 	coinFrame.Name = "CoinFrame"
 	coinFrame.AnchorPoint = Vector2.new(0, 0)
@@ -93,7 +88,6 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	coinStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	coinStroke.Parent = coinFrame
 
-	-- Color-based gradient
 	local coinGrad = Instance.new("UIGradient")
 	coinGrad.Color = ColorSequence.new({
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(58, 65, 100)),
@@ -103,10 +97,8 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	coinGrad.Rotation = 90
 	coinGrad.Parent = coinFrame
 
-	-- Stud texture on coin frame
 	Components.AddStudTexture(coinFrame, S.HudCoinH / 2)
 
-	-- Drop shadow (softer)
 	local coinShadow = Instance.new("Frame")
 	coinShadow.Name = "Shadow"
 	coinShadow.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -124,7 +116,6 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	coinScale = Instance.new("UIScale")
 	coinScale.Parent = coinFrame
 
-	-- Gold circle with bold "F" for Fate Coins
 	local coinIcon = Instance.new("TextLabel")
 	coinIcon.Name = "CoinIcon"
 	coinIcon.Size = UDim2.fromOffset(36, 36)
@@ -165,7 +156,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	clStroke.Transparency = 0.15
 	clStroke.Parent = coinLabel
 
-	-- ────────── ROUND BADGE (top-center, glossy pill) ──────────
+	-- ROUND BADGE (top-center, glossy pill)
 	roundFrame = Instance.new("Frame")
 	roundFrame.Name = "RoundFrame"
 	roundFrame.AnchorPoint = Vector2.new(0.5, 0)
@@ -185,7 +176,6 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	rStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	rStroke.Parent = roundFrame
 
-	-- Color-based gradient
 	local rGrad = Instance.new("UIGradient")
 	rGrad.Color = ColorSequence.new({
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 208, 98)),
@@ -195,7 +185,6 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	rGrad.Rotation = 90
 	rGrad.Parent = roundFrame
 
-	-- Stud texture on round badge
 	Components.AddStudTexture(roundFrame, S.HudRoundH / 2)
 
 	local rShadow = Instance.new("Frame")
@@ -228,7 +217,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	rlStroke.Transparency = 0.15
 	rlStroke.Parent = roundLabel
 
-	-- ────────── STATE LABEL (timer, below round badge) ──────────
+	-- STATE LABEL (timer, below round badge)
 	stateLabel = Instance.new("TextLabel")
 	stateLabel.Name = "StateLabel"
 	stateLabel.AnchorPoint = Vector2.new(0.5, 0)
@@ -246,7 +235,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	slStroke.Transparency = 0.22
 	slStroke.Parent = stateLabel
 
-	-- ────────── INTERMISSION BAR (single bright horizontal pill) ──────────
+	-- INTERMISSION BAR (single bright horizontal pill)
 	intermissionBar = Instance.new("Frame")
 	intermissionBar.Name = "IntermissionBar"
 	intermissionBar.AnchorPoint = Vector2.new(0.5, 0)
@@ -263,7 +252,6 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	ibCorner.CornerRadius = UDim.new(0, S.IntermissionCorner)
 	ibCorner.Parent = intermissionBar
 
-	-- Bright glossy gradient
 	local ibGrad = Instance.new("UIGradient")
 	ibGrad.Color = ColorSequence.new({
 		ColorSequenceKeypoint.new(0, C.IntermissionBg2),
@@ -273,17 +261,14 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	ibGrad.Rotation = 90
 	ibGrad.Parent = intermissionBar
 
-	-- Stud texture on intermission bar — VISIBLE on blue bg
-	-- (default global stud is dark/invisible on blue, so we customize here)
 	Components.AddStudTexture(intermissionBar, S.IntermissionCorner)
 	local ibStud = intermissionBar:FindFirstChild("StudTexture")
 	if ibStud then
-		ibStud.ImageColor3 = Color3.fromRGB(200, 225, 255) -- light blue-white: pops on blue gradient
-		ibStud.ImageTransparency = 0.72                      -- noticeably more visible (default is 0.82)
-		ibStud.ZIndex = 10                                   -- above bg, below text (ZIndex 11)
+		ibStud.ImageColor3 = Color3.fromRGB(200, 225, 255)
+		ibStud.ImageTransparency = 0.72
+		ibStud.ZIndex = 10
 	end
 
-	-- Border (refined — matches round badge)
 	local ibStroke = Instance.new("UIStroke")
 	ibStroke.Color = Color3.fromRGB(255, 218, 115)
 	ibStroke.Thickness = 2.5
@@ -291,7 +276,6 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	ibStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	ibStroke.Parent = intermissionBar
 
-	-- Drop shadow
 	local ibShadow = Instance.new("Frame")
 	ibShadow.Name = "Shadow"
 	ibShadow.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -309,7 +293,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	local ibScale = Instance.new("UIScale")
 	ibScale.Parent = intermissionBar
 
-	-- Intermission text
+	-- Intermission text (initial "--" until server countdown arrives)
 	intermissionLabel = Instance.new("TextLabel")
 	intermissionLabel.Name = "IntermissionText"
 	intermissionLabel.Size = UDim2.fromScale(1, 1)
@@ -317,7 +301,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	intermissionLabel.Font = Enum.Font.GothamBold
 	intermissionLabel.TextColor3 = C.IntermissionText
 	intermissionLabel.TextSize = 24
-	intermissionLabel.Text = "Game starting in 10"
+	intermissionLabel.Text = "--"
 	intermissionLabel.ZIndex = 11
 	intermissionLabel.Parent = intermissionBar
 	local ibls = Instance.new("UIStroke")
@@ -326,7 +310,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	ibls.Transparency = 0.2
 	ibls.Parent = intermissionLabel
 
-	-- ────────── 2×4 SIDEBAR GRID (glossy, vibrant) ──────────
+	-- 2x4 SIDEBAR GRID (glossy, vibrant)
 	local SIDEBAR_ROWS = 4
 	local sidebarBg = Instance.new("Frame")
 	sidebarBg.Name = "SidebarBg"
@@ -351,7 +335,6 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	sbgStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	sbgStroke.Parent = sidebarBg
 
-	-- Stud texture on sidebar backdrop
 	Components.AddStudTexture(sidebarBg, 18)
 
 	local sidebar = Instance.new("Frame")
@@ -373,27 +356,22 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	sGrid.SortOrder = Enum.SortOrder.LayoutOrder
 	sGrid.Parent = sidebar
 
-	-- 8 buttons in 2×4 grid
-	Components.CreateSideButton(sidebar, "Shop",     "💎", C.SideShop,     1, function() if callbacks.onShop then callbacks.onShop() end end)
-	Components.CreateSideButton(sidebar, "Crowns",   "👑", C.SideCrowns,   2, function() if callbacks.onCrowns then callbacks.onCrowns() end end)
-	Components.CreateSideButton(sidebar, "Pets",     "🐾", C.SidePets,     3, function() if callbacks.onPets then callbacks.onPets() end end)
-	Components.CreateSideButton(sidebar, "Index",    "📖", C.SideIndex,    4, function() if callbacks.onIndex then callbacks.onIndex() end end)
-	Components.CreateSideButton(sidebar, "Spectate", "👁", C.SideSpectate, 5, function() if callbacks.onSpectate then callbacks.onSpectate() end end)
-	Components.CreateSideButton(sidebar, "Settings", "⚙",  C.SideSettings, 6, function() if callbacks.onSettings then callbacks.onSettings() end end)
+	Components.CreateSideButton(sidebar, "Shop",     "\xF0\x9F\x92\x8E", C.SideShop,     1, function() if callbacks.onShop then callbacks.onShop() end end)
+	Components.CreateSideButton(sidebar, "Crowns",   "\xF0\x9F\x91\x91", C.SideCrowns,   2, function() if callbacks.onCrowns then callbacks.onCrowns() end end)
+	Components.CreateSideButton(sidebar, "Pets",     "\xF0\x9F\x90\xBE", C.SidePets,     3, function() if callbacks.onPets then callbacks.onPets() end end)
+	Components.CreateSideButton(sidebar, "Index",    "\xF0\x9F\x93\x96", C.SideIndex,    4, function() if callbacks.onIndex then callbacks.onIndex() end end)
+	Components.CreateSideButton(sidebar, "Spectate", "\xF0\x9F\x91\x81", C.SideSpectate, 5, function() if callbacks.onSpectate then callbacks.onSpectate() end end)
+	Components.CreateSideButton(sidebar, "Settings", "\xE2\x9A\x99",  C.SideSettings, 6, function() if callbacks.onSettings then callbacks.onSettings() end end)
 
-	-- AFK button (toggle — changes label when active)
-	local afkBtn = Components.CreateSideButton(sidebar, "Go AFK", "💤", C.SideAFK, 7, function()
+	local afkBtn = Components.CreateSideButton(sidebar, "Go AFK", "\xF0\x9F\x92\xA4", C.SideAFK, 7, function()
 		if callbacks.onAFK then callbacks.onAFK() end
 	end)
 
-	-- Store AFK button reference for toggling label
 	local afkLabel = afkBtn:FindFirstChild("Label")
 	local afkIcon = afkBtn:FindFirstChild("Icon")
 	local isAFK = false
 
 	local function setSideButtonColor(btn: GuiObject, baseColor: Color3)
-		-- Some buttons use UIGradient (generated in Components.CreateSideButton). If we only
-		-- set BackgroundColor3, the gradient will still tint it with the old color.
 		btn.BackgroundColor3 = baseColor
 		local grad = btn:FindFirstChildOfClass("UIGradient")
 		if grad then
@@ -416,7 +394,6 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		end
 	end
 
-	-- React to PlayerState attribute changes (set by server)
 	local function updateAFKVisual()
 		local state = LocalPlayer:GetAttribute("PlayerState")
 		isAFK = (state == "AFK")
@@ -424,25 +401,23 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 			afkLabel.Text = isAFK and "Return" or "Go AFK"
 		end
 		if afkIcon then
-			afkIcon.Text = isAFK and "🏃" or "💤"
+			afkIcon.Text = isAFK and "\xF0\x9F\x8F\x83" or "\xF0\x9F\x92\xA4"
 		end
 		setSideButtonColor(afkBtn, isAFK and C.Green or C.SideAFK)
 	end
 	updateAFKVisual()
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(updateAFKVisual)
 
-	Components.CreateSideButton(sidebar, "Icons",    "🖼", C.SideIcons,    8, function() if callbacks.onIcons then callbacks.onIcons() end end)
+	Components.CreateSideButton(sidebar, "Icons", "\xF0\x9F\x96\xBC", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end)
 
-	-- ────────── INTERMISSION SHOW/HIDE HELPERS ──────────
+	-- INTERMISSION SHOW/HIDE HELPERS
 	local function showIntermission()
 		if intermissionVisible then return end
 		intermissionVisible = true
 
-		-- HIDE round badge + state label (replaced by intermission bar)
 		roundFrame.Visible = false
 		stateLabel.Visible = false
 
-		-- SHOW intermission bar with animation (unless overridden by SpinWheel etc.)
 		if not bannerOverrideHidden then
 			intermissionBar.Visible = true
 			ibScale.Scale = 0.88
@@ -455,7 +430,6 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		if not intermissionVisible then return end
 		intermissionVisible = false
 
-		-- Animate out
 		local t = TweenService:Create(ibScale, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.88 })
 		t:Play()
 		task.spawn(function()
@@ -465,12 +439,13 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 			end
 		end)
 
-		-- SHOW round badge + state label again
-		roundFrame.Visible = true
-		stateLabel.Visible = true
+		if not bannerOverrideHidden then
+			roundFrame.Visible = true
+			stateLabel.Visible = true
+		end
 	end
 
-	-- ────────── REACTIVITY ──────────
+	-- REACTIVITY
 	local function updateCoins()
 		local coins = LocalPlayer:GetAttribute("Coins") or 0
 		local newText = formatCoins(coins)
@@ -484,7 +459,8 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	coinLabel.Text = formatCoins(LocalPlayer:GetAttribute("Coins") or 0)
 	LocalPlayer:GetAttributeChangedSignal("Coins"):Connect(updateCoins)
 
-	local matchStatus = ReplicatedStorage:WaitForChild("MatchStatus", 10)
+	-- MatchStatus is created by MatchManager.Init on server
+	local matchStatus = ReplicatedStorage:WaitForChild("MatchStatus", 15)
 	if matchStatus then
 		local stateVal = matchStatus:FindFirstChild("State")
 		local roundVal = matchStatus:FindFirstChild("Round")
@@ -497,23 +473,28 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 					local r = roundVal and roundVal.Value or 0
 					roundLabel.Text = r > 0 and ("Round " .. tostring(r)) or "Match"
 					stateLabel.Text = ""
-					roundFrame.Visible = true
-					stateLabel.Visible = true
+					if not bannerOverrideHidden then
+						roundFrame.Visible = true
+						stateLabel.Visible = true
+					end
 					hideIntermission()
 				elseif st == "Intermission" then
 					showIntermission()
 				elseif st == "Ending" then
 					roundLabel.Text = "Results"
 					stateLabel.Text = "Match ended!"
-					roundFrame.Visible = true
-					stateLabel.Visible = true
+					if not bannerOverrideHidden then
+						roundFrame.Visible = true
+						stateLabel.Visible = true
+					end
 					hideIntermission()
 				else
-					-- Lobby / unknown state
 					roundLabel.Text = "Lobby"
 					stateLabel.Text = ""
-					roundFrame.Visible = true
-					stateLabel.Visible = true
+					if not bannerOverrideHidden then
+						roundFrame.Visible = true
+						stateLabel.Visible = true
+					end
 					hideIntermission()
 				end
 			end
@@ -538,11 +519,9 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 					local remaining = math.max(0, endTime - workspace:GetServerTimeNow())
 					if remaining > 0.5 then
 						local secs = math.ceil(remaining)
-						-- Update intermission bar text if visible
 						if intermissionVisible and intermissionLabel then
 							intermissionLabel.Text = "Game starting in " .. tostring(secs)
 						end
-						-- Also update state label for non-intermission phases
 						if not intermissionVisible then
 							stateLabel.Text = string.format("%.0fs", secs)
 						end
@@ -553,22 +532,28 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	end
 end
 
--- ────────── BANNER OVERRIDE (for SpinWheel etc.) ──────────
--- Allows other panels to temporarily hide the intermission banner
--- without stopping the countdown logic. The text keeps updating
--- so when the banner becomes visible again, it shows the correct time.
+-- BANNER OVERRIDE (for panels -- SpinWheel, Shop, etc.)
+-- Hides ALL top-center banners when a panel is open.
+-- Countdown text keeps updating in the background so when
+-- the banner becomes visible again, it shows the correct time.
 
 function HUDPanel.SetBannerOverrideHidden(hidden: boolean)
 	bannerOverrideHidden = hidden
 	if hidden then
-		-- Immediately hide the intermission bar
-		if intermissionBar then
-			intermissionBar.Visible = false
-		end
+		-- Hide ALL top-center banners
+		if intermissionBar then intermissionBar.Visible = false end
+		if roundFrame then roundFrame.Visible = false end
+		if stateLabel then stateLabel.Visible = false end
 	else
-		-- Restore: show intermission bar if it SHOULD be visible
-		if intermissionVisible and intermissionBar then
-			intermissionBar.Visible = true
+		-- Restore based on current match state
+		if intermissionVisible then
+			if intermissionBar then intermissionBar.Visible = true end
+			if roundFrame then roundFrame.Visible = false end
+			if stateLabel then stateLabel.Visible = false end
+		else
+			if intermissionBar then intermissionBar.Visible = false end
+			if roundFrame then roundFrame.Visible = true end
+			if stateLabel then stateLabel.Visible = true end
 		end
 	end
 end

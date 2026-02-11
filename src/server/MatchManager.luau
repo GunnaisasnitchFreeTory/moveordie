@@ -33,7 +33,7 @@ local Config = {
 	IntermissionSeconds = 15,
 	PlayingSeconds = 20,
 	EndingSeconds = 5,
-	MinPlayersToStart = 1,  -- For testing; increase for production
+	MinPlayersToStart = 1,
 	DebugLog = true,
 }
 
@@ -43,10 +43,9 @@ local phaseEndTime: number = 0
 local initialized = false
 local loopRunning = false
 
--- Replicated status values (created in Init, read by client UI)
-local replicatedState: StringValue = nil     -- "Intermission" | "Playing" | "Ending"
-local replicatedRound: IntValue = nil        -- Current round number
-local replicatedPhaseEnd: NumberValue = nil  -- workspace:GetServerTimeNow() at phase end
+local replicatedState: StringValue = nil
+local replicatedRound: IntValue = nil
+local replicatedPhaseEnd: NumberValue = nil
 
 local MatchManager = {}
 
@@ -58,10 +57,40 @@ local function log(...)
 	end
 end
 
---[[
-	Replicate the phase end time so the client HUD can show a countdown.
-	`durationSeconds` is the length of the phase starting NOW.
-]]
+-- ── GLBS direct call (lazy require, no BindableEvent) ──
+local _GLBS = nil
+local function getGLBS()
+	if _GLBS ~= nil then return _GLBS end
+	local ok, mod = pcall(function()
+		return require(Server:WaitForChild("GlobalLeaderboardService", 10))
+	end)
+	if ok and mod then
+		_GLBS = mod
+		warn("[MatchManager] GLBS loaded via direct require")
+	else
+		_GLBS = false
+		warn("[MatchManager] GLBS not available:", tostring(mod))
+	end
+	return _GLBS
+end
+
+local function reportStats(userId: number, username: string, updates: { [string]: number })
+	local GLBS = getGLBS()
+	if not GLBS or GLBS == false then return end
+
+	for statKey, value in pairs(updates) do
+		local callOk, callErr = pcall(function()
+			GLBS.ReportStatById(userId, statKey, value)
+		end)
+		if callOk then
+			log(string.format("DIRECT CALL OK: ReportStatById(%d, '%s', %d)", userId, statKey, value))
+		else
+			warn(string.format("[MatchManager] DIRECT CALL FAILED: ReportStatById(%d, '%s', %d) err=%s",
+				userId, statKey, value, tostring(callErr)))
+		end
+	end
+end
+
 local function replicatePhaseEnd(durationSeconds: number)
 	if replicatedPhaseEnd then
 		replicatedPhaseEnd.Value = workspace:GetServerTimeNow() + durationSeconds
@@ -71,9 +100,6 @@ local function replicatePhaseEnd(durationSeconds: number)
 	end
 end
 
---[[
-	Replicate the current round number for the client HUD.
-]]
 local function replicateRound(round: number)
 	if replicatedRound then
 		replicatedRound.Value = round
@@ -97,16 +123,11 @@ local function setMatchState(newState: string)
 	currentState = newState
 	log(string.format("State: %s → %s", oldState, newState))
 
-	-- Replicate state for client UI
 	if replicatedState then
 		replicatedState.Value = newState
 	end
 end
 
---[[
-	Safely teleport a player's character to a CFrame.
-	Returns true on success, false if character not ready.
-]]
 local function safeTeleport(player: Player, targetCFrame: CFrame): boolean
 	local character = player.Character
 	if not character then return false end
@@ -117,19 +138,13 @@ local function safeTeleport(player: Player, targetCFrame: CFrame): boolean
 	if not humanoid or not rootPart then return false end
 	if humanoid.Health <= 0 then return false end
 	
-	-- Teleport
 	rootPart.CFrame = targetCFrame
-	
-	-- Kill velocity to prevent fling
 	rootPart.AssemblyLinearVelocity = Vector3.zero
 	rootPart.AssemblyAngularVelocity = Vector3.zero
 	
 	return true
 end
 
---[[
-	Teleport a list of players to arena spawn points.
-]]
 local function teleportPlayersToArena(players: { Player })
 	if #players == 0 then return end
 	
@@ -144,11 +159,9 @@ local function teleportPlayersToArena(players: { Player })
 	for i, player in ipairs(players) do
 		local spawnCFrame = spawnCFrames[((i - 1) % #spawnCFrames) + 1]
 		
-		-- Try immediate teleport
 		if safeTeleport(player, spawnCFrame) then
 			teleported = teleported + 1
 		else
-			-- Retry after delay
 			task.spawn(function()
 				for _ = 1, SpawnConfig.MaxTeleportRetries do
 					task.wait(SpawnConfig.TeleportRetryDelay)
@@ -163,9 +176,6 @@ local function teleportPlayersToArena(players: { Player })
 	log(string.format("Teleported %d players to Arena", teleported))
 end
 
---[[
-	Teleport a list of players back to lobby spawn.
-]]
 local function teleportPlayersToLobby(players: { Player })
 	if #players == 0 then return end
 	if not SpawnConfig.ReturnToLobbyOnEnd then return end
@@ -174,7 +184,6 @@ local function teleportPlayersToLobby(players: { Player })
 	local teleported = 0
 	
 	for i, player in ipairs(players) do
-		-- Slight spread so they don't stack
 		local offset = Vector3.new(
 			(i % 5 - 2) * 3,
 			0,
@@ -185,7 +194,6 @@ local function teleportPlayersToLobby(players: { Player })
 		if safeTeleport(player, targetCFrame) then
 			teleported = teleported + 1
 		else
-			-- Retry after delay
 			task.spawn(function()
 				for _ = 1, SpawnConfig.MaxTeleportRetries do
 					task.wait(SpawnConfig.TeleportRetryDelay)
@@ -200,10 +208,6 @@ local function teleportPlayersToLobby(players: { Player })
 	log(string.format("Returned %d players to Lobby spawn", teleported))
 end
 
---[[
-	Get players eligible for match participation.
-	Eligible = in Lobby or Waiting state, and not AFK.
-]]
 function MatchManager.GetEligiblePlayers(): { Player }
 	local eligible = {}
 	
@@ -211,7 +215,6 @@ function MatchManager.GetEligiblePlayers(): { Player }
 		local state = PlayerStateService.GetState(player)
 		local isAFK = PlayerStateService.IsAFK(player)
 		
-		-- Eligible if in Lobby or Waiting and not AFK
 		if not isAFK and (state == PlayerState.States.Lobby or state == PlayerState.States.Waiting) then
 			table.insert(eligible, player)
 		end
@@ -220,10 +223,6 @@ function MatchManager.GetEligiblePlayers(): { Player }
 	return eligible
 end
 
---[[
-	Set all eligible players to Waiting state.
-	Called during Intermission.
-]]
 local function setEligibleToWaiting()
 	local eligible = MatchManager.GetEligiblePlayers()
 	for _, player in ipairs(eligible) do
@@ -234,16 +233,11 @@ local function setEligibleToWaiting()
 	end
 end
 
---[[
-	Set all Waiting players to InMatch and teleport them to arena.
-	Called at start of Playing phase.
-]]
 local function setWaitingToInMatch()
 	local waitingPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
 	local playersToTeleport = {}
 	
 	for _, player in ipairs(waitingPlayers) do
-		-- Double-check they're not AFK (safety)
 		if not PlayerStateService.IsAFK(player) then
 			PlayerStateService.SetState(player, PlayerState.States.InMatch)
 			table.insert(playersToTeleport, player)
@@ -251,18 +245,11 @@ local function setWaitingToInMatch()
 	end
 	
 	log(string.format("Moved %d players to InMatch", #playersToTeleport))
-	
-	-- Teleport to arena
 	teleportPlayersToArena(playersToTeleport)
 	
 	return #playersToTeleport
 end
 
---[[
-	Set all remaining InMatch players back to Lobby and teleport them.
-	Called at end of Playing phase.
-	(Eliminated players are already in Lobby from Strike)
-]]
 local function setMatchPlayersToLobby()
 	local inMatchPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
 	
@@ -271,10 +258,8 @@ local function setMatchPlayersToLobby()
 		return
 	end
 	
-	-- Teleport back to lobby
 	teleportPlayersToLobby(inMatchPlayers)
 	
-	-- Update state
 	for _, player in ipairs(inMatchPlayers) do
 		PlayerStateService.SetState(player, PlayerState.States.Lobby)
 	end
@@ -291,14 +276,11 @@ local function runIntermission()
 	replicateRound(0)
 	log(string.format("Intermission started (%ds)", Config.IntermissionSeconds))
 	
-	-- Main intermission loop
 	while tick() < phaseEndTime do
-		-- Continuously set new eligible players to Waiting
 		setEligibleToWaiting()
 		task.wait(1)
 	end
 	
-	-- Final check for eligible players
 	setEligibleToWaiting()
 end
 
@@ -307,51 +289,36 @@ local function runPlaying()
 	
 	if #waitingPlayers < Config.MinPlayersToStart then
 		log(string.format("Not enough players (%d/%d), skipping match", #waitingPlayers, Config.MinPlayersToStart))
-		-- Return waiting players to lobby since we're skipping
 		for _, player in ipairs(waitingPlayers) do
 			PlayerStateService.SetState(player, PlayerState.States.Lobby)
 		end
-		return false -- Signal to skip Ending phase
+		return false
 	end
 	
 	setMatchState(MatchState.States.Playing)
 	log("Playing started — waiting for RoundManager to complete")
 	
-	-- Notify MapManager that match is starting
 	MapManager.OnMatchStart()
-	
-	-- Move all waiting players into the match (includes teleport)
 	setWaitingToInMatch()
 	
-	-- Initialize elimination tracking for this match
 	local matchPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
 	EliminationTracker.Reset(matchPlayers)
 	
-	-- Start the round loop
 	RoundManager.StartRoundLoop()
 	
-	-- Wait for RoundManager to complete (winner, no winners, or cap reached)
-	-- RoundManager handles its own time/round caps internally
 	while RoundManager.IsRunning() do
 		task.wait(0.5)
 	end
 	
-	-- Get the end reason
 	local endReason = RoundManager.GetMatchEndReason()
 	log(string.format("Round loop completed — reason: %s", endReason or "unknown"))
 	
-	-- Notify MapManager that match is ending
 	MapManager.OnMatchEnd()
 	
-	return true -- Signal to continue to Ending
+	return true
 end
 
---[[
-	Build placement rankings and award coins to all match participants.
-	Must be called BEFORE setMatchPlayersToLobby() (while survivors are still InMatch).
-]]
 local function resolveRankingsAndReward()
-	-- Survivors = players still InMatch at match end
 	local survivors = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
 	local rankings = EliminationTracker.BuildRankings(survivors)
 	
@@ -360,19 +327,46 @@ local function resolveRankingsAndReward()
 		return
 	end
 	
-	-- Award coins
 	local totalAwarded = 0
 	local matchId = EliminationTracker.GetMatchId()
 	
+	local PDS = nil
+	do
+		local ok, mod = pcall(function()
+			return require(Server:WaitForChild("PlayerDataService", 2))
+		end)
+		if ok and mod then PDS = mod end
+	end
+	
 	for _, group in ipairs(rankings) do
 		for _, entry in ipairs(group.players) do
-			if entry.player and entry.player.Parent and group.coins > 0 then
-				EconomyService.AwardCoins(
-					entry.player,
-					group.coins,
-					string.format("Match#%d Place#%d", matchId, group.placement)
-				)
-				totalAwarded = totalAwarded + group.coins
+			if entry.player and entry.player.Parent then
+				if group.coins > 0 then
+					EconomyService.AwardCoins(
+						entry.player,
+						group.coins,
+						string.format("Match#%d Place#%d", matchId, group.placement)
+					)
+					totalAwarded = totalAwarded + group.coins
+				end
+				
+				-- Track wins for first place
+				if group.placement == 1 and PDS then
+					local lifetimeWins = (PDS.GetField(entry.player, "LifetimeWins") or 0) + 1
+					PDS.SetField(entry.player, "LifetimeWins", lifetimeWins)
+
+					local weeklyWins = (PDS.GetField(entry.player, "WeeklyWins") or 0) + 1
+					PDS.SetField(entry.player, "WeeklyWins", weeklyWins)
+
+					log(string.format("%s won! LifetimeWins=%d WeeklyWins=%d",
+						entry.player.Name, lifetimeWins, weeklyWins))
+
+					-- Direct module call to GLBS
+					reportStats(entry.player.UserId, entry.player.Name, {
+						LifetimeWins = lifetimeWins,
+						WeeklyWins   = weeklyWins,
+					})
+				end
 			end
 		end
 	end
@@ -385,7 +379,6 @@ local function runEnding()
 	phaseEndTime = tick() + Config.EndingSeconds
 	replicatePhaseEnd(Config.EndingSeconds)
 	
-	-- Log match result
 	local matchEndReason = RoundManager.GetMatchEndReason()
 	local winner = RoundManager.GetWinner()
 	
@@ -397,13 +390,9 @@ local function runEnding()
 		log(string.format("Ending started (%ds)", Config.EndingSeconds))
 	end
 	
-	-- Build rankings and award coins BEFORE returning players to lobby
 	resolveRankingsAndReward()
-	
-	-- Return all InMatch and Spectating players to Lobby (includes teleport)
 	setMatchPlayersToLobby()
 	
-	-- Wait for ending phase
 	while tick() < phaseEndTime do
 		task.wait(1)
 	end
@@ -417,7 +406,6 @@ function MatchManager.Init()
 		return
 	end
 
-	-- Create replicated MatchStatus folder for client UI
 	local matchStatusFolder = Instance.new("Folder")
 	matchStatusFolder.Name = "MatchStatus"
 	matchStatusFolder.Parent = ReplicatedStorage
@@ -439,13 +427,10 @@ function MatchManager.Init()
 
 	log("MatchStatus folder + replicated values created")
 
-	-- Initialize dependencies
 	MapManager.Init()
 	RoundManager.Init()
 	EconomyService.Init()
 	
-	-- Register disconnect elimination tracking:
-	-- When a player leaves while InMatch, record it as an elimination
 	PlayerStateService.OnPlayerRemoval(function(player, oldState)
 		if currentState == MatchState.States.Playing and oldState == PlayerState.States.InMatch then
 			local round = RoundManager.GetCurrentRound()
@@ -453,8 +438,13 @@ function MatchManager.Init()
 		end
 	end)
 	
+	-- Pre-warm GLBS reference (non-blocking)
+	task.spawn(function()
+		getGLBS()
+	end)
+	
 	initialized = true
-	log("Initialized")
+	log("Initialized (leaderboard updates via direct GLBS calls)")
 end
 
 function MatchManager.GetState(): string
@@ -474,16 +464,10 @@ function MatchManager.StartLoop()
 	loopRunning = true
 	log("Loop started")
 	
-	-- Run in a separate thread
 	task.spawn(function()
 		while loopRunning do
-			-- Phase 1: Intermission
 			runIntermission()
-			
-			-- Phase 2: Playing
 			local playedMatch = runPlaying()
-			
-			-- Phase 3: Ending (only if match actually ran)
 			if playedMatch then
 				runEnding()
 			end

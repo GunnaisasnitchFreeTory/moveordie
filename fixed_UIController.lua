@@ -3,14 +3,14 @@
 	Central client-side UI orchestrator.
 
 	Responsibilities:
-	  * Creates ScreenGuis (HUD + Panels)
-	  * Initialises sub-modules (HUD, Shop, FateCrowns, Pets, CrateShop, Index)
-	  * Enforces "one panel at a time" rule
-	  * ESC key closes the currently open panel
-	  * Walk-up CrownPetShop: client-side proximity detection
-	    -> INSTANTLY opens Crate Shop when player walks near
-	    -> No ProximityPrompt, no button press, no delay
-	  * Also listens for OpenCrateShop RemoteEvent as fallback
+	  • Creates ScreenGuis (HUD + Panels)
+	  • Initialises sub-modules (HUD, Shop, FateCrowns, Pets, CrateShop, Index)
+	  • Enforces "one panel at a time" rule
+	  • ESC key closes the currently open panel
+	  • Walk-up CrownPetShop: client-side proximity detection
+	    → INSTANTLY opens Crate Shop when player walks near
+	    → No ProximityPrompt, no button press, no delay
+	  • Also listens for OpenCrateShop RemoteEvent as fallback
 
 	FIX: CrownPetShop position detection is now much more robust:
 	  1. Tries PrimaryPart
@@ -20,10 +20,10 @@
 	  5. Retries multiple times with delays
 
 	FIX (SpinWheel):
-	  * Auto-close now uses the PROMPT's parent Part position (not the model root)
-	  * Grace period after opening before auto-close kicks in
-	  * CLOSE_DISTANCE increased to 50 studs (player must clearly walk away)
-	  * "Game starting in X" banner is hidden while SpinWheel is open
+	  • Auto-close now uses the PROMPT's parent Part position (not the model root)
+	  • Grace period after opening before auto-close kicks in
+	  • CLOSE_DISTANCE increased to 50 studs (player must clearly walk away)
+	  • "Game starting in X" banner is hidden while SpinWheel is open
 
 	Called from Client init.client.luau via UIController.Init().
 ]]
@@ -33,20 +33,8 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
--- Bounded wait for Shared folder (10s — should be instant with Rojo)
 local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
-if not Shared then
-	warn("[UIController] Shared not found after 10s -- FAILED")
-	return { Init = function() warn("[UIController] FAILED") end }
-end
-
-local okCfg, UIConfig = pcall(require, Shared:WaitForChild("UIConfig", 10))
-if not okCfg or not UIConfig then
-	local _children = {}
-	for _, c in ipairs(Shared:GetChildren()) do table.insert(_children, c.Name.."("..c.ClassName..")") end
-	warn("[UIController] require(UIConfig) FAILED:", UIConfig, "| Shared children:", table.concat(_children, ", "))
-	return { Init = function() warn("[UIController] FAILED") end }
-end
+local UIConfig = require(Shared:WaitForChild("UIConfig"))
 
 local Client = script.Parent
 local UI = Client:WaitForChild("UI")
@@ -60,16 +48,12 @@ local PANEL_STUB = {
 	Init = function() end, Show = function() end, Hide = function() end,
 	IsVisible = function() return false end, Toggle = function() end,
 }
-
-local _failedPanels = {}
-
 local function safeRequire(name)
 	local ok, mod = pcall(function()
 		return require(UI:WaitForChild(name, 10))
 	end)
 	if ok and mod then return mod end
-	warn("[UIController] Failed to load " .. name .. ": " .. tostring(mod))
-	table.insert(_failedPanels, name)
+	warn("[UIController] Failed to load " .. name .. ": " .. tostring(mod) .. " — using stub")
 	return PANEL_STUB
 end
 
@@ -119,6 +103,9 @@ local function closeCurrentPanel()
 	end
 	currentPanel = nil
 
+	-- Single source of truth:
+	-- If ANY panel/modal is open, hide the intermission banner.
+	-- When all panels are closed, restore it (countdown logic continues regardless).
 	HUDPanel.SetBannerOverrideHidden(false)
 end
 
@@ -150,22 +137,30 @@ local function openPanel(name: string)
 		SpinWheelPanel.Show()
 	end
 
+	-- Single source of truth: any open panel hides the banner.
 	HUDPanel.SetBannerOverrideHidden(true)
 
 	log("Opened:", name)
 end
 
+--[[
+	ROBUST position finder for CrownPetShop.
+	Tries every possible method to get a world position from the model.
+]]
 local function getInstancePosition(instance: Instance): Vector3?
+	-- 1. If it IS a BasePart directly
 	if instance:IsA("BasePart") then
 		return instance.Position
 	end
 
+	-- 2. If it's a Model with PrimaryPart
 	if instance:IsA("Model") then
 		local primary = instance.PrimaryPart
 		if primary then
 			return primary.Position
 		end
 
+		-- 3. Try GetPivot (works even without PrimaryPart)
 		local ok, pivot = pcall(function()
 			return instance:GetPivot()
 		end)
@@ -173,6 +168,7 @@ local function getInstancePosition(instance: Instance): Vector3?
 			return pivot.Position
 		end
 
+		-- 4. Try GetBoundingBox (works on any Model with parts)
 		local ok2, cf = pcall(function()
 			local cframe, _ = instance:GetBoundingBox()
 			return cframe
@@ -182,11 +178,13 @@ local function getInstancePosition(instance: Instance): Vector3?
 		end
 	end
 
+	-- 5. Find ANY descendant BasePart (deepest fallback)
 	local part = instance:FindFirstChildWhichIsA("BasePart", true)
 	if part then
 		return part.Position
 	end
 
+	-- 6. Check if it's a Folder — look for child Models or Parts
 	for _, child in ipairs(instance:GetChildren()) do
 		if child:IsA("BasePart") then
 			return child.Position
@@ -208,11 +206,7 @@ function UIController.Init()
 	SoundUtil.Init()
 
 	-- 2. Create ScreenGuis
-	local hudOk, hudGui = pcall(Components.CreateScreenGui, "HUDGui", 1)
-	if not hudOk or not hudGui then
-		warn("[UIController] FAILED: Could not create HUD ScreenGui: " .. tostring(hudGui))
-		return
-	end
+	local hudGui   = Components.CreateScreenGui("HUDGui", 1)
 	local panelGui = Components.CreateScreenGui("PanelGui", 10)
 
 	-- 3. Panel close callback
@@ -221,7 +215,7 @@ function UIController.Init()
 		HUDPanel.SetBannerOverrideHidden(false)
 	end
 
-	-- 4. Init all panels (wrapped in pcall -- one failure doesn't kill all UI)
+	-- 4. Init all panels (wrapped in pcall — one failure doesn't kill all UI)
 	local function safeInit(name, fn, ...)
 		local args = {...}
 		local ok, err = pcall(function()
@@ -229,9 +223,6 @@ function UIController.Init()
 		end)
 		if not ok then
 			warn("[UIController] " .. name .. " Init FAILED: " .. tostring(err))
-			if not table.find(_failedPanels, name) then
-				table.insert(_failedPanels, name)
-			end
 		end
 	end
 
@@ -248,33 +239,27 @@ function UIController.Init()
 	-- 4b. Init Kill Feed (always visible on HUD layer)
 	safeInit("KillFeed", KillFeed.Init, hudGui)
 
-	-- 5. Init HUD (2x4 sidebar grid)
-	local hudInitOk, hudInitErr = pcall(function()
-		HUDPanel.Init(hudGui, {
-			onShop     = function() openPanel("Shop") end,
-			onCrowns   = function() openPanel("Crowns") end,
-			onPets     = function() openPanel("Pets") end,
-			onIndex    = function() openPanel("Index") end,
-			onSpectate = function() openPanel("Spectate") end,
-			onSettings = function() openPanel("Settings") end,
-			onIcons    = function() openPanel("Icons") end,
-			onAFK      = function()
-				task.spawn(function()
-					local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-					if not remotes then return end
-					local toggleAFK = remotes:FindFirstChild("ToggleAFK")
-					if toggleAFK then
-						toggleAFK:FireServer()
-					end
-				end)
-			end,
-		})
-	end)
-
-	if not hudInitOk then
-		warn("[UIController] FAILED: HUD Init error: " .. tostring(hudInitErr))
-		return
-	end
+	-- 5. Init HUD (2×4 sidebar grid)
+	HUDPanel.Init(hudGui, {
+		onShop     = function() openPanel("Shop") end,
+		onCrowns   = function() openPanel("Crowns") end,
+		onPets     = function() openPanel("Pets") end,
+		onIndex    = function() openPanel("Index") end,
+		onSpectate = function() openPanel("Spectate") end,
+		onSettings = function() openPanel("Settings") end,
+		onIcons    = function() openPanel("Icons") end,
+		onAFK      = function()
+			-- Fire ToggleAFK remote to server
+			task.spawn(function()
+				local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+				if not remotes then return end
+				local toggleAFK = remotes:FindFirstChild("ToggleAFK")
+				if toggleAFK then
+					toggleAFK:FireServer()
+				end
+			end)
+		end,
+	})
 
 	-- 6. ESC key handler
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -284,22 +269,29 @@ function UIController.Init()
 		end
 	end)
 
-	-- 7. Walk-up CrownPetShop
+	-- 7. Walk-up CrownPetShop — CLIENT-SIDE PROXIMITY DETECTION
+	--    Opens INSTANTLY when player walks near, NO prompt/button needed.
+	--    ROBUST: retries multiple times, uses every possible method to find position.
 	task.spawn(function()
 		local crateShopModel = nil
 		local MAX_RETRIES = 10
 		local RETRY_DELAY = 2
 
 		for attempt = 1, MAX_RETRIES do
+			-- Try multiple search patterns
 			crateShopModel = workspace:FindFirstChild("CrownPetShop", true)
+
 			if not crateShopModel then
+				-- Also try as a direct child of workspace
 				crateShopModel = workspace:FindFirstChild("CrownPetShop")
 			end
+
 			if crateShopModel then
 				log(string.format("CrownPetShop found on attempt %d: %s (class: %s)",
 					attempt, crateShopModel:GetFullName(), crateShopModel.ClassName))
 				break
 			end
+
 			if attempt < MAX_RETRIES then
 				log(string.format("CrownPetShop not found (attempt %d/%d), retrying in %ds...",
 					attempt, MAX_RETRIES, RETRY_DELAY))
@@ -308,19 +300,23 @@ function UIController.Init()
 		end
 
 		if not crateShopModel then
-			log("CrownPetShop NOT FOUND after " .. MAX_RETRIES .. " attempts -- walk-up shop disabled")
+			log("CrownPetShop NOT FOUND after " .. MAX_RETRIES .. " attempts — walk-up shop disabled")
+			log("Workspace children: " .. tostring(#workspace:GetChildren()))
 			return
 		end
 
+		-- Test position detection immediately
 		local initialPos = getInstancePosition(crateShopModel)
 		if not initialPos then
+			-- Wait for children to load (streaming might delay parts)
 			log("Position not available yet, waiting for children to stream in...")
 			task.wait(3)
 			initialPos = getInstancePosition(crateShopModel)
 		end
 
 		if not initialPos then
-			log("Still no position -- waiting for any descendant BasePart...")
+			-- Last resort: listen for DescendantAdded and try again
+			log("Still no position — waiting for any descendant BasePart...")
 			local waitedPart = nil
 			local conn
 			conn = crateShopModel.DescendantAdded:Connect(function(desc)
@@ -336,16 +332,22 @@ function UIController.Init()
 				initialPos = waitedPart.Position
 				log("Got position from streamed-in part:", waitedPart:GetFullName())
 			else
-				log("FAILED: No BasePart found in CrownPetShop after waiting -- walk-up disabled")
+				log("FAILED: No BasePart found in CrownPetShop after waiting — walk-up disabled")
+				log("Children of CrownPetShop:")
+				for _, child in ipairs(crateShopModel:GetChildren()) do
+					log("  ", child.ClassName, child.Name)
+				end
 				return
 			end
 		end
 
 		log(string.format("Walk-up shop position: (%.1f, %.1f, %.1f)", initialPos.X, initialPos.Y, initialPos.Z))
 
-		local OPEN_DISTANCE = 12
-		local CLOSE_DISTANCE = 18
+		local OPEN_DISTANCE = 12   -- studs to auto-open
+		local CLOSE_DISTANCE = 18  -- studs to auto-close
 		local wasInRange = false
+
+		log("Walk-up proximity detection ACTIVE (open at", OPEN_DISTANCE, "studs)")
 
 		RunService.Heartbeat:Connect(function()
 			local char = LocalPlayer.Character
@@ -353,6 +355,7 @@ function UIController.Init()
 			local root = char:FindFirstChild("HumanoidRootPart")
 			if not root then return end
 
+			-- Re-read position in case model moves
 			local pos = getInstancePosition(crateShopModel)
 			if not pos then return end
 
@@ -360,38 +363,48 @@ function UIController.Init()
 			local inRange = dist <= OPEN_DISTANCE
 
 			if inRange and not wasInRange then
+				-- Player just walked into range → INSTANTLY open
 				wasInRange = true
 				openPanel("CrateShop")
+				log("Walk-up shop auto-opened (distance:", string.format("%.1f", dist), ")")
 			elseif not inRange and wasInRange and dist > CLOSE_DISTANCE then
+				-- Player walked away → auto-close if still on crate shop
 				wasInRange = false
 				if currentPanel == "CrateShop" then
 					closeCurrentPanel()
+					log("Walk-up shop auto-closed (distance:", string.format("%.1f", dist), ")")
 				end
 			end
 		end)
 	end)
 
-	-- 8. OpenCrateShop RemoteEvent (server fallback)
+	-- 8. Also listen for OpenCrateShop RemoteEvent (server fallback / debug)
 	task.spawn(function()
 		local remotes = ReplicatedStorage:WaitForChild("Remotes", 15)
-		if not remotes then return end
+		if not remotes then
+			log("Remotes folder not found — remote walk-up shop listener skipped")
+			return
+		end
 
 		local openCrateShopEvent = remotes:WaitForChild("OpenCrateShop", 15)
 		if openCrateShopEvent then
 			openCrateShopEvent.OnClientEvent:Connect(function()
+				log("Crate shop opened via server RemoteEvent")
 				openPanel("CrateShop")
 			end)
+			log("Listening for OpenCrateShop RemoteEvent (backup)")
 		end
 	end)
 
-	-- 9. Walk-up SpinTheWheel
+	-- 9. Walk-up SpinTheWheel — ProximityPrompt-based (server creates prompt)
+	--    Player walks near → Roblox shows "E to Spin" natively → opens panel.
+	--    Auto-closes when player walks out of range.
+	--
+	--    FIX: Uses the PROMPT's parent Part position for distance checks,
+	--         not the model root (which could resolve to an elevated Part).
+	--         Also adds a grace period to prevent same-frame open+close.
 	task.spawn(function()
-		local okSWC, SpinWheelCfg = pcall(require, Shared:WaitForChild("SpinWheelConfig", 10))
-		if not okSWC or not SpinWheelCfg then
-			warn("[UIController] SpinWheelConfig not available -- spin wheel walk-up disabled")
-			return
-		end
-
+		local SpinWheelCfg = require(Shared:WaitForChild("SpinWheelConfig"))
 		local spinModel = nil
 		local MAX_RETRIES = 10
 		local RETRY_DELAY = 2
@@ -402,20 +415,25 @@ function UIController.Init()
 				spinModel = workspace:FindFirstChild("SpinTheWheel")
 			end
 			if spinModel then
-				log("[SpinWheel] Model found on attempt " .. attempt)
+				log("[SpinWheel] Model found on attempt " .. attempt .. ": " .. spinModel:GetFullName() .. " (class: " .. spinModel.ClassName .. ")")
 				break
 			end
 			if attempt < MAX_RETRIES then
+				log("[SpinWheel] Not found (attempt " .. attempt .. "/" .. MAX_RETRIES .. "), retrying...")
 				task.wait(RETRY_DELAY)
 			end
 		end
 
 		if not spinModel then
-			log("[SpinWheel] NOT FOUND -- spin wheel disabled")
+			log("[SpinWheel] NOT FOUND after " .. MAX_RETRIES .. " attempts — spin wheel disabled")
 			return
 		end
 
+		-- Wait for the ProximityPrompt created by SpinWheelBootstrap on server
+		log("[SpinWheel] Searching for ProximityPrompt...")
 		local prompt: ProximityPrompt? = nil
+
+		-- Search existing descendants
 		for _, desc in ipairs(spinModel:GetDescendants()) do
 			if desc:IsA("ProximityPrompt") then
 				prompt = desc
@@ -423,9 +441,13 @@ function UIController.Init()
 			end
 		end
 
+		-- If not found yet, wait for it (server may still be creating it)
 		if not prompt then
+			log("[SpinWheel] ProximityPrompt not found yet — waiting for server to create it...")
 			local waitStart = tick()
 			local MAX_WAIT = 20
+
+			-- Listen for new descendants
 			local foundEvent = Instance.new("BindableEvent")
 			local conn = spinModel.DescendantAdded:Connect(function(desc)
 				if desc:IsA("ProximityPrompt") then
@@ -433,6 +455,8 @@ function UIController.Init()
 					foundEvent:Fire()
 				end
 			end)
+
+			-- Also poll periodically
 			task.spawn(function()
 				while not prompt and (tick() - waitStart) < MAX_WAIT do
 					task.wait(1)
@@ -444,8 +468,9 @@ function UIController.Init()
 						end
 					end
 				end
-				foundEvent:Fire()
+				foundEvent:Fire() -- unblock even if not found
 			end)
+
 			if not prompt then
 				foundEvent.Event:Wait()
 			end
@@ -453,10 +478,18 @@ function UIController.Init()
 			foundEvent:Destroy()
 		end
 
+		-- Fallback: create client-side ProximityPrompt if server didn't
 		if not prompt then
-			local refPart = spinModel:FindFirstChildWhichIsA("BasePart", true)
-			if not refPart then return end
+			log("[SpinWheel] Server ProximityPrompt not found — creating client-side fallback")
 
+			-- Create an invisible anchor at ground level near the model
+			local refPart = spinModel:FindFirstChildWhichIsA("BasePart", true)
+			if not refPart then
+				log("[SpinWheel] No BasePart found in SpinTheWheel — spin wheel disabled")
+				return
+			end
+
+			-- Put anchor at ground level (Y=5) using the reference part's XZ
 			local anchor = Instance.new("Part")
 			anchor.Name = "SpinWheelPromptAnchor"
 			anchor.Size = Vector3.new(2, 2, 2)
@@ -477,22 +510,35 @@ function UIController.Init()
 			prompt.MaxActivationDistance = SpinWheelCfg.OPEN_DISTANCE
 			prompt.RequiresLineOfSight = false
 			prompt.Parent = anchor
+			log("[SpinWheel] Client-side ProximityPrompt created on anchor at Y=5 near: " .. refPart:GetFullName())
+		else
+			log("[SpinWheel] ProximityPrompt found on: " .. prompt.Parent:GetFullName())
 		end
 
+		-- IMPORTANT: Store the prompt's parent Part as the distance reference
+		-- This ensures open-trigger and auto-close both use the SAME point.
 		local promptPart = prompt.Parent
-		local spinOpenTime = 0
+		log("[SpinWheel] Distance reference Part: " .. promptPart:GetFullName() .. " at " .. tostring(promptPart.Position))
+
+		-- Listen for ProximityPrompt activation → open the SpinWheel UI panel
+		local spinOpenTime = 0 -- track when panel was opened for grace period
 
 		prompt.Triggered:Connect(function(playerWhoTriggered)
 			if playerWhoTriggered ~= LocalPlayer then return end
-			spinOpenTime = tick()
+			log("[SpinWheel] ProximityPrompt triggered (E pressed) — opening panel")
+			spinOpenTime = tick() -- record open time for grace period
 			openPanel("SpinWheel")
 		end)
 
+		-- Auto-close when player walks out of range
+		-- FIX: Use promptPart position (not spinModel) and add grace period
 		local CLOSE_DIST = SpinWheelCfg.CLOSE_DISTANCE
 		local GRACE_PERIOD = SpinWheelCfg.OPEN_GRACE_PERIOD or 3
 
 		RunService.Heartbeat:Connect(function()
 			if currentPanel ~= "SpinWheel" then return end
+
+			-- Grace period: don't auto-close for N seconds after opening
 			if (tick() - spinOpenTime) < GRACE_PERIOD then return end
 
 			local char = LocalPlayer.Character
@@ -500,10 +546,12 @@ function UIController.Init()
 			local root = char:FindFirstChild("HumanoidRootPart")
 			if not root then return end
 
+			-- Use the PROMPT'S PARENT PART for distance (not the model root!)
 			local promptPos = nil
 			if promptPart and promptPart:IsA("BasePart") then
 				promptPos = promptPart.Position
 			else
+				-- Fallback: try model position
 				promptPos = getInstancePosition(spinModel)
 			end
 			if not promptPos then return end
@@ -511,16 +559,14 @@ function UIController.Init()
 			local dist = (root.Position - promptPos).Magnitude
 			if dist > CLOSE_DIST then
 				closeCurrentPanel()
+				log("[SpinWheel] Auto-closed (out of range, dist: " .. string.format("%.1f", dist) .. ", threshold: " .. CLOSE_DIST .. ")")
 			end
 		end)
+
+		log("[SpinWheel] ProximityPrompt walk-up detection ACTIVE (E to open, auto-close at " .. CLOSE_DIST .. " studs, grace: " .. GRACE_PERIOD .. "s)")
 	end)
 
-	-- 10. Outcome log
-	if #_failedPanels > 0 then
-		warn("[UIController] DEGRADED: panels failed: " .. table.concat(_failedPanels, ", "))
-	else
-		print("[UIController] READY")
-	end
+	log("Initialized — HUD + 9 panels + KillFeed ready (Shop, Crowns, Pets, CrateShop, Index, Spectate, Settings, Icons, SpinWheel)")
 end
 
 return UIController
