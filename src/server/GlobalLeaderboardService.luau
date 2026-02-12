@@ -14,6 +14,14 @@
 	(EconomyService, MatchManager, InventoryService).
 	No BindableEvent pipeline — just require() + function call.
 
+	STUDIO MODE:
+	  When RunService:IsStudio(), all leaderboard data is kept IN-MEMORY only.
+	  No OrderedDataStore reads or writes happen. This ensures:
+	    • No stale entries from previous test runs
+	    • No ODS throttling in rapid test iterations
+	    • Boards reflect ONLY the current server session
+	  Production (non-studio) behavior is completely unchanged.
+
 	API:
 		Init()
 		ReportStat(player, statKey, newValue)
@@ -114,6 +122,11 @@ local pendingWrites  = {}
 local pendingTimers  = {}
 local seededPlayers  = {}   -- per-session guard: seededPlayers[userId] = true
 
+-- Studio in-memory boards (replaces ODS in Studio mode).
+-- Structure: studioMemoryBoards[storeKey][tostring(userId)] = intValue
+-- Fresh every server session — no stale data from previous test runs.
+local studioMemoryBoards = {}
+
 -- ═══════════════════════════════════════════════════════════════════
 -- HELPERS
 -- ═══════════════════════════════════════════════════════════════════
@@ -188,6 +201,31 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 local function fetchTopN(boardDef)
+	-- ── STUDIO: read from in-memory table (no ODS, no stale data) ──
+	if IS_STUDIO then
+		local memBoard = studioMemoryBoards[boardDef.storeKey] or {}
+		local results = {}
+		for uidStr, val in pairs(memBoard) do
+			local uid = tonumber(uidStr)
+			if uid and type(val) == "number" and val > 0 and isValidUserId(uid) then
+				local name = resolveUsername(uid)
+				table.insert(results, { userId = uid, name = name, value = val })
+			end
+		end
+		table.sort(results, function(a, b) return a.value > b.value end)
+		while #results > TOP_N do
+			table.remove(results)
+		end
+		if #results > 0 then
+			warn(string.format("[GLBS:Studio] FetchTop key=%s entries=%d top1=%s:%d",
+				boardDef.storeKey, #results, results[1].name, results[1].value))
+		else
+			warn(string.format("[GLBS:Studio] FetchTop key=%s entries=0 EMPTY", boardDef.storeKey))
+		end
+		return results
+	end
+
+	-- ── PRODUCTION: read from OrderedDataStore ──
 	local fullKey = getFullStoreKey(boardDef)
 	local store = getOrderedStore(boardDef)
 	if not store then
@@ -263,6 +301,20 @@ local function writeAndRefresh(boardDef, userId: number, intValue: number)
 			return
 		end
 
+		-- ── STUDIO: write to in-memory table only (no ODS) ──
+		if IS_STUDIO then
+			if not studioMemoryBoards[boardDef.storeKey] then
+				studioMemoryBoards[boardDef.storeKey] = {}
+			end
+			studioMemoryBoards[boardDef.storeKey][tostring(userId)] = intValue
+			warn(string.format("[GLBS:Studio] MEM WRITE: key=%s userId=%d value=%d",
+				boardDef.storeKey, userId, intValue))
+			task.wait(0.1)
+			GlobalLeaderboardService.RefreshBoard(boardDef.storeKey)
+			return
+		end
+
+		-- ── PRODUCTION: write to OrderedDataStore ──
 		local fullKey = getFullStoreKey(boardDef)
 		local store = getOrderedStore(boardDef)
 		if not store then
@@ -385,13 +437,28 @@ function GlobalLeaderboardService.SeedPlayerBoardsFromSavedData(userId: number, 
 		return
 	end
 
+	-- Count only EARNED crowns (exclude starter "crown_basic" which everyone has by default).
+	-- This prevents every new player from showing CrownsFound=1 on the leaderboard.
+	local crownsEarned = 0
+	do
+		local ownedCrowns = savedData.OwnedCrowns
+		if type(ownedCrowns) == "table" then
+			local starterCrowns = { ["crown_basic"] = true }
+			for _, cid in ipairs(ownedCrowns) do
+				if type(cid) == "string" and not starterCrowns[cid] then
+					crownsEarned = crownsEarned + 1
+				end
+			end
+		end
+	end
+
 	-- Map saved data fields to GLBS stat keys
 	local statsToSeed = {
 		{ key = "LifetimeWins",  value = savedData.LifetimeWins or 0 },
 		{ key = "WeeklyWins",    value = savedData.WeeklyWins or 0 },
 		{ key = "LifetimeCoins", value = savedData.LifetimeCoinsAchieved or 0 },
 		{ key = "WeeklyCoins",   value = savedData.WeeklyCoinsAchieved or 0 },
-		{ key = "CrownsFound",   value = #(savedData.OwnedCrowns or {}) },
+		{ key = "CrownsFound",   value = crownsEarned },
 	}
 
 	warn(string.format("[GLBS:Seed] === SEEDING userId=%d (studio=%s) ===", userId, tostring(IS_STUDIO)))
@@ -651,8 +718,9 @@ function GlobalLeaderboardService.Init()
 	end
 	initialized = true
 
-	warn(string.format("[GLBS] Init (IS_STUDIO=%s) — negative userIds %s",
-		tostring(IS_STUDIO), IS_STUDIO and "ALLOWED" or "REJECTED"))
+	warn(string.format("[GLBS] Init (IS_STUDIO=%s) — %s",
+		tostring(IS_STUDIO),
+		IS_STUDIO and "IN-MEMORY MODE (no ODS reads/writes)" or "PRODUCTION MODE (OrderedDataStore)"))
 
 	-- Locate lobby parts
 	local lobbyStuff = workspace:FindFirstChild("LobbyStuff")
@@ -694,7 +762,7 @@ function GlobalLeaderboardService.Init()
 		end
 	end)
 
-	warn("[GLBS] Init complete — accepting direct ReportStatById calls — refresh every " .. REFRESH_INTERVAL .. "s")
+	warn("[GLBS] Init complete — refresh every " .. REFRESH_INTERVAL .. "s")
 end
 
 return GlobalLeaderboardService

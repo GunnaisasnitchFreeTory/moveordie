@@ -27,19 +27,21 @@ local Client = script.Parent
 local AnimUtil  = require(Client:WaitForChild("AnimUtil"))
 local SoundUtil = require(Client:WaitForChild("SoundUtil"))
 
--- Safe UIStyle loading with timeout + built-in fallback
-local UIStyleModule = Client:FindFirstChild("UIStyle") or Client:WaitForChild("UIStyle", 5)
+-- UIStyle: instant load (NO blocking WaitForChild — never wait for UIStyle)
+local _styleStart = tick()
+local UIStyleModule = Client:FindFirstChild("UIStyle")
 local UIStyle
 if UIStyleModule then
 	local ok, mod = pcall(require, UIStyleModule)
 	if ok then
 		UIStyle = mod
+		print(string.format("[Components] UIStyle loaded instantly (%.0fms)", (tick() - _styleStart) * 1000))
 	else
 		warn("[Components] UIStyle failed to load:", mod, "— using built-in defaults")
 	end
 end
 if not UIStyle then
-	warn("[Components] UIStyle not found after 5s — using built-in defaults")
+	print(string.format("[Components] UIStyle not present — using built-in defaults (%.0fms, non-blocking)", (tick() - _styleStart) * 1000))
 	UIStyle = {
 		GetTheme = function(_themeName)
 			return {
@@ -57,6 +59,17 @@ if not UIStyle then
 		ApplyBgAnimation = function() end,
 		WireCloseButton = function() end,
 	}
+	-- Async: if UIStyle loads later, hot-swap it (non-blocking)
+	task.spawn(function()
+		local laterModule = Client:WaitForChild("UIStyle", 30)
+		if laterModule then
+			local ok2, mod2 = pcall(require, laterModule)
+			if ok2 and mod2 then
+				UIStyle = mod2
+				print("[Components] UIStyle hot-swapped (loaded asynchronously)")
+			end
+		end
+	end)
 end
 
 local C = UIConfig.Colors
@@ -617,7 +630,6 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	cc.CornerRadius = UDim.new(0, S.CardCorner)
 	cc.Parent = card
 
-	-- Rarity-coloured border (refined — thinner, slightly more transparent)
 	local cStroke = Instance.new("UIStroke")
 	cStroke.Color = data.locked and Color3.fromRGB(42, 45, 62) or rarityColor
 	cStroke.Thickness = data.locked and 1.5 or 2.5
@@ -625,15 +637,12 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	cStroke.Transparency = data.locked and 0.4 or 0.1
 	cStroke.Parent = card
 
-	-- Subtle card gloss
 	if not data.locked then
 		addGloss(card, 0.80, 0.92)
 	end
 
-	-- Stud texture on card backgrounds (very subtle)
 	addStudTexture(card, S.CardCorner)
 
-	-- Icon area
 	local iconFrame = Instance.new("Frame")
 	iconFrame.Name = "Icon"
 	iconFrame.Size = UDim2.new(1, -16, 0, 90)
@@ -665,7 +674,6 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		iconFrame.BackgroundColor3 = data.iconColor
 		addGloss(iconFrame, 0.48, 0.78)
 
-		-- Item image from ItemCatalog (preferred) or fallback to text icon
 		if data.image and data.image ~= "" then
 			local img = Instance.new("ImageLabel")
 			img.Name = "ItemImage"
@@ -698,7 +706,6 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		end
 	end
 
-	-- Tag badge (POPULAR, EXCLUSIVE, VIP, etc.)
 	if data.tag and data.tag ~= "" then
 		local tagBadge = Instance.new("TextLabel")
 		tagBadge.Name = "Tag"
@@ -724,7 +731,6 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		tcs.Parent = tagBadge
 	end
 
-	-- Equipped badge (green circle with checkmark)
 	if data.equipped then
 		local check = Instance.new("TextLabel")
 		check.Name = "Equipped"
@@ -733,7 +739,7 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		check.Size = UDim2.fromOffset(26, 26)
 		check.BackgroundColor3 = C.Green
 		check.Font = Enum.Font.GothamBold
-		check.Text = "✓"
+		check.Text = "\xe2\x9c\x93"
 		check.TextColor3 = C.TextWhite
 		check.TextSize = 15
 		check.BorderSizePixel = 0
@@ -750,7 +756,6 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		chs.Parent = check
 	end
 
-	-- Name (white text on dark card — high contrast)
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "ItemName"
 	nameLabel.Size = UDim2.new(1, -10, 0, 20)
@@ -771,7 +776,6 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		ns.Parent = nameLabel
 	end
 
-	-- Rarity label (coloured, slightly softer than name)
 	local rarLabel = Instance.new("TextLabel")
 	rarLabel.Name = "Rarity"
 	rarLabel.Size = UDim2.new(1, -10, 0, 16)
@@ -784,7 +788,6 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	rarLabel.Text = data.locked and "" or rarityInfo.label
 	rarLabel.Parent = card
 
-	-- Action button (green buy, blue equip, etc.)
 	if data.actionText and not data.locked then
 		local btnColor = data.actionColor or C.BuyButton
 		local btn = Instance.new("TextButton")
@@ -804,7 +807,6 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		bc.CornerRadius = UDim.new(0, S.SmBtnCorner)
 		bc.Parent = btn
 
-		-- Color-based gradient (lighter → base → darker) — NO white/black overlay
 		local abr, abg, abb = btnColor.R, btnColor.G, btnColor.B
 		local lighterAB = Color3.new(
 			math.min(abr + 0.20, 1),
@@ -832,7 +834,6 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		bs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		bs.Parent = btn
 
-		-- Bold text stroke for readability
 		local bts = Instance.new("UIStroke")
 		bts.Color = Color3.fromRGB(0, 0, 0)
 		bts.Thickness = 1.5
@@ -882,10 +883,8 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 
 	addGloss(section, 0.82, 0.94)
 
-	-- Stud texture on crate section
 	addStudTexture(section, S.CardCorner)
 
-	-- Left: crate icon area (big, glossy, vibrant)
 	local iconArea = Instance.new("Frame")
 	iconArea.Name = "IconArea"
 	iconArea.Size = UDim2.new(0, 120, 1, -14)
@@ -904,13 +903,12 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 	ias.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	ias.Parent = iconArea
 
-	-- Big crate emoji
 	local crateEmoji = Instance.new("TextLabel")
 	crateEmoji.Size = UDim2.new(1, 0, 0, 70)
 	crateEmoji.Position = UDim2.fromOffset(0, 18)
 	crateEmoji.BackgroundTransparency = 1
 	crateEmoji.Font = Enum.Font.GothamBold
-	crateEmoji.Text = "📦"
+	crateEmoji.Text = "\xF0\x9F\x93\xA6"
 	crateEmoji.TextSize = 46
 	crateEmoji.TextColor3 = C.TextWhite
 	crateEmoji.Parent = iconArea
@@ -920,7 +918,6 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 	ces.Transparency = 0.22
 	ces.Parent = crateEmoji
 
-	-- Crate name
 	local crateName = Instance.new("TextLabel")
 	crateName.Name = "Name"
 	crateName.AnchorPoint = Vector2.new(0.5, 1)
@@ -939,7 +936,6 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 	cns.Transparency = 0.22
 	cns.Parent = crateName
 
-	-- Right: crate title
 	local titleR = Instance.new("TextLabel")
 	titleR.Name = "Title"
 	titleR.Size = UDim2.new(1, -150, 0, 28)
@@ -957,7 +953,6 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 	trs.Transparency = 0.22
 	trs.Parent = titleR
 
-	-- Drop chances (colour-coded by rarity — secondary text style)
 	for i, drop in ipairs(data.drops) do
 		local dRarity = UIConfig.RarityInfo[drop.rarity] or UIConfig.RarityInfo.Common
 		local dLabel = Instance.new("TextLabel")
@@ -978,7 +973,6 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 		ds.Parent = dLabel
 	end
 
-	-- Bottom: buy buttons row
 	local btnRow = Instance.new("Frame")
 	btnRow.Name = "BuyButtons"
 	btnRow.AnchorPoint = Vector2.new(0, 1)
@@ -1017,7 +1011,6 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 		pbc.CornerRadius = UDim.new(0, S.SmBtnCorner)
 		pbc.Parent = pBtn
 
-		-- Color-based gradient (lighter → base → darker)
 		local br, bg, bb = btnColor.R, btnColor.G, btnColor.B
 		local lighterBtn = Color3.new(
 			math.min(br + 0.20, 1),
@@ -1045,7 +1038,6 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 		pbs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		pbs.Parent = pBtn
 
-		-- Bold text stroke for readability
 		local pbts = Instance.new("UIStroke")
 		pbts.Color = Color3.fromRGB(0, 0, 0)
 		pbts.Thickness = 1.2
@@ -1123,7 +1115,6 @@ function Components.CreateSideButton(parent: Instance, label: string, iconText: 
 	co.CornerRadius = UDim.new(0, S.SideBtnCorner)
 	co.Parent = btn
 
-	-- White border (refined — thinner, more transparent)
 	local st = Instance.new("UIStroke")
 	st.Color = Color3.fromRGB(255, 255, 255)
 	st.Thickness = 2.5
@@ -1131,7 +1122,6 @@ function Components.CreateSideButton(parent: Instance, label: string, iconText: 
 	st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	st.Parent = btn
 
-	-- Color-based gradient (lighter → base → slightly darker of the SAME color)
 	local r, g, b = bgColor.R, bgColor.G, bgColor.B
 	local lighterColor = Color3.new(
 		math.min(r + 0.22, 1),
@@ -1152,7 +1142,6 @@ function Components.CreateSideButton(parent: Instance, label: string, iconText: 
 	sideGrad.Rotation = 90
 	sideGrad.Parent = btn
 
-	-- Drop shadow (softer)
 	local shadow = Instance.new("Frame")
 	shadow.Name = "Shadow"
 	shadow.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1167,7 +1156,6 @@ function Components.CreateSideButton(parent: Instance, label: string, iconText: 
 	shc.CornerRadius = UDim.new(0, S.SideBtnCorner + 4)
 	shc.Parent = shadow
 
-	-- Icon (emoji — large, bold, high contrast)
 	local icon = Instance.new("TextLabel")
 	icon.Name = "Icon"
 	icon.Size = UDim2.new(1, 0, 0, 40)
@@ -1185,7 +1173,6 @@ function Components.CreateSideButton(parent: Instance, label: string, iconText: 
 	is.Transparency = 0.15
 	is.Parent = icon
 
-	-- Label (bold, readable)
 	local lbl = Instance.new("TextLabel")
 	lbl.Name = "Label"
 	lbl.Size = UDim2.new(1, 0, 0, 20)

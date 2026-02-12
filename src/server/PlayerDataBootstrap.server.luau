@@ -15,12 +15,15 @@
 local Players             = game:GetService("Players")
 local ServerScriptService = game:GetService("ServerScriptService")
 local ReplicatedStorage   = game:GetService("ReplicatedStorage")
+local RunService          = game:GetService("RunService")
 
 local Server = ServerScriptService:WaitForChild("Server")
 
 local PlayerDataService = require(Server:WaitForChild("PlayerDataService"))
 local InventoryService  = require(Server:WaitForChild("InventoryService"))
 local StatService       = require(Server:WaitForChild("StatService"))
+
+local IS_STUDIO = RunService:IsStudio()
 
 -- Initialize services
 PlayerDataService.Init()
@@ -43,6 +46,15 @@ local function getGLBS()
 		warn("[PlayerDataBootstrap] GLBS not available:", tostring(mod))
 	end
 	return _GLBS
+end
+
+-- Helper: match GLBS isValidUserId logic — accept negative ids in Studio
+local function isValidUserId(userId: number): boolean
+	if type(userId) ~= "number" then return false end
+	if userId == 0 then return false end
+	if userId > 0 then return true end
+	-- Negative userId: only valid in Studio (test players are -1, -2, etc.)
+	return IS_STUDIO
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -107,12 +119,32 @@ local function onPlayerAdded(player: Player)
 	StatService.RecalculateStats(player)
 
 	-- 3) Seed leaderboard with saved stats (non-blocking)
-	if data and player.UserId > 0 then
+	-- FIX: Accept negative UserIds in Studio (test players are -1, -2, etc.)
+	if data and isValidUserId(player.UserId) then
 		task.spawn(function()
+			-- Small delay: gives MatchBootstrap time to call GLBS.Init()
+			-- so boardParts are populated and rendering works.
+			task.wait(1.5)
+
 			local GLBS = getGLBS()
 			if GLBS and GLBS ~= false and type(GLBS.SeedPlayerBoardsFromSavedData) == "function" then
-				warn(string.format("[PlayerDataBootstrap] Seeding leaderboard for %s (userId=%d)", player.Name, player.UserId))
+				warn(string.format("[PlayerDataBootstrap] Seeding leaderboard for %s (userId=%d, studio=%s)", player.Name, player.UserId, tostring(IS_STUDIO)))
+
+				-- Ensure GLBS is initialized (idempotent — safe to call multiple times)
+				if type(GLBS.Init) == "function" then
+					pcall(GLBS.Init)
+				end
+
 				GLBS.SeedPlayerBoardsFromSavedData(player.UserId, data)
+
+				-- Explicit RefreshAll after seeding so boards render immediately.
+				-- The seed function already schedules one, but belt-and-suspenders:
+				task.delay(3, function()
+					if GLBS and type(GLBS.RefreshAll) == "function" then
+						warn("[PlayerDataBootstrap] Post-seed RefreshAll for " .. player.Name)
+						pcall(GLBS.RefreshAll)
+					end
+				end)
 			else
 				warn("[PlayerDataBootstrap] GLBS.SeedPlayerBoardsFromSavedData not available — skipping seed")
 			end

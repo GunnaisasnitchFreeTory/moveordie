@@ -2,16 +2,20 @@
 	SpectatePanel
 	Spectate other players — select targets from a list or cycle with Next/Prev.
 
-	• Lists players currently InMatch / alive
+	• Only lists players with PlayerState == "InMatch" AND alive Humanoid
+	• Auto-switches to next valid target when current dies / leaves match
+	• Refreshes live on player state changes, joins, leaves, and deaths
 	• Next / Prev / Stop buttons
 	• Smooth open/close animation (matches other panels)
 	• "No players to spectate" message when empty
+
+	Close (X) = hide UI only, keep spectating.
+	Stop      = revert camera + hide UI.
 
 	Used by: UIController (sidebar "Spectate" button)
 ]]
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -27,6 +31,8 @@ local S = UIConfig.Sizes
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
+-- ─── STATE ───────────────────────────────────────────────────────────────────
+
 local canvas: CanvasGroup = nil
 local uiScale: UIScale = nil
 local overlay: Frame = nil
@@ -36,31 +42,47 @@ local closeCallback: (() -> ())? = nil
 
 local spectateTargets: { Player } = {}
 local currentTargetIndex: number = 0
+local currentTargetPlayer: Player? = nil
 local originalCameraSubject = nil
 
 local noPlayersLabel: TextLabel = nil
+local playerConns: { [Player]: { RBXScriptConnection } } = {}
 
 local SpectatePanel = {}
 
--- ─── HELPERS ───
+-- ─── LOGGING ─────────────────────────────────────────────────────────────────
 
-local function getAlivePlayers(): { Player }
+local function log(msg: string)
+	print("[Spectate]", msg)
+end
+
+-- ─── ELIGIBILITY ─────────────────────────────────────────────────────────────
+
+local function isSpectatable(player: Player): boolean
+	if player == LocalPlayer then return false end
+	if player:GetAttribute("PlayerState") ~= "InMatch" then return false end
+	local char = player.Character
+	if not char then return false end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then return false end
+	return true
+end
+
+local function getSpectatablePlayers(): { Player }
 	local result = {}
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player == LocalPlayer then continue end
-		local char = player.Character
-		if not char then continue end
-		local hum = char:FindFirstChildOfClass("Humanoid")
-		if hum and hum.Health > 0 then
+		if isSpectatable(player) then
 			table.insert(result, player)
 		end
 	end
 	return result
 end
 
+-- ─── CAMERA CONTROL ──────────────────────────────────────────────────────────
+
 local function attachCamera(player: Player?)
 	if not player then
-		-- Revert
+		-- Revert to own character
 		if originalCameraSubject then
 			Camera.CameraSubject = originalCameraSubject
 		else
@@ -68,6 +90,8 @@ local function attachCamera(player: Player?)
 			if myHum then Camera.CameraSubject = myHum end
 		end
 		currentTargetIndex = 0
+		currentTargetPlayer = nil
+		originalCameraSubject = nil
 		return
 	end
 
@@ -75,6 +99,7 @@ local function attachCamera(player: Player?)
 	if hum then
 		Camera.CameraSubject = hum
 	end
+	currentTargetPlayer = player
 end
 
 local function selectTarget(index: number)
@@ -87,7 +112,27 @@ local function selectTarget(index: number)
 	attachCamera(spectateTargets[index])
 end
 
--- ─── BUILD LIST ───
+-- ─── AUTO-SWITCH ─────────────────────────────────────────────────────────────
+
+local function validateCurrentTarget()
+	if not currentTargetPlayer then return end
+	if isSpectatable(currentTargetPlayer) then return end
+
+	-- Current target is no longer valid — auto-switch
+	local candidates = getSpectatablePlayers()
+	spectateTargets = candidates
+
+	if #candidates > 0 then
+		currentTargetIndex = 1
+		attachCamera(candidates[1])
+		log("Auto-switch → " .. candidates[1].Name)
+	else
+		attachCamera(nil)
+		log("No valid targets → stopped")
+	end
+end
+
+-- ─── UI BUILD ────────────────────────────────────────────────────────────────
 
 local function clearContent()
 	for _, child in ipairs(contentFrame:GetChildren()) do
@@ -97,18 +142,27 @@ end
 
 local function refresh()
 	clearContent()
-	spectateTargets = getAlivePlayers()
+	spectateTargets = getSpectatablePlayers()
+
+	-- Re-sync index to the actual player we're spectating
+	if currentTargetPlayer then
+		currentTargetIndex = 0
+		for i, p in ipairs(spectateTargets) do
+			if p == currentTargetPlayer then
+				currentTargetIndex = i
+				break
+			end
+		end
+		if currentTargetIndex == 0 then
+			currentTargetPlayer = nil
+		end
+	end
 
 	if #spectateTargets == 0 then
-		if noPlayersLabel then
-			noPlayersLabel.Visible = true
-		end
+		if noPlayersLabel then noPlayersLabel.Visible = true end
 		return
 	end
-
-	if noPlayersLabel then
-		noPlayersLabel.Visible = false
-	end
+	if noPlayersLabel then noPlayersLabel.Visible = false end
 
 	for i, player in ipairs(spectateTargets) do
 		local isSelected = (currentTargetIndex == i)
@@ -151,12 +205,72 @@ local function refresh()
 				originalCameraSubject = Camera.CameraSubject
 			end
 			selectTarget(i)
+			if currentTargetPlayer then
+				log("Spectating " .. currentTargetPlayer.DisplayName)
+			end
 			refresh()
 		end)
 	end
 end
 
--- ─── INIT ───
+-- ─── DEBOUNCED LIVE REFRESH ──────────────────────────────────────────────────
+
+local refreshQueued = false
+
+local function queueRefresh()
+	validateCurrentTarget()
+	if refreshQueued then return end
+	refreshQueued = true
+	task.defer(function()
+		refreshQueued = false
+		if visible and contentFrame then
+			refresh()
+		end
+	end)
+end
+
+-- ─── PLAYER EVENT WIRING ────────────────────────────────────────────────────
+
+local function unwirePlayer(player: Player)
+	local conns = playerConns[player]
+	if conns then
+		for _, c in ipairs(conns) do c:Disconnect() end
+		playerConns[player] = nil
+	end
+end
+
+local function wirePlayer(player: Player)
+	if player == LocalPlayer then return end
+	unwirePlayer(player)
+
+	local conns = {}
+
+	-- PlayerState attribute change (InMatch ↔ Lobby, etc.)
+	table.insert(conns, player:GetAttributeChangedSignal("PlayerState"):Connect(queueRefresh))
+
+	-- Character lifecycle → refresh + wire Humanoid.Died
+	table.insert(conns, player.CharacterAdded:Connect(function(char)
+		local hum = char:WaitForChild("Humanoid", 5)
+		if hum then
+			hum.Died:Connect(queueRefresh)
+		end
+		queueRefresh()
+	end))
+
+	table.insert(conns, player.CharacterRemoving:Connect(queueRefresh))
+
+	-- Wire existing character's humanoid if already spawned
+	if player.Character then
+		local hum = player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			table.insert(conns, hum.Died:Connect(queueRefresh))
+		end
+	end
+
+	playerConns[player] = conns
+end
+
+-- ─── INIT ────────────────────────────────────────────────────────────────────
 
 function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	closeCallback = onClose
@@ -195,11 +309,10 @@ function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	noPlayersLabel.Text = "No players to spectate"
 	noPlayersLabel.Visible = false
 	noPlayersLabel.Parent = canvas
-
 	noPlayersLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 	noPlayersLabel.Position = UDim2.fromScale(0.5, 0.5)
 
-	-- Bottom bar with Next / Prev / Stop buttons
+	-- Bottom bar with Next / Prev / Stop
 	local bottomBar = Instance.new("Frame")
 	bottomBar.Name = "BottomBar"
 	bottomBar.AnchorPoint = Vector2.new(0.5, 1)
@@ -275,6 +388,9 @@ function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 			originalCameraSubject = Camera.CameraSubject
 		end
 		selectTarget(currentTargetIndex - 1)
+		if currentTargetPlayer then
+			log("Prev → " .. currentTargetPlayer.DisplayName)
+		end
 		refresh()
 	end)
 
@@ -283,19 +399,42 @@ function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 			originalCameraSubject = Camera.CameraSubject
 		end
 		selectTarget(currentTargetIndex + 1)
+		if currentTargetPlayer then
+			log("Next → " .. currentTargetPlayer.DisplayName)
+		end
 		refresh()
 	end)
 
 	makeBottomBtn("⏹ Stop", C.Red, 3, function()
+		if currentTargetPlayer then
+			log("Stopped spectating")
+		end
 		attachCamera(nil)
-		refresh()
+		SpectatePanel.Hide()
 	end)
 
+	-- X button → hide UI only (do NOT stop spectating)
 	AnimUtil.WireButton(closeBtn, function()
 		SoundUtil.Close()
 		SpectatePanel.Hide()
 	end)
+
+	-- ── Wire live-update events for all current and future players ──
+	for _, player in ipairs(Players:GetPlayers()) do
+		wirePlayer(player)
+	end
+	Players.PlayerAdded:Connect(function(player)
+		wirePlayer(player)
+	end)
+	Players.PlayerRemoving:Connect(function(player)
+		unwirePlayer(player)
+		queueRefresh()
+	end)
+
+	log("Initialized")
 end
+
+-- ─── SHOW / HIDE / TOGGLE ───────────────────────────────────────────────────
 
 function SpectatePanel.Show()
 	if visible then return end
@@ -310,8 +449,8 @@ function SpectatePanel.Hide()
 	if not visible then return end
 	visible = false
 	overlay.Visible = false
-	-- Revert camera when closing
-	attachCamera(nil)
+	-- NOTE: Closing the panel only hides the UI; spectating continues.
+	-- The Stop button is the only way to revert the camera.
 	local t = AnimUtil.ClosePanel(canvas, uiScale)
 	task.spawn(function()
 		t.Completed:Wait()

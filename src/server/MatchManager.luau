@@ -34,6 +34,7 @@ local Config = {
 	PlayingSeconds = 20,
 	EndingSeconds = 5,
 	MinPlayersToStart = 1,
+	MinIntermissionFloor = 10,  -- min seconds a late-joining player must see
 	DebugLog = true,
 }
 
@@ -128,6 +129,27 @@ local function setMatchState(newState: string)
 	end
 end
 
+-- ── Force-unseat: detach player from any seat before teleport ──
+local function forceUnseat(player: Player): boolean
+	local character = player.Character
+	if not character then return false end
+	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return false end
+	
+	local wasSeated = humanoid.SeatPart ~= nil
+		or humanoid:GetState() == Enum.HumanoidStateType.Seated
+		or humanoid.Sit
+	
+	if wasSeated then
+		humanoid.Sit = false
+		humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+		humanoid.PlatformStand = false
+	end
+	
+	return wasSeated
+end
+
 local function safeTeleport(player: Player, targetCFrame: CFrame): boolean
 	local character = player.Character
 	if not character then return false end
@@ -154,6 +176,19 @@ local function teleportPlayersToArena(players: { Player })
 		return
 	end
 	
+	-- Force all players to stand up before teleporting (fixes chair/seat bug)
+	local unseatedAny = false
+	for _, player in ipairs(players) do
+		if forceUnseat(player) then
+			unseatedAny = true
+		end
+	end
+	
+	-- Brief wait so Roblox properly detaches seats from characters
+	if unseatedAny then
+		task.wait(0.15)
+	end
+	
 	local teleported = 0
 	
 	for i, player in ipairs(players) do
@@ -161,6 +196,20 @@ local function teleportPlayersToArena(players: { Player })
 		
 		if safeTeleport(player, spawnCFrame) then
 			teleported = teleported + 1
+			
+			-- Post-teleport verify: ensure player is not still seated
+			task.spawn(function()
+				task.wait(0.1)
+				local character = player.Character
+				if character then
+					local humanoid = character:FindFirstChildOfClass("Humanoid")
+					if humanoid and (humanoid.Sit or humanoid.SeatPart ~= nil) then
+						humanoid.Sit = false
+						humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+						humanoid.PlatformStand = false
+					end
+				end
+			end)
 		else
 			task.spawn(function()
 				for _ = 1, SpawnConfig.MaxTeleportRetries do
@@ -276,8 +325,24 @@ local function runIntermission()
 	replicateRound(0)
 	log(string.format("Intermission started (%ds)", Config.IntermissionSeconds))
 	
+	local lastWaitingCount = 0
+	
 	while tick() < phaseEndTime do
 		setEligibleToWaiting()
+		
+		-- Floor extension: if new player(s) enter Waiting with low remaining time, extend
+		local waiting = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
+		local currentCount = #waiting
+		if currentCount > lastWaitingCount then
+			local remaining = phaseEndTime - tick()
+			if remaining < Config.MinIntermissionFloor then
+				phaseEndTime = tick() + Config.MinIntermissionFloor
+				replicatePhaseEnd(Config.MinIntermissionFloor)
+				log(string.format("Extended intermission for new player(s) — %.0fs remaining now", Config.MinIntermissionFloor))
+			end
+			lastWaitingCount = currentCount
+		end
+		
 		task.wait(1)
 	end
 	
@@ -390,6 +455,15 @@ local function runEnding()
 		log(string.format("Ending started (%ds)", Config.EndingSeconds))
 	end
 	
+	-- Fire win SFX to the winning player
+	if matchEndReason == "Winner" and winner and winner.Parent then
+		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+		local sfxRemote = remotes and remotes:FindFirstChild("PlaySFX")
+		if sfxRemote then
+			sfxRemote:FireClient(winner, "Win")
+		end
+	end
+	
 	resolveRankingsAndReward()
 	setMatchPlayersToLobby()
 	
@@ -462,9 +536,21 @@ function MatchManager.StartLoop()
 		return
 	end
 	loopRunning = true
-	log("Loop started")
+	log("Loop started — waiting for first eligible player before intermission")
 	
 	task.spawn(function()
+		-- ISSUE A FIX: Do NOT start intermission until at least 1 player is in Lobby/Waiting.
+		-- This prevents the 15s timer from ticking down before anyone can see it.
+		while loopRunning do
+			local eligible = MatchManager.GetEligiblePlayers()
+			if #eligible > 0 then
+				log(string.format("First eligible player found (%s) — beginning match loop", eligible[1].Name))
+				break
+			end
+			task.wait(0.5)
+		end
+		
+		-- Main match loop
 		while loopRunning do
 			runIntermission()
 			local playedMatch = runPlaying()

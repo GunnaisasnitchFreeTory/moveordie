@@ -16,6 +16,10 @@
 	FIX: SetBannerOverrideHidden hides ALL top-center banners
 	(intermission bar + round badge + timer) when a panel is open.
 
+	FIX: Countdown uses server-authoritative PhaseEndTime
+	(workspace:GetServerTimeNow). Even if UI loads late,
+	the banner instantly shows the correct remaining time.
+
 	Used by: UIController
 ]]
 
@@ -459,12 +463,30 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	coinLabel.Text = formatCoins(LocalPlayer:GetAttribute("Coins") or 0)
 	LocalPlayer:GetAttributeChangedSignal("Coins"):Connect(updateCoins)
 
-	-- MatchStatus is created by MatchManager.Init on server
-	local matchStatus = ReplicatedStorage:WaitForChild("MatchStatus", 15)
+	-- MatchStatus: use FindFirstChild first (instant if already exists), fallback to short WaitForChild
+	local matchStatus = ReplicatedStorage:FindFirstChild("MatchStatus") or ReplicatedStorage:WaitForChild("MatchStatus", 10)
 	if matchStatus then
 		local stateVal = matchStatus:FindFirstChild("State")
 		local roundVal = matchStatus:FindFirstChild("Round")
 		local phaseEndVal = matchStatus:FindFirstChild("PhaseEndTime")
+
+		-- Helper: compute and display remaining time immediately (no waiting for Heartbeat)
+		local function updateCountdownNow()
+			if not phaseEndVal then return end
+			local endTime = phaseEndVal.Value
+			if endTime > 0 then
+				local remaining = math.max(0, endTime - workspace:GetServerTimeNow())
+				if remaining > 0.5 then
+					local secs = math.ceil(remaining)
+					if intermissionVisible and intermissionLabel then
+						intermissionLabel.Text = "Game starting in " .. tostring(secs)
+					end
+					if not intermissionVisible then
+						stateLabel.Text = string.format("%.0fs", secs)
+					end
+				end
+			end
+		end
 
 		if stateVal then
 			local function onStateChange()
@@ -480,6 +502,8 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 					hideIntermission()
 				elseif st == "Intermission" then
 					showIntermission()
+					-- Immediately show correct remaining time (don't wait for Heartbeat)
+					updateCountdownNow()
 				elseif st == "Ending" then
 					roundLabel.Text = "Results"
 					stateLabel.Text = "Match ended!"
