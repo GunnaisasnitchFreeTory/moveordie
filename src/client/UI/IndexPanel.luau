@@ -1,14 +1,15 @@
 --[[
 	IndexPanel
-	Discovery/collection grid — ALL crowns AND pets.
-	  * Owned  → full icon + name + rarity (vibrant)
-	  * Locked → dark card with "?" (dim)
+	Discovery/collection grid -- ALL crowns AND pets in the game.
+	  * Owned  -> full-color ViewportFrame + name + rarity
+	  * Locked -> greyed-out ViewportFrame + lock overlay + source label
 
 	Features:
 	  * Tab bar: Crowns / Pets
-	  * Pets tab: sourced from ItemCatalog (single source of truth)
-	  * Crowns tab: still uses UIConfig.MockCrowns (unchanged)
-	  * Dark theme, stud texture, sunburst (via Components.CreatePanel)
+	  * Both tabs sourced from ItemCatalog (single source of truth)
+	  * Ownership from player attributes (OwnedCrowns / OwnedPets)
+	  * ViewportFrame 3D model previews for all items
+	  * Live refresh on ownership changes + InventoryUpdated event
 
 	Used by: UIController (sidebar "Index" button)
 ]]
@@ -26,9 +27,7 @@ end
 
 local CDPModule = Shared:WaitForChild("ClientDepsProvider", 60)
 if not CDPModule then
-	local _children = {}
-	for _, c in ipairs(Shared:GetChildren()) do table.insert(_children, c.Name.."("..c.ClassName..")") end
-	warn("[IndexPanel] ClientDepsProvider MISSING. Shared path:", Shared:GetFullName(), "| Shared children:", table.concat(_children, ", "))
+	warn("[IndexPanel] ClientDepsProvider MISSING")
 	return { Init = function() end, Show = function() end, Hide = function() end,
 		IsVisible = function() return false end, Toggle = function() end }
 end
@@ -49,9 +48,10 @@ if not UIConfig then
 end
 
 local Client = script.Parent
-local AnimUtil   = require(Client:WaitForChild("AnimUtil"))
-local SoundUtil  = require(Client:WaitForChild("SoundUtil"))
-local Components = require(Client:WaitForChild("Components"))
+local AnimUtil          = require(Client:WaitForChild("AnimUtil"))
+local SoundUtil         = require(Client:WaitForChild("SoundUtil"))
+local Components        = require(Client:WaitForChild("Components"))
+local ThumbnailRenderer = require(Client:WaitForChild("ThumbnailRenderer"))
 
 local C = UIConfig.Colors
 local S = UIConfig.Sizes
@@ -73,18 +73,6 @@ local TABS = {
 
 local IndexPanel = {}
 
-local function warnOnce(msg: string)
-	warn("[IndexPanel] " .. msg)
-end
-
-local function safeCall(name: string, fn: any, ...)
-	if type(fn) ~= "function" then
-		warnOnce("Missing Components helper: " .. tostring(name))
-		return nil
-	end
-	return fn(...)
-end
-
 local function clearCards()
 	if not contentFrame then return end
 	for _, child in ipairs(contentFrame:GetChildren()) do
@@ -95,14 +83,14 @@ end
 local function ensureGrid()
 	if not contentFrame then return end
 	if not contentFrame:FindFirstChildOfClass("UIGridLayout") then
-		safeCall("AddGridLayout", Components.AddGridLayout, contentFrame)
+		Components.AddGridLayout(contentFrame)
 	end
 end
 
-local function getOwnedPetSet(): { [string]: boolean }
-	local json = player:GetAttribute("OwnedPets") or "[]"
-	local ok, list = pcall(HttpService.JSONDecode, HttpService, json)
-	if not ok or type(list) ~= "table" then return {} end
+local function getOwnedSet(attrName: string): { [string]: boolean }
+	local json = player:GetAttribute(attrName) or "[]"
+	local decOk, list = pcall(HttpService.JSONDecode, HttpService, json)
+	if not decOk or type(list) ~= "table" then return {} end
 	local set = {}
 	for _, id in ipairs(list) do
 		set[id] = true
@@ -110,25 +98,85 @@ local function getOwnedPetSet(): { [string]: boolean }
 	return set
 end
 
+--- Apply grey overlay + lock icon on a ViewportFrame for locked items
+local function applyLockOverlay(vpFrame: ViewportFrame)
+	local greyOverlay = Instance.new("Frame")
+	greyOverlay.Name = "LockOverlay"
+	greyOverlay.Size = UDim2.fromScale(1, 1)
+	greyOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	greyOverlay.BackgroundTransparency = 0.55
+	greyOverlay.BorderSizePixel = 0
+	greyOverlay.ZIndex = 2
+	greyOverlay.Parent = vpFrame
+	local oc = Instance.new("UICorner")
+	oc.CornerRadius = UDim.new(0, 10)
+	oc.Parent = greyOverlay
+
+	local lockIcon = Instance.new("TextLabel")
+	lockIcon.Name = "LockIcon"
+	lockIcon.Size = UDim2.fromOffset(32, 32)
+	lockIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+	lockIcon.Position = UDim2.fromScale(0.5, 0.5)
+	lockIcon.BackgroundTransparency = 1
+	lockIcon.Font = Enum.Font.GothamBold
+	lockIcon.Text = "\240\159\148\146"
+	lockIcon.TextColor3 = Color3.fromRGB(160, 165, 190)
+	lockIcon.TextSize = 28
+	lockIcon.ZIndex = 3
+	lockIcon.Parent = vpFrame
+end
+
+--- Build sub-label for unowned crowns based on source
+local function getCrownSubLabel(crown): string?
+	if crown.source == "Level" then
+		local milestone = ItemCatalog.GetMilestoneWins(crown.id)
+		if milestone then
+			return tostring(milestone) .. " Wins"
+		end
+		return "Wins Milestone"
+	elseif crown.source == "Findable" then
+		return "Crown Crate"
+	elseif crown.source == "Exclusive" then
+		return "Shop Only"
+	end
+	return nil
+end
+
 local function populateCrowns()
 	clearCards()
 	ensureGrid()
 
-	local crowns = UIConfig.MockCrowns
-	if type(crowns) ~= "table" then
-		warnOnce("MockCrowns missing or not a table")
-		return
-	end
+	local allCrowns = ItemCatalog.GetAllCrownsSorted()
+	local ownedSet = getOwnedSet("OwnedCrowns")
 
-	for i, item in ipairs(crowns) do
-		safeCall("CreateItemCard", Components.CreateItemCard, contentFrame, {
-			name = item.name,
-			rarity = item.rarity,
-			iconColor = item.iconColor,
-			iconText = "👑",
-			locked = not item.owned,
-			owned = item.owned,
-		}).LayoutOrder = i
+	for i, crown in ipairs(allCrowns) do
+		local isOwned = ownedSet[crown.id] == true
+		local subLabel = nil
+		if not isOwned then
+			subLabel = getCrownSubLabel(crown)
+		end
+
+		local card = Components.CreateViewportItemCard(contentFrame, {
+			name = crown.name,
+			rarity = crown.rarity,
+			iconColor = crown.iconColor,
+			iconText = crown.iconText or "\240\159\145\145",
+			image = ItemCatalog.GetImage(crown),
+			modelPath = crown.modelPath,
+			locked = not isOwned,
+			owned = isOwned,
+			subLabel = subLabel,
+		})
+		card.LayoutOrder = i
+
+		-- Render real 3D model via ThumbnailRenderer (replaces any placeholder)
+		local vpFrame = card:FindFirstChild("ModelPreview", true)
+		if vpFrame and vpFrame:IsA("ViewportFrame") then
+			ThumbnailRenderer.RenderItemToViewport(vpFrame, crown)
+			if not isOwned then
+				applyLockOverlay(vpFrame)
+			end
+		end
 	end
 end
 
@@ -137,32 +185,40 @@ local function populatePets()
 	ensureGrid()
 
 	local allPets = ItemCatalog.GetAllPetsSorted()
-
-	if #allPets == 0 then
-		safeCall("CreateItemCard", Components.CreateItemCard, contentFrame, {
-			name = "No pets yet",
-			rarity = "Common",
-			iconColor = C.Cyan,
-			iconText = "🐾",
-			locked = false,
-			owned = false,
-		}).LayoutOrder = 1
-		return
-	end
-
-	local ownedSet = getOwnedPetSet()
+	local ownedSet = getOwnedSet("OwnedPets")
 
 	for i, pet in ipairs(allPets) do
 		local isOwned = ownedSet[pet.id] == true
-		safeCall("CreateItemCard", Components.CreateItemCard, contentFrame, {
+		local subLabel = nil
+		if not isOwned then
+			if pet.shopOnly then
+				subLabel = "Shop Only"
+			else
+				subLabel = "Pet Crate"
+			end
+		end
+
+		local card = Components.CreateViewportItemCard(contentFrame, {
 			name = pet.name,
 			rarity = pet.rarity,
 			iconColor = pet.iconColor,
-			iconText = pet.iconText or "🐾",
+			iconText = pet.iconText or "\240\159\144\190",
 			image = ItemCatalog.GetImage(pet),
+			modelPath = pet.modelPath,
 			locked = not isOwned,
 			owned = isOwned,
-		}).LayoutOrder = i
+			subLabel = subLabel,
+		})
+		card.LayoutOrder = i
+
+		-- Render real 3D model via ThumbnailRenderer (replaces any placeholder)
+		local vpFrame = card:FindFirstChild("ModelPreview", true)
+		if vpFrame and vpFrame:IsA("ViewportFrame") then
+			ThumbnailRenderer.RenderItemToViewport(vpFrame, pet)
+			if not isOwned then
+				applyLockOverlay(vpFrame)
+			end
+		end
 	end
 end
 
@@ -177,12 +233,12 @@ end
 function IndexPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	closeCallback = onClose
 
-	overlay = safeCall("CreateDimOverlay", Components.CreateDimOverlay, screenGui, function()
+	overlay = Components.CreateDimOverlay(screenGui, function()
 		IndexPanel.Hide()
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = safeCall("CreatePanel", Components.CreatePanel, screenGui, "📖 INDEX", C.HeaderIndex, "Index")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "INDEX", C.HeaderIndex, "Index")
 	contentFrame = content
 
 	if closeBtn then
@@ -194,15 +250,11 @@ function IndexPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 
 	local setActiveTab: ((number) -> ())? = nil
 	local tabBar
-	tabBar, setActiveTab = safeCall("CreateTabBar", Components.CreateTabBar, canvas, TABS, function(idx)
+	tabBar, setActiveTab = Components.CreateTabBar(canvas, TABS, function(idx)
 		activeTab = idx
-
 		if type(setActiveTab) == "function" then
 			setActiveTab(idx)
-		else
-			warnOnce("Tab visual updater missing (CreateTabBar did not return update function)")
 		end
-
 		showTab(idx)
 	end)
 
@@ -217,14 +269,31 @@ function IndexPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		content.Size = UDim2.new(1, -24, 1, -(S.PanelHeaderHeight + S.TabHeight + 28))
 	end
 
-	safeCall("AddGridLayout", Components.AddGridLayout, contentFrame)
+	Components.AddGridLayout(contentFrame)
 	if type(setActiveTab) == "function" then
 		setActiveTab(1)
 	end
 	showTab(1)
 
+	-- Live refresh on ownership changes
 	player:GetAttributeChangedSignal("OwnedPets"):Connect(function()
 		if visible and activeTab == 2 then showTab(2) end
+	end)
+	player:GetAttributeChangedSignal("OwnedCrowns"):Connect(function()
+		if visible and activeTab == 1 then showTab(1) end
+	end)
+
+	-- Listen for InventoryUpdated remote
+	task.spawn(function()
+		local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+		if remotes then
+			local invUpdate = remotes:FindFirstChild("InventoryUpdated")
+			if invUpdate and invUpdate:IsA("RemoteEvent") then
+				invUpdate.OnClientEvent:Connect(function()
+					if visible then showTab(activeTab) end
+				end)
+			end
+		end
 	end)
 end
 

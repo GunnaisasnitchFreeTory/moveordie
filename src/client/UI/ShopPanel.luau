@@ -40,9 +40,10 @@ local UIConfig = Deps.UIConfig
 local ItemCatalog = Deps.ItemCatalog
 
 local Client = script.Parent
-local AnimUtil   = require(Client:WaitForChild("AnimUtil"))
-local SoundUtil  = require(Client:WaitForChild("SoundUtil"))
-local Components = require(Client:WaitForChild("Components"))
+local AnimUtil          = require(Client:WaitForChild("AnimUtil"))
+local SoundUtil         = require(Client:WaitForChild("SoundUtil"))
+local Components        = require(Client:WaitForChild("Components"))
+local ThumbnailRenderer = require(Client:WaitForChild("ThumbnailRenderer"))
 
 local C = UIConfig.Colors
 local S = UIConfig.Sizes
@@ -145,12 +146,54 @@ local function fixCoinCardLayout(card: Frame, imageId: string)
 	end
 end
 
+--- Create a ViewportFrame inside the card's Icon area for 3D model rendering.
+--- Components.CreateViewportItemCard falls back to CreateItemCard when models aren't
+--- in ReplicatedStorage, so the card won't have a ViewportFrame. We create one ourselves.
+local function ensureViewportInCard(card: Frame, bgColor: Color3?): ViewportFrame?
+	-- Check if Components already created one (ModelPreview)
+	local existing = card:FindFirstChild("ModelPreview", true)
+	if existing and existing:IsA("ViewportFrame") then
+		return existing
+	end
+
+	-- Find the Icon frame that CreateItemCard always produces
+	local iconFrame = card:FindFirstChild("Icon")
+	if not iconFrame then
+		warn("[PremiumShop] Card has no Icon frame -- cannot create ViewportFrame")
+		return nil
+	end
+
+	-- Clear placeholder content inside Icon (emoji text, "?" label, ImageLabel)
+	for _, child in ipairs(iconFrame:GetChildren()) do
+		if child:IsA("TextLabel") or child:IsA("ImageLabel") then
+			child:Destroy()
+		end
+	end
+
+	-- Create ViewportFrame that fills the Icon area
+	local vpFrame = Instance.new("ViewportFrame")
+	vpFrame.Name = "ModelPreview"
+	vpFrame.Size = UDim2.fromScale(1, 1)
+	vpFrame.BackgroundColor3 = bgColor or Color3.fromRGB(30, 32, 50)
+	vpFrame.BackgroundTransparency = 0.3
+	vpFrame.BorderSizePixel = 0
+	vpFrame.Parent = iconFrame
+
+	local vpCorner = Instance.new("UICorner")
+	vpCorner.CornerRadius = UDim.new(0, 10)
+	vpCorner.Parent = vpFrame
+
+	return vpFrame
+end
+
 local function populateCards(filterType: string)
 	clearCards()
 
 	if not contentFrame:FindFirstChildOfClass("UIGridLayout") then
 		Components.AddGridLayout(contentFrame)
 	end
+
+	print(string.format("[PremiumShop] populateCards called -- filterType=%s", filterType))
 
 	local order = 0
 	for _, item in ipairs(UIConfig.MockPremiumItems) do
@@ -161,8 +204,14 @@ local function populateCards(filterType: string)
 			local catEntry = ItemCatalog.Get("Premium", item.id)
 			if not catEntry and not _warnedMissing[item.id] then
 				_warnedMissing[item.id] = true
-				warn(string.format("[ShopPanel] No ItemCatalog.Premium entry for '%s' — using placeholder", item.id))
+				warn(string.format("[ShopPanel] No ItemCatalog.Premium entry for '%s' -- using placeholder", item.id))
 			end
+
+			-- Determine model path for ViewportFrame rendering
+			local modelPath = catEntry and catEntry.modelPath or nil
+
+			-- For ExclusivePet / ExclusiveCrown with model paths, use ThumbnailRenderer
+			local wantsThumbnail = modelPath and (filterType == "ExclusivePet" or filterType == "ExclusiveCrown")
 
 			local catalogImage: string
 			if filterType == "Currency" then
@@ -173,22 +222,50 @@ local function populateCards(filterType: string)
 
 			local catalogIconText = catEntry and catEntry.iconText or nil
 
-			local card = Components.CreateItemCard(contentFrame, {
+			local cardData = {
 				name = item.name,
 				rarity = item.rarity or "Rare",
 				iconColor = item.iconColor,
 				iconText = catalogIconText,
-				image = catalogImage,
+				image = wantsThumbnail and "" or catalogImage, -- suppress ImageLabel for model items
+				modelPath = modelPath,
 				tag = item.tag,
 				actionText = actionText,
 				actionColor = C.RobuxButton,
 				onAction = function()
-					if UIConfig.DebugLog then
-						print(string.format("[ShopPanel] Premium purchase: %s (R$%d)", item.name, item.robux))
-					end
+					print(string.format("[ShopPanel] Premium purchase: %s (R$%d)", item.name, item.robux))
 				end,
-			})
+			}
+
+			-- Always use CreateItemCard as the base (CreateViewportItemCard silently falls
+			-- back to CreateItemCard anyway because ReplicatedStorage.ItemModels doesn't exist).
+			local card = Components.CreateItemCard(contentFrame, cardData)
 			card.LayoutOrder = order
+
+			-- For crown/pet items: create ViewportFrame and call ThumbnailRenderer
+			if wantsThumbnail then
+				print(string.format(
+					"[PremiumShop] Attempting ThumbnailRenderer for: id=%s name=%s modelPath=%s",
+					item.id, item.name, modelPath or "(nil)"
+				))
+
+				local vpFrame = ensureViewportInCard(card, item.iconColor)
+				if vpFrame then
+					local renderOk = ThumbnailRenderer.RenderItemToViewport(vpFrame, {
+						modelPath = modelPath,
+						id = item.id,
+						name = item.name,
+						type = filterType,
+					})
+					if renderOk then
+						print(string.format("[PremiumShop] Rendered card via ThumbnailRenderer: %s", item.id))
+					else
+						warn(string.format("[PremiumShop] ThumbnailRenderer FAILED for: %s", item.id))
+					end
+				else
+					warn(string.format("[PremiumShop] Could not create ViewportFrame for: %s", item.id))
+				end
+			end
 
 			if filterType == "Currency" and catalogImage ~= "" then
 				fixCoinCardLayout(card, catalogImage)

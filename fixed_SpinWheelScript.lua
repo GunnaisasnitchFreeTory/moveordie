@@ -156,12 +156,12 @@ local BuySpinsRF    = Remotes and Remotes:WaitForChild("SpinWheel_BuySpins", 10)
 -- ═══════════════════════════════════════════
 local stopAngles = {
 	-23,   -- Segment 1: 100 Coins
-	-203,  -- Segment 2: Puppy (Common Pet)
-	22,    -- Segment 3: 150 Coins
-	-68,   -- Segment 4: Chick (Common Pet)
-	113,   -- Segment 5: 200 Coins
+	-203,  -- Segment 2: Common Pet
+	22,    -- Segment 3: 200 Coins
+	-68,   -- Segment 4: Rare Pet
+	113,   -- Segment 5: Crown
 	-113,  -- Segment 6: 500 Coins
-	-158,  -- Segment 7: 1000 Coins
+	-158,  -- Segment 7: Epic Pet
 	67,    -- Segment 8: 4000 Coins (Jackpot)
 }
 
@@ -181,8 +181,99 @@ local idleTween = nil
 local isAnimating = false
 
 -- ═══════════════════════════════════════════
--- SET SEGMENT VISUALS FROM ITEMCATALOG
+-- SET SEGMENT VISUALS FROM ITEMCATALOG (ViewportFrame for models, Image for coins)
 -- ═══════════════════════════════════════════
+
+--- Resolve a dot-separated model path in ReplicatedStorage
+local function resolveModelPath(modelPath)
+	if not modelPath or modelPath == "" then return nil end
+	local parts = string.split(modelPath, ".")
+	local current = ReplicatedStorage
+	for _, part in ipairs(parts) do
+		current = current:FindFirstChild(part)
+		if not current then return nil end
+	end
+	return current
+end
+
+--- Get bounding box of a model for camera framing
+local function getModelBoundsForWheel(model)
+	local minB = Vector3.new(math.huge, math.huge, math.huge)
+	local maxB = Vector3.new(-math.huge, -math.huge, -math.huge)
+	local baseParts = {}
+	if model:IsA("BasePart") then table.insert(baseParts, model) end
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") then table.insert(baseParts, desc) end
+	end
+	for _, part in ipairs(baseParts) do
+		local pos = part.Position
+		local half = part.Size / 2
+		minB = Vector3.new(math.min(minB.X, pos.X-half.X), math.min(minB.Y, pos.Y-half.Y), math.min(minB.Z, pos.Z-half.Z))
+		maxB = Vector3.new(math.max(maxB.X, pos.X+half.X), math.max(maxB.Y, pos.Y+half.Y), math.max(maxB.Z, pos.Z+half.Z))
+	end
+	if minB.X == math.huge then return Vector3.zero, Vector3.new(2,2,2) end
+	return minB, maxB
+end
+
+--- Create a ViewportFrame inside an ImageLabel to display a 3D model
+local function createWheelViewport(parentLabel, modelPath)
+	local modelInst = resolveModelPath(modelPath)
+	if not modelInst then return false end
+
+	-- Clear the ImageLabel's own image
+	parentLabel.Image = ""
+	parentLabel.BackgroundTransparency = 1
+
+	local vpFrame = Instance.new("ViewportFrame")
+	vpFrame.Name = "SegmentVP"
+	vpFrame.Size = UDim2.fromScale(1, 1)
+	vpFrame.Position = UDim2.fromScale(0, 0)
+	vpFrame.BackgroundTransparency = 1
+	vpFrame.Ambient = Color3.fromRGB(180, 180, 200)
+	vpFrame.LightColor = Color3.fromRGB(255, 255, 255)
+	vpFrame.LightDirection = Vector3.new(-1, -1, -1)
+	vpFrame.Parent = parentLabel
+
+	local clone = modelInst:Clone()
+	-- Reset position to origin
+	if clone:IsA("Model") and clone.PrimaryPart then
+		clone:PivotTo(CFrame.new())
+	elseif clone:IsA("BasePart") then
+		clone.Position = Vector3.zero
+	elseif clone:IsA("Model") then
+		local fp = clone:FindFirstChildWhichIsA("BasePart", true)
+		if fp then
+			local offset = fp.Position
+			for _, desc in ipairs(clone:GetDescendants()) do
+				if desc:IsA("BasePart") then desc.Position = desc.Position - offset end
+			end
+		end
+	end
+	clone.Parent = vpFrame
+
+	-- Setup camera
+	local minB, maxB = getModelBoundsForWheel(clone)
+	local center = (minB + maxB) / 2
+	local sz = maxB - minB
+	local maxDim = math.max(sz.X, sz.Y, sz.Z, 1)
+	local dist = maxDim * 2.0
+	local camPos = center + Vector3.new(dist * 0.5, dist * 0.35, dist * 0.8)
+
+	local cam = Instance.new("Camera")
+	cam.CameraType = Enum.CameraType.Scriptable
+	cam.CFrame = CFrame.lookAt(camPos, center)
+	cam.FieldOfView = 50
+	cam.Parent = vpFrame
+	vpFrame.CurrentCamera = cam
+
+	return true
+end
+
+-- Wait for ItemModels to replicate
+task.spawn(function()
+	ReplicatedStorage:WaitForChild("ItemModels", 8)
+end)
+
 do
 	local rewardsFrame = spinHandler:FindFirstChild("Rewards")
 	if rewardsFrame then
@@ -197,20 +288,20 @@ do
 		for i, seg in ipairs(segments) do
 			local label = labels[i]
 			if not label then continue end
-			local imageToSet = ""
-			if seg.reward == "Pet" and seg.catalogId then
-				local petInfo = ItemCatalog.GetPet(seg.catalogId)
-				if petInfo then
-					imageToSet = ItemCatalog.GetImage(petInfo)
+
+			if seg.modelPath then
+				-- Use ViewportFrame for 3D model preview
+				local created = createWheelViewport(label, seg.modelPath)
+				if not created then
+					-- Fallback to coin image if model not found
+					label.Image = ItemCatalog.CoinImage or ""
 				end
 			else
-				imageToSet = ItemCatalog.CoinImage
-			end
-			if imageToSet and imageToSet ~= "" then
-				label.Image = imageToSet
+				-- Coin segments: use coin image
+				label.Image = ItemCatalog.CoinImage or ""
 			end
 		end
-		print("[SpinWheel] Segment visuals updated from ItemCatalog")
+		print("[SpinWheel] Segment visuals updated from ItemCatalog (ViewportFrame + Images)")
 	end
 end
 
@@ -1217,9 +1308,9 @@ local function doSpin()
 	tween.Completed:Wait()
 
 	-- Show reward on button briefly
-	if result.rewardType == "Pet" then
-		updateSpinButtonState(false, "Won: " .. (result.rewardName or "Pet") .. "!")
-		print("[SpinWheel] Won Pet:", result.rewardName)
+	if result.rewardType == "Pet" or result.rewardType == "Crown" then
+		updateSpinButtonState(false, "Won: " .. (result.rewardName or "Item") .. "!")
+		print("[SpinWheel] Won:", result.rewardType, result.rewardName)
 	else
 		updateSpinButtonState(false, "+" .. tostring(result.coinsAwarded or 0) .. " Fate Coins!")
 		print("[SpinWheel] Won:", result.rewardName, "+" .. tostring(result.coinsAwarded or 0), "Fate Coins")

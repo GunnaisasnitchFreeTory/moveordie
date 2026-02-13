@@ -43,9 +43,9 @@ function PlayerData.GetDefaults(): { [string]: any }
 	return {
 		Version               = PlayerData.VERSION,
 		Coins                 = 0,
-		OwnedPets             = { "CHICK_COMMON", "PUPPY_COMMON" },
+		OwnedPets             = {},
 		EquippedPet           = nil,
-		OwnedCrowns           = { "crown_basic" },
+		OwnedCrowns           = {},
 		EquippedCrown         = nil,
 		OwnedIcons            = {},
 		EquippedIcon          = nil,

@@ -1,17 +1,29 @@
 --[[
 	FateCrownsPanel
-	Crown collection / equip grid — shows ALL crowns (owned + locked).
+	Crown collection / equip grid — shows ALL 17 crowns organized by source.
 
-	DARK + VIBRANT theme — front-page quality:
-	  * Dark card backgrounds with rarity-glow borders
-	  * Crown images from ItemCatalog (single source of truth)
-	  * Equip / Equipped buttons
-	  * Locked crowns shown as "???" with dim styling
+	Display order:
+	  • Level Crowns   (earned by wins milestones)
+	  • Findable Crowns (from Crown Crate / Spin Wheel)
+	  • Exclusive Crowns (Shop-only, Robux)
+
+	Each card:
+	  • ViewportFrame showing the 3D crown model
+	  • Owned = full color + Equip button (server-wired)
+	  • Unowned = greyed/locked + source label:
+	      Level → "X Wins"
+	      Findable → "Crown Crate"
+	      Exclusive → "Shop Only"
+
+	Data source: ItemCatalog.GetAllCrownsSorted()
+	Ownership:   Player "OwnedCrowns" attribute (JSON array of catalog IDs)
 
 	Used by: UIController (sidebar "Crowns" button)
 ]]
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
 if not Shared then
@@ -22,9 +34,7 @@ end
 
 local CDPModule = Shared:WaitForChild("ClientDepsProvider", 60)
 if not CDPModule then
-	local _children = {}
-	for _, c in ipairs(Shared:GetChildren()) do table.insert(_children, c.Name.."("..c.ClassName..")") end
-	warn("[FateCrownsPanel] ClientDepsProvider MISSING. Shared path:", Shared:GetFullName(), "| Shared children:", table.concat(_children, ", "))
+	warn("[FateCrownsPanel] ClientDepsProvider MISSING")
 	return { Init = function() end, Show = function() end, Hide = function() end,
 		IsVisible = function() return false end, Toggle = function() end }
 end
@@ -45,6 +55,8 @@ local Components = require(Client:WaitForChild("Components"))
 
 local C = UIConfig.Colors
 
+local player = Players.LocalPlayer
+
 local canvas: CanvasGroup = nil
 local uiScale: UIScale = nil
 local overlay: Frame = nil
@@ -52,12 +64,32 @@ local contentFrame: ScrollingFrame = nil
 local visible = false
 local closeCallback: (() -> ())? = nil
 
-local equippedId: string = "crown_basic"
-
--- Track warned IDs so we only warn once per missing catalog entry
-local _warnedMissing = {}
+local equippedId: string? = nil
 
 local FateCrownsPanel = {}
+
+local function getOwnedCrownSet(): { [string]: boolean }
+	local json = player:GetAttribute("OwnedCrowns") or "[]"
+	local okDec, list = pcall(HttpService.JSONDecode, HttpService, json)
+	if not okDec or type(list) ~= "table" then return {} end
+	local set = {}
+	for _, id in ipairs(list) do
+		set[id] = true
+	end
+	return set
+end
+
+local function getEquipRemote(): RemoteEvent?
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then return nil end
+	return remotes:FindFirstChild("EquipItem")
+end
+
+local function getUnequipRemote(): RemoteEvent?
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then return nil end
+	return remotes:FindFirstChild("UnequipItem")
+end
 
 local function clearContent()
 	for _, child in ipairs(contentFrame:GetChildren()) do
@@ -65,47 +97,74 @@ local function clearContent()
 	end
 end
 
+--- Build a sub-label for unowned crowns based on source
+local function getSubLabel(crown): string?
+	if crown.source == "Level" then
+		local milestone = ItemCatalog.GetMilestoneWins(crown.id)
+		if milestone then
+			return tostring(milestone) .. " Wins"
+		end
+		return "Wins Milestone"
+	elseif crown.source == "Findable" then
+		return "Crown Crate"
+	elseif crown.source == "Exclusive" then
+		return "Shop Only"
+	end
+	return nil
+end
+
 local function refresh()
 	clearContent()
 
-	for i, item in ipairs(UIConfig.MockCrowns) do
-		local isEquipped = item.owned and (item.id == equippedId)
+	local ownedSet = getOwnedCrownSet()
+	equippedId = player:GetAttribute("EquippedCrown") or nil
+	local allCrowns = ItemCatalog.GetAllCrownsSorted()
+
+	for i, crown in ipairs(allCrowns) do
+		local isOwned = ownedSet[crown.id] == true
+		local isEquipped = isOwned and (crown.id == equippedId)
 		local actionText = nil
 		local actionColor = nil
+		local subLabel = nil
 
-		if item.owned then
+		if isOwned then
 			actionText = isEquipped and "Equipped" or "Equip"
 			actionColor = isEquipped and C.Green or C.EquipButton
+		else
+			subLabel = getSubLabel(crown)
 		end
 
-		-- Look up ItemCatalog.Crowns for image + iconText
-		local catEntry = ItemCatalog.Get("Crowns", item.id)
-		if not catEntry and not _warnedMissing[item.id] then
-			_warnedMissing[item.id] = true
-			warn(string.format("[FateCrownsPanel] No ItemCatalog.Crowns entry for '%s' — using placeholder", item.id))
-		end
-
-		local catalogImage = catEntry and ItemCatalog.GetImage(catEntry) or ""
-		local catalogIconText = catEntry and catEntry.iconText or "👑"
-
-		Components.CreateItemCard(contentFrame, {
-			name = item.name,
-			rarity = item.rarity,
-			iconColor = item.iconColor,
-			iconText = catalogIconText,
-			image = catalogImage,
-			locked = not item.owned,
+		Components.CreateViewportItemCard(contentFrame, {
+			name = crown.name,
+			rarity = crown.rarity,
+			iconColor = crown.iconColor,
+			iconText = crown.iconText or "\240\159\145\145",
+			image = ItemCatalog.GetImage(crown),
+			modelPath = crown.modelPath,
+			locked = not isOwned,
 			equipped = isEquipped,
-			owned = item.owned,
+			owned = isOwned,
+			subLabel = subLabel,
 			actionText = actionText,
 			actionColor = actionColor,
 			onAction = function()
-				if item.owned and not isEquipped then
-					equippedId = item.id
-					SoundUtil.Equip()
-					if UIConfig.DebugLog then
-						print(string.format("[FateCrowns] Equipped: %s", item.name))
+				if isOwned then
+					if isEquipped then
+						-- Unequip
+						local unequipRemote = getUnequipRemote()
+						if unequipRemote then
+							unequipRemote:FireServer("Crowns")
+						end
+						equippedId = nil
+					else
+						-- Equip via server
+						local equipRemote = getEquipRemote()
+						if equipRemote then
+							equipRemote:FireServer("Crowns", crown.id)
+						end
+						equippedId = crown.id
 					end
+					SoundUtil.Equip()
 					refresh()
 				end
 			end,
@@ -121,7 +180,7 @@ function FateCrownsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "👑 FATE CROWNS", C.HeaderCrowns, "Crowns")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "\240\159\145\145 FATE CROWNS", C.HeaderCrowns, "Crowns")
 	contentFrame = content
 
 	Components.AddGridLayout(content)
@@ -129,6 +188,27 @@ function FateCrownsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()
 		FateCrownsPanel.Hide()
+	end)
+
+	-- Refresh when ownership/equip changes
+	player:GetAttributeChangedSignal("OwnedCrowns"):Connect(function()
+		if visible then refresh() end
+	end)
+	player:GetAttributeChangedSignal("EquippedCrown"):Connect(function()
+		if visible then refresh() end
+	end)
+
+	-- Also listen for InventoryUpdated remote
+	task.spawn(function()
+		local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+		if remotes then
+			local invUpdate = remotes:FindFirstChild("InventoryUpdated")
+			if invUpdate and invUpdate:IsA("RemoteEvent") then
+				invUpdate.OnClientEvent:Connect(function()
+					if visible then refresh() end
+				end)
+			end
+		end
 	end)
 
 	refresh()

@@ -38,87 +38,97 @@ SpinWheelConfig.DEBUG_UNLIMITED_SPINS = false
 -- ═══════════════════════════════════════════
 
 SpinWheelConfig.Segments = {
-	-- Segment 1: 100 Coins (HIGH)
+	-- Segment 1: 100 Fate Coins (HIGH)
 	{
 		name       = "100 Coins",
-		icon       = "🪙",
+		icon       = "\240\159\170\153",
 		reward     = "Coins",
 		amount     = 100,
 		weight     = 25,
 		rarity     = "Common",
 		color      = Color3.fromRGB(72, 180, 255),   -- sky blue
+		modelPath  = nil, -- no model for coins; use existing coin image
 	},
-	-- Segment 2: Puppy pet (HIGH)
+	-- Segment 2: Random Common Pet (HIGH)
 	{
-		name       = "Puppy",
-		icon       = "🐶",
+		name       = "Common Pet",
+		icon       = "\240\159\144\190",
 		reward     = "Pet",
-		catalogId  = "PUPPY_COMMON",
+		catalogId  = "pet_dog",
 		amount     = 0,
 		weight     = 20,
 		rarity     = "Common",
-		color      = Color3.fromRGB(198, 158, 118),   -- warm brown
+		color      = Color3.fromRGB(68, 198, 68),     -- green
+		modelPath  = "ItemModels.Pets.Common.Dog",
 	},
-	-- Segment 3: 150 Coins (HIGH)
+	-- Segment 3: 200 Fate Coins (HIGH)
 	{
-		name       = "150 Coins",
-		icon       = "🪙",
+		name       = "200 Coins",
+		icon       = "\240\159\170\153",
 		reward     = "Coins",
-		amount     = 150,
+		amount     = 200,
 		weight     = 15,
 		rarity     = "Uncommon",
 		color      = Color3.fromRGB(85, 215, 130),    -- green
+		modelPath  = nil,
 	},
-	-- Segment 4: Chick pet (HIGH)
+	-- Segment 4: Random Rare Pet (MEDIUM)
 	{
-		name       = "Chick",
-		icon       = "🐣",
+		name       = "Rare Pet",
+		icon       = "\240\159\144\190",
 		reward     = "Pet",
-		catalogId  = "CHICK_COMMON",
+		catalogId  = "pet_shark",
 		amount     = 0,
-		weight     = 18,
-		rarity     = "Common",
-		color      = Color3.fromRGB(255, 228, 78),    -- yellow
+		weight     = 12,
+		rarity     = "Rare",
+		color      = Color3.fromRGB(38, 150, 255),    -- blue
+		modelPath  = "ItemModels.Pets.Rare.shark",
 	},
-	-- Segment 5: 200 Coins (HIGH)
+	-- Segment 5: Findable Crown (MEDIUM)
 	{
-		name       = "200 Coins",
-		icon       = "💰",
-		reward     = "Coins",
-		amount     = 200,
+		name       = "Crown",
+		icon       = "\240\159\145\145",
+		reward     = "Crown",
+		catalogId  = "crown_sparkle",
+		amount     = 0,
 		weight     = 10,
-		rarity     = "Uncommon",
-		color      = Color3.fromRGB(100, 220, 255),   -- cyan
+		rarity     = "Rare",
+		color      = Color3.fromRGB(185, 68, 235),    -- purple
+		modelPath  = "ItemModels.Crowns.Findable.Sparkle Crown",
 	},
-	-- Segment 6: 500 Coins (LOW)
+	-- Segment 6: 500 Fate Coins (LOW)
 	{
 		name       = "500 Coins",
-		icon       = "💎",
+		icon       = "\240\159\146\142",
 		reward     = "Coins",
 		amount     = 500,
 		weight     = 6,
 		rarity     = "Rare",
 		color      = Color3.fromRGB(175, 85, 255),    -- purple
+		modelPath  = nil,
 	},
-	-- Segment 7: 1000 Coins (LOW)
+	-- Segment 7: Random Epic Pet (LOW)
 	{
-		name       = "1000 Coins",
-		icon       = "💎",
-		reward     = "Coins",
-		amount     = 1000,
+		name       = "Epic Pet",
+		icon       = "\240\159\144\190",
+		reward     = "Pet",
+		catalogId  = "pet_axolotl",
+		amount     = 0,
 		weight     = 4,
 		rarity     = "Epic",
-		color      = Color3.fromRGB(130, 55, 195),    -- deep purple
+		color      = Color3.fromRGB(178, 42, 255),    -- deep purple
+		modelPath  = "ItemModels.Pets.Epic.axolotl",
 	},
 	-- Segment 8: 4000 Coins — JACKPOT (VERY LOW)
 	{
 		name       = "4000 Coins",
-		icon       = "⭐",
+		icon       = "\226\173\144",
 		reward     = "Coins",
 		amount     = 4000,
 		weight     = 2,
 		rarity     = "Legendary",
 		color      = Color3.fromRGB(255, 65, 85),     -- red/gold
+		modelPath  = nil,
 	},
 }
 

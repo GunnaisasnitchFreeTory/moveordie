@@ -150,13 +150,81 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 		end
 	end
 
-	-- Not a spin wheel product — if you have other products, handle them here.
-	-- For now, acknowledge unknown products to avoid infinite retries.
+	-- ── SHOP PRODUCT: Check if this is a premium shop item ──
+	-- Shop products are handled by granting the corresponding item
+	-- via InventoryService. Product IDs need to be configured in
+	-- ItemCatalog.Premium entries (add a `productId` field when you
+	-- create the Developer Products in Roblox).
+	local shopHandled = false
+	local okShop, errShop = pcall(function()
+		local SharedMod = ReplicatedStorage:FindFirstChild("Shared")
+		if not SharedMod then return end
+		local ItemCatalogMod = SharedMod:FindFirstChild("ItemCatalog")
+		if not ItemCatalogMod then return end
+		local ItemCatalog = require(ItemCatalogMod)
+
+		-- Check Premium items for matching productId
+		for premiumId, item in pairs(ItemCatalog.Premium) do
+			if item.productId and item.productId == productId then
+				-- Determine what to grant
+				if item.type == "ExclusivePet" then
+					local InvService = require(Server:WaitForChild("InventoryService", 5))
+					if InvService then
+						InvService.GrantItem(player, "Pets", premiumId)
+						shopHandled = true
+					end
+				elseif item.type == "ExclusiveCrown" then
+					local InvService = require(Server:WaitForChild("InventoryService", 5))
+					if InvService then
+						InvService.GrantItem(player, "Crowns", premiumId)
+						shopHandled = true
+					end
+				elseif item.type == "Currency" then
+					-- Coin packs
+					local coinAmount = tonumber(string.match(item.name, "(%d[%d,]+)")) or 0
+					coinAmount = tonumber(string.gsub(tostring(coinAmount), ",", "")) or 0
+					if coinAmount > 0 then
+						local EconService = require(Server:WaitForChild("EconomyService", 5))
+						if EconService then
+							EconService.AwardCoins(player, coinAmount, "ShopPurchase:" .. premiumId)
+							shopHandled = true
+						end
+					end
+				elseif item.type == "Bundle" then
+					-- Bundles: grant contents (customize per bundle)
+					shopHandled = true -- Mark as handled to acknowledge receipt
+				end
+
+				if shopHandled then
+					-- Notify client of inventory change
+					local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+					local invUpdate = remotes and remotes:FindFirstChild("InventoryUpdated")
+					if invUpdate then
+						invUpdate:FireClient(player, "ShopPurchase", { premiumId })
+					end
+					print(string.format("[SpinWheelBootstrap] Shop purchase granted: %s to %s, receipt=%s",
+						premiumId, player.Name, receiptKey))
+				end
+				break
+			end
+		end
+	end)
+
+	if not okShop then
+		warn("[SpinWheelBootstrap] Shop receipt check error:", errShop)
+	end
+
+	if shopHandled then
+		processedReceipts[receiptKey] = true
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
+
+	-- Not a recognized product — acknowledge to avoid infinite retries.
 	warn("[SpinWheelBootstrap] Unknown productId in receipt:", productId, "receipt:", receiptKey)
 	return Enum.ProductPurchaseDecision.NotProcessedYet
 end
 
-print("[SpinWheelBootstrap] ProcessReceipt handler installed for Robux spin purchases")
+print("[SpinWheelBootstrap] ProcessReceipt handler installed for Robux spin + shop purchases")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- SPIN THE WHEEL: CLEANUP + PROXIMITY PROMPT SETUP

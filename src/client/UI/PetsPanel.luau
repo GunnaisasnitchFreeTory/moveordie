@@ -86,10 +86,23 @@ local function clearContent()
 	end
 end
 
+local function getEquipRemote(): RemoteEvent?
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then return nil end
+	return remotes:FindFirstChild("EquipItem")
+end
+
+local function getUnequipRemote(): RemoteEvent?
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then return nil end
+	return remotes:FindFirstChild("UnequipItem")
+end
+
 local function refresh()
 	clearContent()
 
 	local ownedSet = getOwnedPetSet()
+	equippedId = player:GetAttribute("EquippedPet") or nil
 	local allPets = ItemCatalog.GetAllPetsSorted()
 
 	for i, pet in ipairs(allPets) do
@@ -97,30 +110,51 @@ local function refresh()
 		local isEquipped = isOwned and (pet.id == equippedId)
 		local actionText = nil
 		local actionColor = nil
+		local subLabel = nil
 
 		if isOwned then
 			actionText = isEquipped and "Equipped" or "Equip"
 			actionColor = isEquipped and C.Green or C.EquipButton
+		else
+			-- Show how to obtain
+			if pet.shopOnly then
+				subLabel = "Shop Only"
+			else
+				subLabel = "Pet Crate"
+			end
 		end
 
-		Components.CreateItemCard(contentFrame, {
+		Components.CreateViewportItemCard(contentFrame, {
 			name = pet.name,
 			rarity = pet.rarity,
 			iconColor = pet.iconColor,
-			iconText = pet.iconText or "🐾",
+			iconText = pet.iconText or "\240\159\144\190",
 			image = ItemCatalog.GetImage(pet),
+			modelPath = pet.modelPath,
 			locked = not isOwned,
 			equipped = isEquipped,
 			owned = isOwned,
+			subLabel = subLabel,
 			actionText = actionText,
 			actionColor = actionColor,
 			onAction = function()
-				if isOwned and not isEquipped then
-					equippedId = pet.id
-					SoundUtil.Equip()
-					if UIConfig.DebugLog then
-						print(string.format("[PetsPanel] Equipped: %s", pet.name))
+				if isOwned then
+					if isEquipped then
+						-- Unequip
+						local unequipRemote = getUnequipRemote()
+						if unequipRemote then
+							unequipRemote:FireServer("Pets")
+						end
+						equippedId = nil
+					else
+						-- Equip via server
+						local equipRemote = getEquipRemote()
+						if equipRemote then
+							equipRemote:FireServer("Pets", pet.id)
+						end
+						equippedId = pet.id
 					end
+					SoundUtil.Equip()
 					refresh()
 				end
 			end,

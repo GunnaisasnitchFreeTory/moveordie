@@ -218,59 +218,31 @@ UIConfig.RarityInfo = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════
--- MOCK DATA — FATE CROWNS
--- ═══════════════════════════════════════════════════════════════════
-
-UIConfig.MockCrowns = {
-	{ id = "crown_basic",    name = "Basic Crown",   rarity = "Common",    iconColor = Color3.fromRGB(195, 198, 218), owned = true,  equipped = true  },
-	{ id = "crown_flame",    name = "Flame Crown",   rarity = "Rare",      iconColor = Color3.fromRGB(255, 98, 28),   owned = true,  equipped = false },
-	{ id = "crown_frost",    name = "Frost Crown",   rarity = "Rare",      iconColor = Color3.fromRGB(112, 198, 255), owned = false, equipped = false },
-	{ id = "crown_shadow",   name = "Shadow Crown",  rarity = "Epic",      iconColor = Color3.fromRGB(88, 42, 128),   owned = false, equipped = false },
-	{ id = "crown_golden",   name = "Golden Crown",  rarity = "Legendary", iconColor = Color3.fromRGB(255, 208, 48),  owned = false, equipped = false },
-	{ id = "crown_neon",     name = "Neon Crown",    rarity = "Uncommon",  iconColor = Color3.fromRGB(98, 255, 178),  owned = false, equipped = false },
-	{ id = "crown_pixel",    name = "Pixel Crown",   rarity = "Common",    iconColor = Color3.fromRGB(148, 218, 98),  owned = false, equipped = false },
-	{ id = "crown_galaxy",   name = "Galaxy Crown",  rarity = "Epic",      iconColor = Color3.fromRGB(82, 52, 185),   owned = false, equipped = false },
-	{ id = "crown_thunder",  name = "Thunder Crown", rarity = "Rare",      iconColor = Color3.fromRGB(255, 228, 58),  owned = false, equipped = false },
-	{ id = "crown_crystal",  name = "Crystal Crown", rarity = "Uncommon",  iconColor = Color3.fromRGB(178, 228, 255), owned = false, equipped = false },
-	{ id = "crown_phantom",  name = "Phantom Crown", rarity = "Legendary", iconColor = Color3.fromRGB(198, 158, 255), owned = false, equipped = false },
-	{ id = "crown_nature",   name = "Nature Crown",  rarity = "Common",    iconColor = Color3.fromRGB(78, 185, 78),   owned = false, equipped = false },
-}
-
--- ═══════════════════════════════════════════════════════════════════
--- MOCK DATA — PETS
--- ═══════════════════════════════════════════════════════════════════
-
-UIConfig.MockPets = {
-	{ id = "pet_chick",    name = "Chick",        rarity = "Common",    iconColor = Color3.fromRGB(255, 228, 78),  owned = true,  equipped = true  },
-	{ id = "pet_puppy",    name = "Puppy",        rarity = "Common",    iconColor = Color3.fromRGB(198, 158, 118), owned = true,  equipped = false },
-	{ id = "pet_kitty",    name = "Kitty",        rarity = "Uncommon",  iconColor = Color3.fromRGB(255, 178, 198), owned = false, equipped = false },
-	{ id = "pet_dragon",   name = "Baby Dragon",  rarity = "Legendary", iconColor = Color3.fromRGB(255, 68, 28),  owned = false, equipped = false },
-	{ id = "pet_bunny",    name = "Bunny",        rarity = "Uncommon",  iconColor = Color3.fromRGB(228, 228, 238), owned = false, equipped = false },
-	{ id = "pet_phoenix",  name = "Phoenix",      rarity = "Epic",      iconColor = Color3.fromRGB(255, 138, 28), owned = false, equipped = false },
-	{ id = "pet_fox",      name = "Fox",          rarity = "Rare",      iconColor = Color3.fromRGB(228, 128, 48), owned = false, equipped = false },
-	{ id = "pet_wolf",     name = "Shadow Wolf",  rarity = "Epic",      iconColor = Color3.fromRGB(58, 48, 88),   owned = false, equipped = false },
-	{ id = "pet_unicorn",  name = "Unicorn",      rarity = "Legendary", iconColor = Color3.fromRGB(228, 178, 255), owned = false, equipped = false },
-	{ id = "pet_owl",      name = "Owl",          rarity = "Rare",      iconColor = Color3.fromRGB(138, 98, 68),  owned = false, equipped = false },
-}
-
--- ═══════════════════════════════════════════════════════════════════
--- MOCK DATA — PREMIUM SHOP
+-- MOCK DATA — PREMIUM SHOP  (actual Legendary Pets + Exclusive Crowns)
 -- ═══════════════════════════════════════════════════════════════════
 
 UIConfig.MockPremiumItems = {
+	-- Coin packs
 	{ id = "coins_500",     name = "500 Fate Coins",   type = "Currency",       robux = 99,  iconColor = Color3.fromRGB(255, 218, 48),  tag = "POPULAR" },
 	{ id = "coins_2000",    name = "2,000 Fate Coins", type = "Currency",       robux = 299, iconColor = Color3.fromRGB(255, 198, 28),  tag = "BEST VALUE" },
 	{ id = "coins_5000",    name = "5,000 Fate Coins", type = "Currency",       robux = 599, iconColor = Color3.fromRGB(255, 178, 18),  tag = "" },
-	{ id = "crown_royal",   name = "Royal Crown",      type = "ExclusiveCrown", robux = 149, iconColor = Color3.fromRGB(218, 48, 255),  tag = "EXCLUSIVE", rarity = "Legendary" },
-	{ id = "crown_divine",  name = "Divine Crown",     type = "ExclusiveCrown", robux = 249, iconColor = Color3.fromRGB(255, 215, 48),  tag = "LIMITED",   rarity = "Legendary" },
-	{ id = "pet_cosmic",    name = "Cosmic Dragon",    type = "ExclusivePet",   robux = 199, iconColor = Color3.fromRGB(58, 198, 255),  tag = "EXCLUSIVE", rarity = "Legendary" },
-	{ id = "pet_nebula",    name = "Nebula Cat",       type = "ExclusivePet",   robux = 149, iconColor = Color3.fromRGB(185, 98, 255),  tag = "NEW",       rarity = "Epic" },
-	{ id = "bundle_vip",    name = "VIP Bundle",       type = "Bundle",         robux = 499, iconColor = Color3.fromRGB(255, 215, 78),  tag = "VIP",       rarity = "Legendary" },
-	{ id = "bundle_starter", name = "Starter Pack",    type = "Bundle",         robux = 99,  iconColor = Color3.fromRGB(78, 208, 255),  tag = "DEAL",      rarity = "Rare" },
+	-- Legendary Pets (Shop-only)
+	{ id = "pet_glitched_dragon",    name = "Glitched Dragon",    type = "ExclusivePet",   robux = 249, iconColor = Color3.fromRGB(58, 255, 128),  tag = "EXCLUSIVE", rarity = "Legendary" },
+	{ id = "pet_dark_winged_dragon", name = "Dark Winged Dragon", type = "ExclusivePet",   robux = 299, iconColor = Color3.fromRGB(48, 28, 68),    tag = "EXCLUSIVE", rarity = "Legendary" },
+	{ id = "pet_pink_butterfly",     name = "Pink Butterfly",     type = "ExclusivePet",   robux = 199, iconColor = Color3.fromRGB(255, 148, 208), tag = "NEW",       rarity = "Legendary" },
+	{ id = "pet_dark_falcon",        name = "Dark Falcon",        type = "ExclusivePet",   robux = 249, iconColor = Color3.fromRGB(38, 28, 48),    tag = "EXCLUSIVE", rarity = "Legendary" },
+	-- Exclusive Crowns (Shop-only)
+	{ id = "crown_electric",      name = "Electric Crown",      type = "ExclusiveCrown", robux = 149, iconColor = Color3.fromRGB(48, 198, 255),  tag = "EXCLUSIVE", rarity = "Legendary" },
+	{ id = "crown_infinite_void", name = "Infinite Void Crown", type = "ExclusiveCrown", robux = 249, iconColor = Color3.fromRGB(18, 8, 38),    tag = "LIMITED",   rarity = "Legendary" },
+	{ id = "crown_rengoku",       name = "Rengoku Crown",       type = "ExclusiveCrown", robux = 199, iconColor = Color3.fromRGB(255, 128, 28),  tag = "NEW",       rarity = "Legendary" },
+	{ id = "crown_ultra",         name = "Ultra Crown",         type = "ExclusiveCrown", robux = 299, iconColor = Color3.fromRGB(218, 48, 255),  tag = "EXCLUSIVE", rarity = "Legendary" },
+	-- Bundles
+	{ id = "bundle_vip",     name = "VIP Bundle",  type = "Bundle", robux = 499, iconColor = Color3.fromRGB(255, 215, 78), tag = "VIP",  rarity = "Legendary" },
+	{ id = "bundle_starter", name = "Starter Pack", type = "Bundle", robux = 99,  iconColor = Color3.fromRGB(78, 208, 255), tag = "DEAL", rarity = "Rare" },
 }
 
 -- ═══════════════════════════════════════════════════════════════════
--- MOCK DATA — CRATES
+-- MOCK DATA — CRATES  (actual items from Workspace folders)
 -- ═══════════════════════════════════════════════════════════════════
 
 UIConfig.MockCrates = {
@@ -280,10 +252,12 @@ UIConfig.MockCrates = {
 		iconColor = Color3.fromRGB(185, 68, 235),
 		accentColor = Color3.fromRGB(218, 128, 255),
 		drops = {
-			{ name = "Basic Crown",  chance = 55, rarity = "Common" },
-			{ name = "Flame Crown",  chance = 25, rarity = "Rare" },
-			{ name = "Shadow Crown", chance = 15, rarity = "Epic" },
-			{ name = "Golden Crown", chance = 5,  rarity = "Legendary" },
+			{ name = "Sparkle Crown",     chance = 17, rarity = "Common",  itemId = "crown_sparkle",      modelPath = "ItemModels.Crowns.Findable.Sparkle Crown" },
+			{ name = "Anime Lines Crown", chance = 17, rarity = "Rare",    itemId = "crown_anime_lines",  modelPath = "ItemModels.Crowns.Findable.Anime Lines Crown" },
+			{ name = "Darkness Crown",    chance = 17, rarity = "Rare",    itemId = "crown_darkness",     modelPath = "ItemModels.Crowns.Findable.Darkness Crown" },
+			{ name = "Love Crown",        chance = 17, rarity = "Rare",    itemId = "crown_love",         modelPath = "ItemModels.Crowns.Findable.Love Crown" },
+			{ name = "Glitch Crown",      chance = 16, rarity = "Epic",    itemId = "crown_glitch",       modelPath = "ItemModels.Crowns.Findable.Glitch Crown" },
+			{ name = "Mystical Crown",    chance = 16, rarity = "Epic",    itemId = "crown_mystical",     modelPath = "ItemModels.Crowns.Findable.Mystical Crown" },
 		},
 		prices = {
 			{ label = "1 Crate",  cost = 100, currency = "Coins" },
@@ -292,36 +266,57 @@ UIConfig.MockCrates = {
 		},
 	},
 	{
-		id = "crate_pet",
-		name = "Pet Crate",
-		iconColor = Color3.fromRGB(255, 145, 35),
-		accentColor = Color3.fromRGB(255, 188, 98),
+		id = "crate_pet_common",
+		name = "Common Crate",
+		iconColor = Color3.fromRGB(68, 198, 68),
+		accentColor = Color3.fromRGB(128, 235, 128),
 		drops = {
-			{ name = "Chick",   chance = 45, rarity = "Common" },
-			{ name = "Fox",     chance = 30, rarity = "Rare" },
-			{ name = "Phoenix", chance = 18, rarity = "Epic" },
-			{ name = "Dragon",  chance = 7,  rarity = "Legendary" },
+			{ name = "Bald Guest",  chance = 15, rarity = "Common", itemId = "pet_bald_guest",  modelPath = "ItemModels.Pets.Common.Bald Guest" },
+			{ name = "Dog",         chance = 15, rarity = "Common", itemId = "pet_dog",         modelPath = "ItemModels.Pets.Common.Dog" },
+			{ name = "Noob",        chance = 14, rarity = "Common", itemId = "pet_noob",        modelPath = "ItemModels.Pets.Common.noob" },
+			{ name = "Duck",        chance = 14, rarity = "Common", itemId = "pet_duck",        modelPath = "ItemModels.Pets.Common.Duck" },
+			{ name = "Rabbit",      chance = 14, rarity = "Common", itemId = "pet_rabbit",      modelPath = "ItemModels.Pets.Common.rabbit" },
+			{ name = "Crocodile",   chance = 14, rarity = "Common", itemId = "pet_crocodile",   modelPath = "ItemModels.Pets.Common.crocodile" },
+			{ name = "Parrot",      chance = 14, rarity = "Common", itemId = "pet_parrot",      modelPath = "ItemModels.Pets.Common.parrot" },
 		},
 		prices = {
-			{ label = "1 Crate",  cost = 100, currency = "Coins" },
-			{ label = "3 Crates", cost = 250, currency = "Coins" },
-			{ label = "5 Crates", cost = 399, currency = "Robux" },
+			{ label = "1 Crate",  cost = 50,  currency = "Coins" },
+			{ label = "3 Crates", cost = 130, currency = "Coins" },
+			{ label = "5 Crates", cost = 199, currency = "Coins" },
 		},
 	},
 	{
-		id = "crate_mega",
-		name = "Mega Crate",
-		iconColor = Color3.fromRGB(255, 48, 68),
-		accentColor = Color3.fromRGB(255, 118, 128),
+		id = "crate_pet_rare",
+		name = "Rare Crate",
+		iconColor = Color3.fromRGB(38, 150, 255),
+		accentColor = Color3.fromRGB(108, 188, 255),
 		drops = {
-			{ name = "Rare Crown/Pet",  chance = 40, rarity = "Rare" },
-			{ name = "Epic Crown/Pet",  chance = 35, rarity = "Epic" },
-			{ name = "Legendary Item",  chance = 25, rarity = "Legendary" },
+			{ name = "Scorpion",  chance = 20, rarity = "Rare", itemId = "pet_scorpion",  modelPath = "ItemModels.Pets.Rare.scorpion" },
+			{ name = "Ray Fish",  chance = 20, rarity = "Rare", itemId = "pet_ray_fish",  modelPath = "ItemModels.Pets.Rare.ray fish" },
+			{ name = "Shark",     chance = 20, rarity = "Rare", itemId = "pet_shark",     modelPath = "ItemModels.Pets.Rare.shark" },
+			{ name = "Spider",    chance = 20, rarity = "Rare", itemId = "pet_spider",    modelPath = "ItemModels.Pets.Rare.spider" },
+			{ name = "Eagle",     chance = 20, rarity = "Rare", itemId = "pet_eagle",     modelPath = "ItemModels.Pets.Rare.eagle" },
 		},
 		prices = {
-			{ label = "1 Crate",  cost = 500,  currency = "Coins" },
-			{ label = "3 Crates", cost = 1200, currency = "Coins" },
-			{ label = "1 Crate",  cost = 199,  currency = "Robux" },
+			{ label = "1 Crate",  cost = 150, currency = "Coins" },
+			{ label = "3 Crates", cost = 400, currency = "Coins" },
+			{ label = "5 Crates", cost = 599, currency = "Coins" },
+		},
+	},
+	{
+		id = "crate_pet_epic",
+		name = "Epic Crate",
+		iconColor = Color3.fromRGB(178, 42, 255),
+		accentColor = Color3.fromRGB(218, 128, 255),
+		drops = {
+			{ name = "Axolotl",  chance = 34, rarity = "Epic", itemId = "pet_axolotl", modelPath = "ItemModels.Pets.Epic.axolotl" },
+			{ name = "Bat",      chance = 33, rarity = "Epic", itemId = "pet_bat",     modelPath = "ItemModels.Pets.Epic.bat" },
+			{ name = "Dolphin",  chance = 33, rarity = "Epic", itemId = "pet_dolphin", modelPath = "ItemModels.Pets.Epic.dolphin" },
+		},
+		prices = {
+			{ label = "1 Crate",  cost = 300, currency = "Coins" },
+			{ label = "3 Crates", cost = 800, currency = "Coins" },
+			{ label = "5 Crates", cost = 999, currency = "Robux" },
 		},
 	},
 }

@@ -1,6 +1,6 @@
 --[[
 	PlayerDataBootstrap
-	Initializes the persistence + equip systems and wires player events.
+	Initializes the persistence + equip + crate + level crown systems and wires player events.
 
 	Runs once on server start. Must run EARLY (before MatchBootstrap).
 
@@ -8,7 +8,9 @@
 	  * PlayerDataService  (DataStore load / save)
 	  * InventoryService   (equip / unequip validation)
 	  * StatService         (stat calculation)
-	  * RemoteEvents for client equip actions
+	  * CrateService        (crate opening logic)
+	  * LevelCrownService   (wins milestone crown granting)
+	  * RemoteEvents/Functions for client equip + crate actions
 	  * Leaderboard seed-on-join (via GlobalLeaderboardService)
 ]]
 
@@ -22,6 +24,8 @@ local Server = ServerScriptService:WaitForChild("Server")
 local PlayerDataService = require(Server:WaitForChild("PlayerDataService"))
 local InventoryService  = require(Server:WaitForChild("InventoryService"))
 local StatService       = require(Server:WaitForChild("StatService"))
+local CrateService      = require(Server:WaitForChild("CrateService"))
+local LevelCrownService = require(Server:WaitForChild("LevelCrownService"))
 
 local IS_STUDIO = RunService:IsStudio()
 
@@ -29,6 +33,8 @@ local IS_STUDIO = RunService:IsStudio()
 PlayerDataService.Init()
 InventoryService.Init()
 StatService.Init()
+CrateService.Init()
+LevelCrownService.Init()
 
 -- ═══════════════════════════════════════════════════════════════════
 -- LAZY-LOAD GLBS (avoid circular require; GLBS may not be init yet)
@@ -78,8 +84,20 @@ local function ensureRemote(name: string): RemoteEvent
 	return event
 end
 
-local equipEvent   = ensureRemote("EquipItem")
-local unequipEvent = ensureRemote("UnequipItem")
+local function ensureRemoteFunction(name: string): RemoteFunction
+	local func = remotesFolder:FindFirstChild(name)
+	if not func then
+		func = Instance.new("RemoteFunction")
+		func.Name = name
+		func.Parent = remotesFolder
+	end
+	return func
+end
+
+local equipEvent      = ensureRemote("EquipItem")
+local unequipEvent    = ensureRemote("UnequipItem")
+local inventoryUpdate = ensureRemote("InventoryUpdated")
+local openCrateFunc   = ensureRemoteFunction("OpenCrate")
 
 equipEvent.OnServerEvent:Connect(function(player, category, id)
 	if type(category) ~= "string" or type(id) ~= "string" then return end
@@ -108,6 +126,25 @@ unequipEvent.OnServerEvent:Connect(function(player, category)
 end)
 
 -- ═══════════════════════════════════════════════════════════════════
+-- CRATE OPENING (RemoteFunction — client needs the result back)
+-- ═══════════════════════════════════════════════════════════════════
+
+openCrateFunc.OnServerInvoke = function(player, crateId, quantity)
+	if not PlayerDataService.IsLoaded(player) then
+		return { results = {}, success = false, error = "Data not loaded" }
+	end
+
+	local result = CrateService.OpenCrate(player, crateId, quantity)
+
+	-- Notify client of inventory change so UIs refresh
+	if result.success and #result.results > 0 then
+		inventoryUpdate:FireClient(player, "CrateOpened", result.results)
+	end
+
+	return result
+end
+
+-- ═══════════════════════════════════════════════════════════════════
 -- PLAYER LIFECYCLE
 -- ═══════════════════════════════════════════════════════════════════
 
@@ -118,7 +155,26 @@ local function onPlayerAdded(player: Player)
 	-- 2) Recalculate stats
 	StatService.RecalculateStats(player)
 
-	-- 3) Seed leaderboard with saved stats (non-blocking)
+	-- 3) Check level crown milestones (grant earned but unowned crowns)
+	task.spawn(function()
+		local milestoneResult = LevelCrownService.CheckMilestones(player)
+		if milestoneResult.granted and #milestoneResult.granted > 0 then
+			inventoryUpdate:FireClient(player, "LevelCrowns", milestoneResult.granted)
+			StatService.RecalculateStats(player)
+		end
+	end)
+
+	-- 4) Watch for future wins changes to grant new level crowns
+	player:GetAttributeChangedSignal("LifetimeWins"):Connect(function()
+		if not PlayerDataService.IsLoaded(player) then return end
+		local milestoneResult = LevelCrownService.CheckMilestones(player)
+		if milestoneResult.granted and #milestoneResult.granted > 0 then
+			inventoryUpdate:FireClient(player, "LevelCrowns", milestoneResult.granted)
+			StatService.RecalculateStats(player)
+		end
+	end)
+
+	-- 5) Seed leaderboard with saved stats (non-blocking)
 	-- FIX: Accept negative UserIds in Studio (test players are -1, -2, etc.)
 	if data and isValidUserId(player.UserId) then
 		task.spawn(function()
@@ -176,4 +232,4 @@ game:BindToClose(function()
 	PlayerDataService.SaveAll()
 end)
 
-print("[PlayerDataBootstrap] Persistence + equip + leaderboard seed systems ready")
+print("[PlayerDataBootstrap] Persistence + equip + crate + level crowns + leaderboard seed systems ready")

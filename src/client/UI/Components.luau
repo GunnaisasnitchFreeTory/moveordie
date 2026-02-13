@@ -22,6 +22,7 @@ local Players = game:GetService("Players")
 
 local Shared = ReplicatedStorage:FindFirstChild("Shared") or ReplicatedStorage:WaitForChild("Shared", 5)
 local UIConfig = require(Shared:WaitForChild("UIConfig"))
+local ItemModelRegistry = require(Shared:WaitForChild("ItemModelRegistry"))
 
 local Client = script.Parent
 local AnimUtil  = require(Client:WaitForChild("AnimUtil"))
@@ -1196,6 +1197,375 @@ function Components.CreateSideButton(parent: Instance, label: string, iconText: 
 	end)
 
 	return btn
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- VIEWPORT ITEM CARD  (3D model preview via ViewportFrame)
+-- ═══════════════════════════════════════════════════════════════════
+
+--[[
+	Creates an item card with a ViewportFrame showing the 3D model.
+	Falls back to emoji/text if model not found in ReplicatedStorage.
+
+	config fields (extends CardConfig):
+	  modelPath: string  — dot-separated path in ReplicatedStorage
+	  All other fields from CardConfig are supported.
+]]
+
+-- Model resolution via ItemModelRegistry (single source of truth, case-insensitive)
+local function resolveModelPath(modelPath: string): Instance?
+	if not modelPath or modelPath == "" then return nil end
+	return ItemModelRegistry.Get(modelPath)
+end
+
+local function getModelBounds(model: Instance): (Vector3, Vector3)
+	local minBound = Vector3.new(math.huge, math.huge, math.huge)
+	local maxBound = Vector3.new(-math.huge, -math.huge, -math.huge)
+
+	local baseParts = {}
+	if model:IsA("BasePart") then
+		table.insert(baseParts, model)
+	end
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			table.insert(baseParts, desc)
+		end
+	end
+
+	for _, part in ipairs(baseParts) do
+		local pos = part.Position
+		local halfSize = part.Size / 2
+		minBound = Vector3.new(
+			math.min(minBound.X, pos.X - halfSize.X),
+			math.min(minBound.Y, pos.Y - halfSize.Y),
+			math.min(minBound.Z, pos.Z - halfSize.Z)
+		)
+		maxBound = Vector3.new(
+			math.max(maxBound.X, pos.X + halfSize.X),
+			math.max(maxBound.Y, pos.Y + halfSize.Y),
+			math.max(maxBound.Z, pos.Z + halfSize.Z)
+		)
+	end
+
+	if minBound.X == math.huge then
+		return Vector3.zero, Vector3.new(2, 2, 2)
+	end
+
+	return minBound, maxBound
+end
+
+local function setupViewportCamera(viewport: ViewportFrame, model: Instance)
+	local minB, maxB = getModelBounds(model)
+	local center = (minB + maxB) / 2
+	local size = maxB - minB
+	local maxDim = math.max(size.X, size.Y, size.Z, 1)
+
+	-- Wider framing: pull camera back so items are not overly zoomed in
+	local distance = maxDim * 2.0
+	local cameraPos = center + Vector3.new(distance * 0.5, distance * 0.35, distance * 0.8)
+
+	local cam = Instance.new("Camera")
+	cam.CameraType = Enum.CameraType.Scriptable
+	cam.CFrame = CFrame.lookAt(cameraPos, center)
+	cam.FieldOfView = 50
+	cam.Parent = viewport
+
+	viewport.CurrentCamera = cam
+end
+
+--- Clone a model into a viewport, preserving VFX (particles, fire, sparkles, etc.)
+local function cloneModelForViewport(modelInstance: Instance): Instance
+	local clone = modelInstance:Clone()
+	-- VFX descendants (ParticleEmitter, Fire, Sparkles, Beam, Trail) are
+	-- included automatically by :Clone() as long as they're children of
+	-- parts within the model. No additional work needed.
+	return clone
+end
+
+--- Reposition a cloned model to the origin for proper framing in a ViewportFrame
+local function resetModelPosition(clone: Instance)
+	if clone:IsA("Model") and clone.PrimaryPart then
+		clone:PivotTo(CFrame.new())
+	elseif clone:IsA("BasePart") then
+		clone.Position = Vector3.zero
+	elseif clone:IsA("Model") then
+		local firstPart = clone:FindFirstChildWhichIsA("BasePart", true)
+		if firstPart then
+			local offset = firstPart.Position
+			for _, desc in ipairs(clone:GetDescendants()) do
+				if desc:IsA("BasePart") then
+					desc.Position = desc.Position - offset
+				end
+			end
+		end
+	end
+end
+
+function Components.CreateViewportItemCard(parent: Instance, data): Frame
+	-- Try to resolve the model
+	local modelInstance = data.modelPath and resolveModelPath(data.modelPath) or nil
+	local hasModel = modelInstance ~= nil
+
+	-- If no model, fall back to regular CreateItemCard
+	if not hasModel then
+		return Components.CreateItemCard(parent, data)
+	end
+
+	local rarityInfo = UIConfig.RarityInfo[data.rarity] or UIConfig.RarityInfo.Common
+	local rarityColor = rarityInfo.color
+
+	local card = Instance.new("Frame")
+	card.Name = "Card_" .. (data.name or "Item")
+	card.Size = UDim2.fromOffset(S.CardWidth, S.CardHeight)
+	card.BackgroundColor3 = data.locked and C.CardBgDark or C.CardBg
+	card.BorderSizePixel = 0
+	card.Parent = parent
+
+	local cc = Instance.new("UICorner")
+	cc.CornerRadius = UDim.new(0, S.CardCorner)
+	cc.Parent = card
+
+	local cStroke = Instance.new("UIStroke")
+	cStroke.Color = data.locked and Color3.fromRGB(42, 45, 62) or rarityColor
+	cStroke.Thickness = data.locked and 1.5 or 2.5
+	cStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	cStroke.Transparency = data.locked and 0.4 or 0.1
+	cStroke.Parent = card
+
+	addStudTexture(card, S.CardCorner)
+
+	-- ── ViewportFrame for 3D model preview ──
+	local vpFrame = Instance.new("ViewportFrame")
+	vpFrame.Name = "ModelPreview"
+	vpFrame.Size = UDim2.new(1, -16, 0, 90)
+	vpFrame.Position = UDim2.fromOffset(8, 8)
+	vpFrame.BackgroundColor3 = data.locked and Color3.fromRGB(25, 28, 45) or (data.iconColor or C.CardBg)
+	vpFrame.BackgroundTransparency = data.locked and 0 or 0.3
+	vpFrame.BorderSizePixel = 0
+	vpFrame.Ambient = Color3.fromRGB(180, 180, 200)
+	vpFrame.LightColor = Color3.fromRGB(255, 255, 255)
+	vpFrame.LightDirection = Vector3.new(-1, -1, -1)
+	vpFrame.Parent = card
+
+	local vpCorner = Instance.new("UICorner")
+	vpCorner.CornerRadius = UDim.new(0, 10)
+	vpCorner.Parent = vpFrame
+
+	if data.locked then
+		-- Show lock overlay
+		local lockLabel = Instance.new("TextLabel")
+		lockLabel.Size = UDim2.fromScale(1, 1)
+		lockLabel.BackgroundTransparency = 1
+		lockLabel.Font = Enum.Font.GothamBold
+		lockLabel.Text = "\240\159\148\146"
+		lockLabel.TextColor3 = Color3.fromRGB(55, 58, 80)
+		lockLabel.TextSize = 36
+		lockLabel.ZIndex = 3
+		lockLabel.Parent = vpFrame
+	else
+		-- Clone model into viewport
+		local clone = modelInstance:Clone()
+		-- Reset position to origin for proper framing
+		if clone:IsA("Model") and clone.PrimaryPart then
+			clone:PivotTo(CFrame.new())
+		elseif clone:IsA("BasePart") then
+			clone.Position = Vector3.zero
+		elseif clone:IsA("Model") then
+			-- Try to move to origin via first part
+			local firstPart = clone:FindFirstChildWhichIsA("BasePart", true)
+			if firstPart then
+				local offset = firstPart.Position
+				for _, desc in ipairs(clone:GetDescendants()) do
+					if desc:IsA("BasePart") then
+						desc.Position = desc.Position - offset
+					end
+				end
+			end
+		end
+		clone.Parent = vpFrame
+		setupViewportCamera(vpFrame, clone)
+	end
+
+	-- Equipped badge
+	if data.equipped then
+		local check = Instance.new("TextLabel")
+		check.Name = "Equipped"
+		check.AnchorPoint = Vector2.new(1, 0)
+		check.Position = UDim2.new(1, -4, 0, 4)
+		check.Size = UDim2.fromOffset(26, 26)
+		check.BackgroundColor3 = C.Green
+		check.Font = Enum.Font.GothamBold
+		check.Text = "\xe2\x9c\x93"
+		check.TextColor3 = C.TextWhite
+		check.TextSize = 15
+		check.BorderSizePixel = 0
+		check.ZIndex = 10
+		check.Parent = card
+		local chc = Instance.new("UICorner")
+		chc.CornerRadius = UDim.new(1, 0)
+		chc.Parent = check
+	end
+
+	-- Tag badge
+	if data.tag and data.tag ~= "" then
+		local tagBadge = Instance.new("TextLabel")
+		tagBadge.Name = "Tag"
+		tagBadge.AnchorPoint = Vector2.new(0.5, 0)
+		tagBadge.Position = UDim2.new(0.5, 0, 0, -8)
+		tagBadge.Size = UDim2.fromOffset(math.max(#data.tag * 8 + 18, 48), 22)
+		tagBadge.BackgroundColor3 = C.Gold
+		tagBadge.Font = Enum.Font.GothamBold
+		tagBadge.TextColor3 = Color3.fromRGB(62, 40, 0)
+		tagBadge.TextSize = 12
+		tagBadge.Text = data.tag
+		tagBadge.BorderSizePixel = 0
+		tagBadge.ZIndex = 10
+		tagBadge.Parent = card
+		local tc = Instance.new("UICorner")
+		tc.CornerRadius = UDim.new(0, 7)
+		tc.Parent = tagBadge
+	end
+
+	-- Name label
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Name = "ItemName"
+	nameLabel.Size = UDim2.new(1, -10, 0, 20)
+	nameLabel.Position = UDim2.new(0, 5, 0, 102)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextColor3 = data.locked and Color3.fromRGB(55, 58, 80) or C.TextWhite
+	nameLabel.TextSize = 14
+	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
+	nameLabel.Text = data.locked and "???" or (data.name or "???")
+	nameLabel.Parent = card
+	if not data.locked then
+		local ns = Instance.new("UIStroke")
+		ns.Color = Color3.fromRGB(0, 0, 0)
+		ns.Thickness = 1.5
+		ns.Transparency = 0.15
+		ns.Parent = nameLabel
+	end
+
+	-- Rarity label
+	local rarLabel = Instance.new("TextLabel")
+	rarLabel.Name = "Rarity"
+	rarLabel.Size = UDim2.new(1, -10, 0, 16)
+	rarLabel.Position = UDim2.new(0, 5, 0, 120)
+	rarLabel.BackgroundTransparency = 1
+	rarLabel.Font = Enum.Font.GothamBold
+	rarLabel.TextColor3 = data.locked and Color3.fromRGB(42, 45, 65) or rarityColor
+	rarLabel.TextSize = 13
+	rarLabel.TextXAlignment = Enum.TextXAlignment.Center
+	rarLabel.Text = data.locked and "" or rarityInfo.label
+	rarLabel.Parent = card
+
+	-- Sub-label (e.g. "20 Wins", "Crown Crate", "Shop Only")
+	if data.subLabel and data.subLabel ~= "" then
+		local subLbl = Instance.new("TextLabel")
+		subLbl.Name = "SubLabel"
+		subLbl.Size = UDim2.new(1, -10, 0, 14)
+		subLbl.Position = UDim2.new(0, 5, 0, 135)
+		subLbl.BackgroundTransparency = 1
+		subLbl.Font = Enum.Font.GothamBold
+		subLbl.TextColor3 = data.locked and Color3.fromRGB(65, 68, 95) or C.TextMuted
+		subLbl.TextSize = 11
+		subLbl.TextXAlignment = Enum.TextXAlignment.Center
+		subLbl.Text = data.subLabel
+		subLbl.Parent = card
+	end
+
+	-- Action button
+	if data.actionText and not data.locked then
+		local btnColor = data.actionColor or C.BuyButton
+		local btn = Instance.new("TextButton")
+		btn.Name = "ActionBtn"
+		btn.AnchorPoint = Vector2.new(0.5, 1)
+		btn.Position = UDim2.new(0.5, 0, 1, -8)
+		btn.Size = UDim2.new(1, -16, 0, 34)
+		btn.BackgroundColor3 = btnColor
+		btn.Font = Enum.Font.GothamBold
+		btn.TextColor3 = C.TextWhite
+		btn.TextSize = 15
+		btn.Text = data.actionText
+		btn.BorderSizePixel = 0
+		btn.AutoButtonColor = false
+		btn.Parent = card
+		local bc = Instance.new("UICorner")
+		bc.CornerRadius = UDim.new(0, S.SmBtnCorner)
+		bc.Parent = btn
+
+		local abr, abg, abb = btnColor.R, btnColor.G, btnColor.B
+		local lighterAB = Color3.new(
+			math.min(abr + 0.20, 1), math.min(abg + 0.20, 1), math.min(abb + 0.20, 1)
+		)
+		local darkerAB = Color3.new(
+			math.max(abr - 0.10, 0), math.max(abg - 0.10, 0), math.max(abb - 0.10, 0)
+		)
+		local abGrad = Instance.new("UIGradient")
+		abGrad.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, lighterAB),
+			ColorSequenceKeypoint.new(0.5, btnColor),
+			ColorSequenceKeypoint.new(1, darkerAB),
+		})
+		abGrad.Rotation = 90
+		abGrad.Parent = btn
+
+		local bs = Instance.new("UIStroke")
+		bs.Color = Color3.fromRGB(255, 255, 255)
+		bs.Thickness = 1.5
+		bs.Transparency = 0.4
+		bs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		bs.Parent = btn
+
+		AnimUtil.WireButton(btn, function()
+			SoundUtil.Click()
+			if data.onAction then data.onAction() end
+		end)
+	end
+
+	return card
+end
+
+--- Create a small ViewportFrame thumbnail (for crate preview slots)
+function Components.CreateViewportThumbnail(parent: Instance, modelPath: string, size: UDim2?, bgColor: Color3?, fallbackText: string?): ViewportFrame
+	local vpFrame = Instance.new("ViewportFrame")
+	vpFrame.Name = "Thumbnail"
+	vpFrame.Size = size or UDim2.fromOffset(60, 60)
+	vpFrame.BackgroundColor3 = bgColor or C.CardBgDark
+	vpFrame.BackgroundTransparency = 0.2
+	vpFrame.BorderSizePixel = 0
+	vpFrame.Ambient = Color3.fromRGB(180, 180, 200)
+	vpFrame.LightColor = Color3.fromRGB(255, 255, 255)
+	vpFrame.LightDirection = Vector3.new(-1, -1, -1)
+	vpFrame.Parent = parent
+
+	local vpCorner = Instance.new("UICorner")
+	vpCorner.CornerRadius = UDim.new(0, 8)
+	vpCorner.Parent = vpFrame
+
+	local modelInstance = resolveModelPath(modelPath)
+	if modelInstance then
+		local clone = cloneModelForViewport(modelInstance)
+		resetModelPosition(clone)
+		clone.Parent = vpFrame
+		setupViewportCamera(vpFrame, clone)
+	else
+		-- Fallback: show text/emoji if model not found
+		local fb = Instance.new("TextLabel")
+		fb.Name = "Fallback"
+		fb.Size = UDim2.fromScale(1, 1)
+		fb.BackgroundTransparency = 1
+		fb.Font = Enum.Font.GothamBold
+		fb.Text = fallbackText or "?"
+		fb.TextColor3 = C.TextMuted
+		fb.TextSize = 24
+		fb.TextXAlignment = Enum.TextXAlignment.Center
+		fb.TextYAlignment = Enum.TextYAlignment.Center
+		fb.Parent = vpFrame
+	end
+
+	return vpFrame
 end
 
 return Components
