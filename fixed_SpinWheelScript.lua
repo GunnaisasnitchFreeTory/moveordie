@@ -288,8 +288,13 @@ do
 		for i, seg in ipairs(segments) do
 			local label = labels[i]
 			if not label then continue end
+			if not seg then
+				-- Guard: empty/nil segment entry, use coin fallback
+				label.Image = ItemCatalog.CoinImage or ""
+				continue
+			end
 
-			if seg.modelPath then
+			if seg.modelPath and seg.modelPath ~= "" then
 				-- Use ViewportFrame for 3D model preview
 				local created = createWheelViewport(label, seg.modelPath)
 				if not created then
@@ -642,6 +647,10 @@ task.spawn(function()
 			nextFreeSpinCountdown = nextFreeSpinCountdown - 1
 			if nextFreeSpinCountdown <= 0 then
 				freeSpinReady = true
+				if buyPanelTimerLabel then
+					buyPanelTimerLabel.Text = "✅ Free spin ready!"
+					buyPanelTimerLabel.TextColor3 = Color3.fromRGB(80, 255, 120)
+				end
 				task.spawn(refreshSpinStatus) -- confirm with server
 			elseif buyPanelTimerLabel then
 				local h = math.floor(nextFreeSpinCountdown / 3600)
@@ -1306,6 +1315,36 @@ local function doSpin()
 	end)
 
 	tween.Completed:Wait()
+
+	-- Highlight winning segment with a subtle glow pulse
+	do
+		local rewardsFrame = spinHandler:FindFirstChild("Rewards")
+		if rewardsFrame then
+			local winLabels = {}
+			for _, child in ipairs(rewardsFrame:GetChildren()) do
+				if child:IsA("ImageLabel") then
+					table.insert(winLabels, child)
+				end
+			end
+			table.sort(winLabels, function(a, b) return a.Rotation < b.Rotation end)
+			local winLabel = winLabels[segIndex]
+			if winLabel then
+				local glow = Instance.new("UIStroke")
+				glow.Color = Color3.fromRGB(255, 255, 100)
+				glow.Thickness = 3
+				glow.Transparency = 0
+				glow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+				glow.Parent = winLabel
+				-- Fade out the glow over 1.5s
+				TweenService:Create(glow, TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Transparency = 1,
+				}):Play()
+				task.delay(1.8, function()
+					if glow and glow.Parent then glow:Destroy() end
+				end)
+			end
+		end
+	end
 
 	-- Show reward on button briefly
 	if result.rewardType == "Pet" or result.rewardType == "Crown" then

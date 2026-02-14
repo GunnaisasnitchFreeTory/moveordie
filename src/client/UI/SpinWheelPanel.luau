@@ -141,7 +141,8 @@ function SpinWheelPanel.Init(screenGui, onClose)
 	-- The original AnimateFrames (disabled) used these for navigation.
 	-- Their TextButtons have ZIndex=999999999 and Active=true, which
 	-- intercepts mouse clicks on the left side of the screen. Hide them.
-	buttonsFrame = handler:FindFirstChild("Buttons")
+	-- Search recursively in case "Buttons" is nested deeper in the hierarchy.
+	buttonsFrame = handler:FindFirstChild("Buttons", true)
 	if buttonsFrame then
 		buttonsFrame.Visible = false
 		log("Hid orphaned Buttons frame (prevents click interception)")

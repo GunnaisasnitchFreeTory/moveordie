@@ -21,13 +21,22 @@ local RunService          = game:GetService("RunService")
 
 local Server = ServerScriptService:WaitForChild("Server")
 
-local PlayerDataService = require(Server:WaitForChild("PlayerDataService"))
-local InventoryService  = require(Server:WaitForChild("InventoryService"))
-local StatService       = require(Server:WaitForChild("StatService"))
-local CrateService      = require(Server:WaitForChild("CrateService"))
-local LevelCrownService = require(Server:WaitForChild("LevelCrownService"))
+local PlayerDataService   = require(Server:WaitForChild("PlayerDataService"))
+local InventoryService    = require(Server:WaitForChild("InventoryService"))
+local StatService         = require(Server:WaitForChild("StatService"))
+local CrateService        = require(Server:WaitForChild("CrateService"))
+local LevelCrownService   = require(Server:WaitForChild("LevelCrownService"))
+local CrownAttachService  = require(Server:WaitForChild("CrownAttachService"))
+
+local Shared      = ReplicatedStorage:WaitForChild("Shared")
+local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 
 local IS_STUDIO = RunService:IsStudio()
+
+-- ═══════════════════════════════════════════════════════════════════
+-- STUDIO DEBUG: Grant all crowns + pets on join  (set to false to disable)
+-- ═══════════════════════════════════════════════════════════════════
+local STUDIO_GRANT_ALL = IS_STUDIO  -- flips to true only in Studio
 
 -- Initialize services
 PlayerDataService.Init()
@@ -35,6 +44,7 @@ InventoryService.Init()
 StatService.Init()
 CrateService.Init()
 LevelCrownService.Init()
+CrownAttachService.Init()
 
 -- ═══════════════════════════════════════════════════════════════════
 -- LAZY-LOAD GLBS (avoid circular require; GLBS may not be init yet)
@@ -151,6 +161,35 @@ end
 local function onPlayerAdded(player: Player)
 	-- 1) Load persistent data
 	local data = PlayerDataService.LoadPlayer(player)
+
+	-- STUDIO DEBUG: grant every crown + pet so the developer can test equip/visuals
+	if STUDIO_GRANT_ALL and data then
+		local granted = 0
+		if ItemCatalog.Crowns then
+			for crownId, _ in pairs(ItemCatalog.Crowns) do
+				if not InventoryService.OwnsItem(player, "Crowns", crownId) then
+					InventoryService.GrantItem(player, "Crowns", crownId)
+					granted += 1
+				end
+			end
+		end
+		if ItemCatalog.Pets then
+			for petId, _ in pairs(ItemCatalog.Pets) do
+				if not InventoryService.OwnsItem(player, "Pets", petId) then
+					InventoryService.GrantItem(player, "Pets", petId)
+					granted += 1
+				end
+			end
+		end
+		-- Also ensure enough coins for testing crate purchases
+		if (data.Coins or 0) < 5000 then
+			data.Coins = 5000
+			PlayerDataService.SetField(player, "Coins", 5000)
+		end
+		if granted > 0 then
+			print(string.format("[DEBUG] Granted %d items to %s (Studio grant-all)", granted, player.Name))
+		end
+	end
 
 	-- 2) Recalculate stats
 	StatService.RecalculateStats(player)

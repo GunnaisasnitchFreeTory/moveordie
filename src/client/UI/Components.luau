@@ -519,6 +519,12 @@ function Components.CreatePanel(parent: Instance, title: string, headerColor: Co
 	content.ZIndex = 5
 	content.Parent = canvas
 
+	-- Safe padding at top/bottom to prevent content clipping at edges
+	local contentPadding = Instance.new("UIPadding")
+	contentPadding.PaddingTop = UDim.new(0, 4)
+	contentPadding.PaddingBottom = UDim.new(0, 12)
+	contentPadding.Parent = content
+
 	return canvas, uiScale, content, closeBtn
 end
 
@@ -582,12 +588,23 @@ function Components.CreateTabBar(parent: Instance, tabs: {{label: string}}, onSe
 
 	local function updateActive(activeIdx: number)
 		for i, btn in ipairs(tabButtons) do
+			local stroke = btn:FindFirstChildWhichIsA("UIStroke")
 			if i == activeIdx then
 				btn.BackgroundColor3 = C.TabActive
 				btn.TextColor3 = C.TabTextActive
+				if stroke then
+					stroke.Color = Color3.fromRGB(255, 255, 255)
+					stroke.Transparency = 0.2
+					stroke.Thickness = 2
+				end
 			else
 				btn.BackgroundColor3 = C.TabInactive
 				btn.TextColor3 = C.TabTextInactive
+				if stroke then
+					stroke.Color = Color3.fromRGB(255, 255, 255)
+					stroke.Transparency = 0.75
+					stroke.Thickness = 1.5
+				end
 			end
 		end
 	end
@@ -649,10 +666,19 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	iconFrame.Size = UDim2.new(1, -16, 0, 90)
 	iconFrame.Position = UDim2.fromOffset(8, 8)
 	iconFrame.BorderSizePixel = 0
+	iconFrame.ClipsDescendants = true
 	iconFrame.Parent = card
 	local iCorner = Instance.new("UICorner")
 	iCorner.CornerRadius = UDim.new(0, 10)
 	iCorner.Parent = iconFrame
+
+	-- Consistent internal padding for the thumbnail window
+	local iPadding = Instance.new("UIPadding")
+	iPadding.PaddingLeft   = UDim.new(0, 6)
+	iPadding.PaddingRight  = UDim.new(0, 6)
+	iPadding.PaddingTop    = UDim.new(0, 6)
+	iPadding.PaddingBottom = UDim.new(0, 6)
+	iPadding.Parent = iconFrame
 
 	local displayText = data.iconText or string.sub(data.name, 1, 1)
 
@@ -672,22 +698,24 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		qs.Transparency = 0.35
 		qs.Parent = q
 	else
-		iconFrame.BackgroundColor3 = data.iconColor
+		-- Use thumbnailBgColor (matches image background) if provided, else iconColor
+		iconFrame.BackgroundColor3 = data.thumbnailBgColor or data.iconColor
 		addGloss(iconFrame, 0.48, 0.78)
 
 		if data.image and data.image ~= "" then
 			local img = Instance.new("ImageLabel")
 			img.Name = "ItemImage"
-			img.Size = UDim2.new(1, -8, 1, -8)
-			img.Position = UDim2.fromOffset(4, 4)
+			img.Size = UDim2.fromScale(1, 1)
+			img.Position = UDim2.fromScale(0, 0)
 			img.BackgroundTransparency = 1
 			img.Image = data.image
-			img.ScaleType = Enum.ScaleType.Fit
+			img.ScaleType = Enum.ScaleType.Crop
 			img.ZIndex = 2
 			img.Parent = iconFrame
-			local ic = Instance.new("UICorner")
-			ic.CornerRadius = UDim.new(0, 8)
-			ic.Parent = img
+			-- Round the image corners to match the thumbnail window
+			local imgCorner = Instance.new("UICorner")
+			imgCorner.CornerRadius = UDim.new(0, 6)
+			imgCorner.Parent = img
 		else
 			local letter = Instance.new("TextLabel")
 			letter.Name = "Letter"
@@ -759,13 +787,15 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "ItemName"
-	nameLabel.Size = UDim2.new(1, -10, 0, 20)
+	nameLabel.Size = UDim2.new(1, -10, 0, 0)
 	nameLabel.Position = UDim2.new(0, 5, 0, 102)
+	nameLabel.AutomaticSize = Enum.AutomaticSize.Y
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Font = Enum.Font.GothamBold
 	nameLabel.TextColor3 = data.locked and Color3.fromRGB(55, 58, 80) or C.TextWhite
-	nameLabel.TextSize = 15
-	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.TextSize = 14
+	nameLabel.TextScaled = false
+	nameLabel.TextWrapped = true
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
 	nameLabel.Text = data.locked and "???" or data.name
 	nameLabel.Parent = card
@@ -1218,21 +1248,39 @@ local function resolveModelPath(modelPath: string): Instance?
 	return ItemModelRegistry.Get(modelPath)
 end
 
+local function isInsideThumbnailVFX(part: Instance, root: Instance): boolean
+	local parent = part.Parent
+	while parent and parent ~= root do
+		if parent:IsA("Folder") and parent.Name == "ThumbnailVFX" then return true end
+		parent = parent.Parent
+	end
+	return false
+end
+
 local function getModelBounds(model: Instance): (Vector3, Vector3)
+	-- Priority A: ThumbnailCameraTarget overrides everything
+	local camTarget = model:FindFirstChild("ThumbnailCameraTarget", true)
+	if camTarget and camTarget:IsA("BasePart") then
+		local p, h = camTarget.Position, camTarget.Size / 2
+		return
+			Vector3.new(p.X - h.X, p.Y - h.Y, p.Z - h.Z),
+			Vector3.new(p.X + h.X, p.Y + h.Y, p.Z + h.Z)
+	end
+
+	-- Priority B: PrimaryPart if model has one
+	if model:IsA("Model") and model.PrimaryPart then
+		local pp = model.PrimaryPart
+		local p, h = pp.Position, pp.Size / 2
+		return
+			Vector3.new(p.X - h.X, p.Y - h.Y, p.Z - h.Z),
+			Vector3.new(p.X + h.X, p.Y + h.Y, p.Z + h.Z)
+	end
+
+	-- Priority C: All visible BaseParts, excluding ThumbnailVFX contents
 	local minBound = Vector3.new(math.huge, math.huge, math.huge)
 	local maxBound = Vector3.new(-math.huge, -math.huge, -math.huge)
 
-	local baseParts = {}
-	if model:IsA("BasePart") then
-		table.insert(baseParts, model)
-	end
-	for _, desc in ipairs(model:GetDescendants()) do
-		if desc:IsA("BasePart") then
-			table.insert(baseParts, desc)
-		end
-	end
-
-	for _, part in ipairs(baseParts) do
+	local function proc(part: BasePart)
 		local pos = part.Position
 		local halfSize = part.Size / 2
 		minBound = Vector3.new(
@@ -1245,6 +1293,13 @@ local function getModelBounds(model: Instance): (Vector3, Vector3)
 			math.max(maxBound.Y, pos.Y + halfSize.Y),
 			math.max(maxBound.Z, pos.Z + halfSize.Z)
 		)
+	end
+
+	if model:IsA("BasePart") then proc(model) end
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") and not isInsideThumbnailVFX(desc, model) then
+			proc(desc)
+		end
 	end
 
 	if minBound.X == math.huge then
@@ -1273,14 +1328,30 @@ local function setupViewportCamera(viewport: ViewportFrame, model: Instance)
 	viewport.CurrentCamera = cam
 end
 
---- Clone a model into a viewport, preserving VFX (particles, fire, sparkles, etc.)
+--- Safe clone: strips unsafe instances, anchors parts, keeps VFX for viewport rendering
 local function cloneModelForViewport(modelInstance: Instance): Instance
 	local clone = modelInstance:Clone()
-	-- VFX descendants (ParticleEmitter, Fire, Sparkles, Beam, Trail) are
-	-- included automatically by :Clone() as long as they're children of
-	-- parts within the model. No additional work needed.
+	local descendants = clone:GetDescendants()
+
+	for _, d in ipairs(descendants) do
+		-- Strip scripts (can run code, cause errors)
+		if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ModuleScript") then
+			d:Destroy()
+		-- Strip humanoids / animation controllers
+		elseif d:IsA("Humanoid") or d:IsA("Animator") or d:IsA("AnimationController") then
+			d:Destroy()
+		-- Anchor all parts and disable collision
+		elseif d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+		end
+	end
+
 	return clone
 end
+
+-- VFX classes that indicate an item has visual effects
+-- (VFX detect/proxy removed — static images with baked VFX are used instead)
 
 --- Reposition a cloned model to the origin for proper framing in a ViewportFrame
 local function resetModelPosition(clone: Instance)
@@ -1301,12 +1372,27 @@ local function resetModelPosition(clone: Instance)
 	end
 end
 
+-- Per-item thumbnail yaw correction (degrees) for viewport cards.
+-- Rotates the model so its "face" points toward the camera. ONLY for thumbnails.
+local CARD_THUMBNAIL_YAW: { [string]: number } = {
+	pet_dog = 180,
+}
+
 function Components.CreateViewportItemCard(parent: Instance, data): Frame
-	-- Try to resolve the model
+	-- ── Prefer explicit image (static screenshots with VFX baked in) ──
+	-- If the catalog entry has an image, use CreateItemCard (ImageLabel) instead
+	-- of the heavier 3D viewport path. This gives the best visual fidelity and
+	-- eliminates the need for VFX proxy hacks.
+	local hasExplicitImage = data.image and data.image ~= ""
+	if hasExplicitImage then
+		return Components.CreateItemCard(parent, data)
+	end
+
+	-- Try to resolve the model for 3D rendering fallback
 	local modelInstance = data.modelPath and resolveModelPath(data.modelPath) or nil
 	local hasModel = modelInstance ~= nil
 
-	-- If no model, fall back to regular CreateItemCard
+	-- If no model either, fall back to regular CreateItemCard
 	if not hasModel then
 		return Components.CreateItemCard(parent, data)
 	end
@@ -1334,7 +1420,7 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 
 	addStudTexture(card, S.CardCorner)
 
-	-- ── ViewportFrame for 3D model preview ──
+	-- ── ViewportFrame for 3D model preview (no-image fallback only) ──
 	local vpFrame = Instance.new("ViewportFrame")
 	vpFrame.Name = "ModelPreview"
 	vpFrame.Size = UDim2.new(1, -16, 0, 90)
@@ -1351,39 +1437,60 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 	vpCorner.CornerRadius = UDim.new(0, 10)
 	vpCorner.Parent = vpFrame
 
+	-- Clone model into viewport (no VFX proxy — images with VFX are preferred)
+	do
+		local clone = cloneModelForViewport(modelInstance)
+		resetModelPosition(clone)
+
+		-- Per-item thumbnail yaw correction (only rotates specific items).
+		local thumbYaw = CARD_THUMBNAIL_YAW[data.id or ""] or 0
+		if thumbYaw ~= 0 then
+			local rot = CFrame.Angles(0, math.rad(thumbYaw), 0)
+			if clone:IsA("Model") then
+				for _, d in ipairs(clone:GetDescendants()) do
+					if d:IsA("BasePart") then
+						d.CFrame = rot * d.CFrame
+					end
+				end
+			elseif clone:IsA("BasePart") then
+				clone.CFrame = rot * clone.CFrame
+			end
+		end
+
+		clone.Parent = vpFrame
+		setupViewportCamera(vpFrame, clone)
+	end
+
 	if data.locked then
-		-- Show lock overlay
+		-- Desaturate the viewport for locked items
+		vpFrame.ImageColor3 = Color3.fromRGB(90, 90, 90)
+		vpFrame.ImageTransparency = 0.15
+
+		-- Semi-transparent dark overlay
+		local lockOverlay = Instance.new("Frame")
+		lockOverlay.Name = "LockOverlay"
+		lockOverlay.Size = UDim2.fromScale(1, 1)
+		lockOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		lockOverlay.BackgroundTransparency = 0.55
+		lockOverlay.BorderSizePixel = 0
+		lockOverlay.ZIndex = 2
+		lockOverlay.Parent = vpFrame
+		local olCorner = Instance.new("UICorner")
+		olCorner.CornerRadius = UDim.new(0, 10)
+		olCorner.Parent = lockOverlay
+
+		-- Lock icon on top
 		local lockLabel = Instance.new("TextLabel")
-		lockLabel.Size = UDim2.fromScale(1, 1)
+		lockLabel.Size = UDim2.fromOffset(32, 32)
+		lockLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+		lockLabel.Position = UDim2.fromScale(0.5, 0.5)
 		lockLabel.BackgroundTransparency = 1
 		lockLabel.Font = Enum.Font.GothamBold
 		lockLabel.Text = "\240\159\148\146"
-		lockLabel.TextColor3 = Color3.fromRGB(55, 58, 80)
-		lockLabel.TextSize = 36
+		lockLabel.TextColor3 = Color3.fromRGB(160, 165, 190)
+		lockLabel.TextSize = 28
 		lockLabel.ZIndex = 3
 		lockLabel.Parent = vpFrame
-	else
-		-- Clone model into viewport
-		local clone = modelInstance:Clone()
-		-- Reset position to origin for proper framing
-		if clone:IsA("Model") and clone.PrimaryPart then
-			clone:PivotTo(CFrame.new())
-		elseif clone:IsA("BasePart") then
-			clone.Position = Vector3.zero
-		elseif clone:IsA("Model") then
-			-- Try to move to origin via first part
-			local firstPart = clone:FindFirstChildWhichIsA("BasePart", true)
-			if firstPart then
-				local offset = firstPart.Position
-				for _, desc in ipairs(clone:GetDescendants()) do
-					if desc:IsA("BasePart") then
-						desc.Position = desc.Position - offset
-					end
-				end
-			end
-		end
-		clone.Parent = vpFrame
-		setupViewportCamera(vpFrame, clone)
 	end
 
 	-- Equipped badge
@@ -1429,13 +1536,15 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 	-- Name label
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "ItemName"
-	nameLabel.Size = UDim2.new(1, -10, 0, 20)
+	nameLabel.Size = UDim2.new(1, -10, 0, 0)
 	nameLabel.Position = UDim2.new(0, 5, 0, 102)
+	nameLabel.AutomaticSize = Enum.AutomaticSize.Y
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Font = Enum.Font.GothamBold
 	nameLabel.TextColor3 = data.locked and Color3.fromRGB(55, 58, 80) or C.TextWhite
 	nameLabel.TextSize = 14
-	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.TextScaled = false
+	nameLabel.TextWrapped = true
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
 	nameLabel.Text = data.locked and "???" or (data.name or "???")
 	nameLabel.Parent = card
@@ -1468,7 +1577,7 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 		subLbl.Position = UDim2.new(0, 5, 0, 135)
 		subLbl.BackgroundTransparency = 1
 		subLbl.Font = Enum.Font.GothamBold
-		subLbl.TextColor3 = data.locked and Color3.fromRGB(65, 68, 95) or C.TextMuted
+		subLbl.TextColor3 = data.locked and Color3.fromRGB(100, 105, 135) or C.TextMuted
 		subLbl.TextSize = 11
 		subLbl.TextXAlignment = Enum.TextXAlignment.Center
 		subLbl.Text = data.subLabel

@@ -7,9 +7,9 @@
 	  • Spin purchase prices (Fate Coins + Robux Developer Products)
 	  • Timing constants
 
-	Segments now include BOTH coin rewards and pet rewards.
-	Pet segments reference ItemCatalog IDs so the server can grant the
-	correct pet and the client can look up the matching image.
+	Segments include coin rewards, pet rewards, and crown rewards.
+	Pet/Crown segments reference ItemCatalog IDs so the server can grant the
+	correct item and the client can look up the matching image.
 
 	Used by: SpinWheelPanel (client), SpinWheelService (server), SpinWheelScript (client)
 ]]
@@ -35,6 +35,11 @@ SpinWheelConfig.DEBUG_UNLIMITED_SPINS = false
 -- reward types:
 --   "Coins"  → grant coin amount
 --   "Pet"    → grant pet from ItemCatalog (catalogId field)
+--   "Crown"  → grant crown from ItemCatalog (catalogId field)
+--
+-- Optional: wheelImage = "rbxassetid://..."
+--   Overrides all other image logic for this segment's wheel icon.
+--   If nil/empty, the wheel script resolves from ItemCatalog automatically.
 -- ═══════════════════════════════════════════
 
 SpinWheelConfig.Segments = {
@@ -47,7 +52,7 @@ SpinWheelConfig.Segments = {
 		weight     = 25,
 		rarity     = "Common",
 		color      = Color3.fromRGB(72, 180, 255),   -- sky blue
-		modelPath  = nil, -- no model for coins; use existing coin image
+		modelPath  = nil,
 	},
 	-- Segment 2: Random Common Pet (HIGH)
 	{

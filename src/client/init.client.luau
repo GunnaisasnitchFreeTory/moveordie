@@ -77,4 +77,15 @@ else
 	warn(string.format("[UIBoot] t=%s UIController FAILED: %s", ts(), tostring(uiErr)))
 end
 
+-- 4. PetFollowerController (spawns + animates equipped pet models)
+local petOk, petErr = pcall(function()
+	local PetFollowerController = require(Client:WaitForChild("PetFollowerController"))
+	PetFollowerController.Init()
+end)
+if petOk then
+	print("[Client] PetFollowerController loaded OK")
+else
+	warn("[Client] PetFollowerController FAILED:", petErr)
+end
+
 print(string.format("[Client] Init complete (t=%s)", ts()))

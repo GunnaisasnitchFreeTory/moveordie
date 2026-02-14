@@ -66,6 +66,7 @@ local visible = false
 local closeCallback: (() -> ())? = nil
 
 local equippedId: string? = nil
+local _equipDebounce = false  -- prevents double-fire + preserves optimistic equippedId
 
 local PetsPanel = {}
 
@@ -102,7 +103,11 @@ local function refresh()
 	clearContent()
 
 	local ownedSet = getOwnedPetSet()
-	equippedId = player:GetAttribute("EquippedPet") or nil
+	-- During debounce, keep the optimistic equippedId so the UI updates instantly.
+	-- Otherwise, sync with the authoritative server attribute.
+	if not _equipDebounce then
+		equippedId = player:GetAttribute("EquippedPet") or nil
+	end
 	local allPets = ItemCatalog.GetAllPetsSorted()
 
 	for i, pet in ipairs(allPets) do
@@ -125,9 +130,11 @@ local function refresh()
 		end
 
 		Components.CreateViewportItemCard(contentFrame, {
+			id = pet.id,
 			name = pet.name,
 			rarity = pet.rarity,
 			iconColor = pet.iconColor,
+			thumbnailBgColor = pet.thumbnailBgColor,
 			iconText = pet.iconText or "\240\159\144\190",
 			image = ItemCatalog.GetImage(pet),
 			modelPath = pet.modelPath,
@@ -138,25 +145,35 @@ local function refresh()
 			actionText = actionText,
 			actionColor = actionColor,
 			onAction = function()
-				if isOwned then
-					if isEquipped then
-						-- Unequip
-						local unequipRemote = getUnequipRemote()
-						if unequipRemote then
-							unequipRemote:FireServer("Pets")
-						end
-						equippedId = nil
-					else
-						-- Equip via server
-						local equipRemote = getEquipRemote()
-						if equipRemote then
-							equipRemote:FireServer("Pets", pet.id)
-						end
-						equippedId = pet.id
+				if not isOwned then return end
+				if _equipDebounce then return end -- prevent double-fire
+				_equipDebounce = true
+
+				if isEquipped then
+					-- Unequip
+					local unequipRemote = getUnequipRemote()
+					if unequipRemote then
+						unequipRemote:FireServer("Pets")
 					end
-					SoundUtil.Equip()
-					refresh()
+					equippedId = nil
+				else
+					-- Equip via server
+					local equipRemote = getEquipRemote()
+					if equipRemote then
+						equipRemote:FireServer("Pets", pet.id)
+					end
+					equippedId = pet.id
 				end
+
+				SoundUtil.Equip()
+				refresh() -- instant optimistic UI update
+
+				-- Release debounce after attribute has time to replicate,
+				-- then do a final sync refresh.
+				task.delay(0.5, function()
+					_equipDebounce = false
+					if visible then refresh() end
+				end)
 			end,
 		}).LayoutOrder = i
 	end

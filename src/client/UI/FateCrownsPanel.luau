@@ -138,6 +138,7 @@ local function refresh()
 			name = crown.name,
 			rarity = crown.rarity,
 			iconColor = crown.iconColor,
+			thumbnailBgColor = crown.thumbnailBgColor,
 			iconText = crown.iconText or "\240\159\145\145",
 			image = ItemCatalog.GetImage(crown),
 			modelPath = crown.modelPath,

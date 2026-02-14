@@ -37,6 +37,7 @@ print(TAG, "LOADED FROM:", script:GetFullName())
 local ItemModelRegistry = {}
 
 local _registry: { [string]: Instance } = {}
+local _fuzzyRegistry: { [string]: Instance } = {} -- stripped spaces/underscores for fallback
 local _initialized = false
 local _count = 0
 local _duplicateWarned: { [string]: boolean } = {}
@@ -64,6 +65,11 @@ function ItemModelRegistry.Normalize(s: any): string
 	return str
 end
 
+--- Generate a fuzzy key by stripping spaces, underscores, and hyphens from each segment
+local function toFuzzyKey(normalizedKey: string): string
+	return string.gsub(normalizedKey, "[%s_%-]", "")
+end
+
 local Normalize = ItemModelRegistry.Normalize
 
 -- =====================================================================
@@ -88,6 +94,11 @@ local function scanFolder(folder: Instance, pathSegments: { string })
 			if not _registry[key] then
 				_registry[key] = child
 				_count += 1
+				-- Also register fuzzy key for fallback matching
+				local fuzzy = toFuzzyKey(key)
+				if not _fuzzyRegistry[fuzzy] then
+					_fuzzyRegistry[fuzzy] = child
+				end
 			elseif not _duplicateWarned[key] then
 				_duplicateWarned[key] = true
 				warn(TAG, "Duplicate key:", key)
@@ -120,10 +131,23 @@ end
 -- =====================================================================
 
 --- Look up a model by any path format. Returns the source Instance or nil.
+--- Falls back to fuzzy matching (strips spaces/underscores/hyphens) on miss.
 function ItemModelRegistry.Get(keyOrPath: string): Instance?
 	if not _initialized then doInit() end
 	if not keyOrPath or keyOrPath == "" then return nil end
-	return _registry[Normalize(keyOrPath)]
+
+	local key = Normalize(keyOrPath)
+
+	-- Exact match
+	local result = _registry[key]
+	if result then return result end
+
+	-- Fuzzy fallback: strip spaces, underscores, hyphens
+	local fuzzyKey = toFuzzyKey(key)
+	result = _fuzzyRegistry[fuzzyKey]
+	if result then return result end
+
+	return nil
 end
 
 -- Alias for backward compat

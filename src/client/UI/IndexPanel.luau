@@ -98,8 +98,13 @@ local function getOwnedSet(attrName: string): { [string]: boolean }
 	return set
 end
 
---- Apply grey overlay + lock icon on a ViewportFrame for locked items
+--- Apply desaturation + grey overlay + lock icon on a ViewportFrame for locked items
 local function applyLockOverlay(vpFrame: ViewportFrame)
+	-- Desaturate the viewport rendering
+	vpFrame.ImageColor3 = Color3.fromRGB(90, 90, 90)
+	vpFrame.ImageTransparency = 0.15
+
+	-- Semi-transparent dark overlay
 	local greyOverlay = Instance.new("Frame")
 	greyOverlay.Name = "LockOverlay"
 	greyOverlay.Size = UDim2.fromScale(1, 1)
@@ -112,6 +117,7 @@ local function applyLockOverlay(vpFrame: ViewportFrame)
 	oc.CornerRadius = UDim.new(0, 10)
 	oc.Parent = greyOverlay
 
+	-- Lock icon on top
 	local lockIcon = Instance.new("TextLabel")
 	lockIcon.Name = "LockIcon"
 	lockIcon.Size = UDim2.fromOffset(32, 32)
@@ -160,6 +166,7 @@ local function populateCrowns()
 			name = crown.name,
 			rarity = crown.rarity,
 			iconColor = crown.iconColor,
+			thumbnailBgColor = crown.thumbnailBgColor,
 			iconText = crown.iconText or "\240\159\145\145",
 			image = ItemCatalog.GetImage(crown),
 			modelPath = crown.modelPath,
@@ -202,6 +209,7 @@ local function populatePets()
 			name = pet.name,
 			rarity = pet.rarity,
 			iconColor = pet.iconColor,
+			thumbnailBgColor = pet.thumbnailBgColor,
 			iconText = pet.iconText or "\240\159\144\190",
 			image = ItemCatalog.GetImage(pet),
 			modelPath = pet.modelPath,

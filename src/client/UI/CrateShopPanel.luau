@@ -164,33 +164,42 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 	bps.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	bps.Parent = bigPreview
 
-	-- Get preview items
+	-- Get preview items (used for thumbnail row, not big preview)
 	local previewItems = getPreviewItems(crateData.id, 4)
 
-	-- Show first preview item as big model, or a box icon fallback
-	if #previewItems > 0 and previewItems[1].modelPath then
-		local vp = Components.CreateViewportThumbnail(
-			bigPreview,
-			previewItems[1].modelPath,
-			UDim2.new(1, -8, 0, 120),
-			crateData.iconColor,
-			"\240\159\147\166"
-		)
-		vp.Position = UDim2.fromOffset(4, 10)
-		vp.BackgroundTransparency = 1
-		-- Force ThumbnailRenderer (registry-only, no Workspace fallback)
-		ThumbnailRenderer.RenderItemToViewport(vp, previewItems[1])
-	else
-		-- Fallback: box/crate emoji
-		local emoji = Instance.new("TextLabel")
-		emoji.Size = UDim2.new(1, 0, 0, 80)
-		emoji.Position = UDim2.fromOffset(0, 20)
-		emoji.BackgroundTransparency = 1
-		emoji.Font = Enum.Font.GothamBold
-		emoji.Text = "\240\159\147\166"
-		emoji.TextSize = 46
-		emoji.TextColor3 = C.TextWhite
-		emoji.Parent = bigPreview
+	-- Big preview: show crate box representation (not a random drop item)
+	do
+		local crateModelPath = crateData.modelPath -- optional crate box model
+		local rendered = false
+		if crateModelPath and crateModelPath ~= "" then
+			local vp = Components.CreateViewportThumbnail(
+				bigPreview,
+				crateModelPath,
+				UDim2.new(1, -8, 0, 120),
+				crateData.iconColor,
+				"\240\159\147\166"
+			)
+			vp.Position = UDim2.fromOffset(4, 10)
+			vp.BackgroundTransparency = 1
+			rendered = ThumbnailRenderer.RenderItemToViewport(vp, { modelPath = crateModelPath })
+		end
+		if not rendered then
+			-- Styled crate box fallback: emoji centered
+			local emoji = Instance.new("TextLabel")
+			emoji.Size = UDim2.new(1, 0, 0, 80)
+			emoji.Position = UDim2.fromOffset(0, 20)
+			emoji.BackgroundTransparency = 1
+			emoji.Font = Enum.Font.GothamBold
+			emoji.Text = "\240\159\147\166"
+			emoji.TextSize = 52
+			emoji.TextColor3 = C.TextWhite
+			emoji.Parent = bigPreview
+			local emojiStroke = Instance.new("UIStroke")
+			emojiStroke.Color = Color3.fromRGB(0, 0, 0)
+			emojiStroke.Thickness = 2
+			emojiStroke.Transparency = 0.3
+			emojiStroke.Parent = emoji
+		end
 	end
 
 	-- Crate name under big preview
@@ -388,6 +397,12 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 				return
 			end
 
+			-- Validate crate ID exists in catalog before firing remote
+			if not ItemCatalog.Crates or not ItemCatalog.Crates[crateData.id] then
+				warn("[CrateShop] Crate not configured:", crateData.id)
+				return
+			end
+
 			local openCrate = getOpenCrateFunc()
 			if not openCrate then
 				warn("[CrateShop] OpenCrate RemoteFunction not found")
@@ -401,33 +416,34 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 					-- Show reward reveal for each result
 					for ri, r in ipairs(result.results or {}) do
 						if ri > 1 then task.wait(0.4) end
+						local entry = ItemCatalog.Get(r.category, r.itemId)
 						if r.isDuplicate then
 							revealUI.ShowReward({
-								name = "Duplicate!",
-								rarity = "Common",
+								name = entry and entry.name or r.itemId,
+								rarity = entry and entry.rarity or "Common",
+								modelPath = entry and entry.modelPath,
+								iconColor = entry and entry.iconColor,
 								isDuplicate = true,
-								coinsAwarded = r.coinsAwarded or 0,
 							})
-						else
-							local entry = ItemCatalog.Get(r.category, r.itemId)
-							if entry then
-								revealUI.ShowReward({
-									name = entry.name,
-									rarity = entry.rarity,
-									modelPath = entry.modelPath,
-									iconColor = entry.iconColor,
-								})
-							end
+						elseif entry then
+							revealUI.ShowReward({
+								name = entry.name,
+								rarity = entry.rarity,
+								modelPath = entry.modelPath,
+								iconColor = entry.iconColor,
+							})
 						end
 					end
 				else
 					-- Fallback: log to console
 					for _, r in ipairs(result.results or {}) do
+						local entry = ItemCatalog.Get(r.category, r.itemId)
 						if r.isDuplicate then
-							print(string.format("[CrateShop] Duplicate! +%d coins", r.coinsAwarded or 0))
+							print(string.format("[CrateShop] Already owned: %s",
+								entry and entry.name or r.itemId))
 						else
-							local entry = ItemCatalog.Get(r.category, r.itemId)
-							print(string.format("[CrateShop] Got: %s!", entry and entry.name or r.itemId))
+							print(string.format("[CrateShop] Got: %s!",
+								entry and entry.name or r.itemId))
 						end
 					end
 				end

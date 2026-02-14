@@ -96,6 +96,7 @@ UIConfig.Colors = {
 	Rare      = Color3.fromRGB(38, 150, 255),
 	Epic      = Color3.fromRGB(178, 42, 255),
 	Legendary = Color3.fromRGB(255, 198, 18),
+	Exclusive = Color3.fromRGB(255, 58, 58),
 
 	-- Tab pills
 	TabActive       = Color3.fromRGB(255, 255, 255),
@@ -252,17 +253,26 @@ UIConfig.MockCrates = {
 		iconColor = Color3.fromRGB(185, 68, 235),
 		accentColor = Color3.fromRGB(218, 128, 255),
 		drops = {
-			{ name = "Sparkle Crown",     chance = 17, rarity = "Common",  itemId = "crown_sparkle",      modelPath = "ItemModels.Crowns.Findable.Sparkle Crown" },
-			{ name = "Anime Lines Crown", chance = 17, rarity = "Rare",    itemId = "crown_anime_lines",  modelPath = "ItemModels.Crowns.Findable.Anime Lines Crown" },
-			{ name = "Darkness Crown",    chance = 17, rarity = "Rare",    itemId = "crown_darkness",     modelPath = "ItemModels.Crowns.Findable.Darkness Crown" },
-			{ name = "Love Crown",        chance = 17, rarity = "Rare",    itemId = "crown_love",         modelPath = "ItemModels.Crowns.Findable.Love Crown" },
-			{ name = "Glitch Crown",      chance = 16, rarity = "Epic",    itemId = "crown_glitch",       modelPath = "ItemModels.Crowns.Findable.Glitch Crown" },
-			{ name = "Mystical Crown",    chance = 16, rarity = "Epic",    itemId = "crown_mystical",     modelPath = "ItemModels.Crowns.Findable.Mystical Crown" },
+			-- Basic Color Crowns (Common) — high chance
+			{ name = "Red Crown",         chance = 13, rarity = "Common",  itemId = "crown_red",          modelPath = "ItemModels.Crowns.Findable.Red Crown" },
+			{ name = "Blue Crown",        chance = 13, rarity = "Common",  itemId = "crown_blue",         modelPath = "ItemModels.Crowns.Findable.Blue Crown" },
+			{ name = "Green Crown",       chance = 13, rarity = "Common",  itemId = "crown_green",        modelPath = "ItemModels.Crowns.Findable.Green Crown" },
+			{ name = "Purple Crown",      chance = 13, rarity = "Common",  itemId = "crown_purple",       modelPath = "ItemModels.Crowns.Findable.Purple Crown" },
+			{ name = "Pink Crown",        chance = 13, rarity = "Common",  itemId = "crown_pink",         modelPath = "ItemModels.Crowns.Findable.Pink Crown" },
+			{ name = "White Crown",       chance = 12, rarity = "Common",  itemId = "crown_white",        modelPath = "ItemModels.Crowns.Findable.White Crown" },
+			{ name = "Orange Crown",      chance = 12, rarity = "Common",  itemId = "crown_orange",       modelPath = "ItemModels.Crowns.Findable.Orange Crown" },
+			-- VFX Crowns (Rare/Epic) — low chance
+			{ name = "Sparkle Crown",     chance = 3, rarity = "Rare",     itemId = "crown_sparkle",      modelPath = "ItemModels.Crowns.Findable.Sparkle Crown" },
+			{ name = "Anime Lines Crown", chance = 2, rarity = "Rare",     itemId = "crown_anime_lines",  modelPath = "ItemModels.Crowns.Findable.Anime Lines Crown" },
+			{ name = "Darkness Crown",    chance = 2, rarity = "Rare",     itemId = "crown_darkness",     modelPath = "ItemModels.Crowns.Findable.Darkness Crown" },
+			{ name = "Love Crown",        chance = 2, rarity = "Rare",     itemId = "crown_love",         modelPath = "ItemModels.Crowns.Findable.Love Crown" },
+			{ name = "Glitch Crown",      chance = 1, rarity = "Epic",     itemId = "crown_glitch",       modelPath = "ItemModels.Crowns.Findable.Glitch Crown" },
+			{ name = "Mystical Crown",    chance = 1, rarity = "Epic",     itemId = "crown_mystical",     modelPath = "ItemModels.Crowns.Findable.Mystical Crown" },
 		},
 		prices = {
-			{ label = "1 Crate",  cost = 100, currency = "Coins" },
-			{ label = "3 Crates", cost = 250, currency = "Coins" },
-			{ label = "5 Crates", cost = 399, currency = "Robux" },
+			{ label = "1 Crate",  cost = 300, currency = "Coins" },
+			{ label = "3 Crates", cost = 500, currency = "Coins" },
+			{ label = "6 Crates", cost = 400, currency = "Robux" },
 		},
 	},
 	{
@@ -280,9 +290,9 @@ UIConfig.MockCrates = {
 			{ name = "Parrot",      chance = 14, rarity = "Common", itemId = "pet_parrot",      modelPath = "ItemModels.Pets.Common.parrot" },
 		},
 		prices = {
-			{ label = "1 Crate",  cost = 50,  currency = "Coins" },
-			{ label = "3 Crates", cost = 130, currency = "Coins" },
-			{ label = "5 Crates", cost = 199, currency = "Coins" },
+			{ label = "1 Crate",  cost = 300, currency = "Coins" },
+			{ label = "3 Crates", cost = 500, currency = "Coins" },
+			{ label = "6 Crates", cost = 400, currency = "Robux" },
 		},
 	},
 	{
@@ -298,9 +308,9 @@ UIConfig.MockCrates = {
 			{ name = "Eagle",     chance = 20, rarity = "Rare", itemId = "pet_eagle",     modelPath = "ItemModels.Pets.Rare.eagle" },
 		},
 		prices = {
-			{ label = "1 Crate",  cost = 150, currency = "Coins" },
-			{ label = "3 Crates", cost = 400, currency = "Coins" },
-			{ label = "5 Crates", cost = 599, currency = "Coins" },
+			{ label = "1 Crate",  cost = 300, currency = "Coins" },
+			{ label = "3 Crates", cost = 500, currency = "Coins" },
+			{ label = "6 Crates", cost = 400, currency = "Robux" },
 		},
 	},
 	{
@@ -315,8 +325,8 @@ UIConfig.MockCrates = {
 		},
 		prices = {
 			{ label = "1 Crate",  cost = 300, currency = "Coins" },
-			{ label = "3 Crates", cost = 800, currency = "Coins" },
-			{ label = "5 Crates", cost = 999, currency = "Robux" },
+			{ label = "3 Crates", cost = 500, currency = "Coins" },
+			{ label = "6 Crates", cost = 400, currency = "Robux" },
 		},
 	},
 }

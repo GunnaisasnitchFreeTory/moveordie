@@ -207,12 +207,7 @@ local function populateCards(filterType: string)
 				warn(string.format("[ShopPanel] No ItemCatalog.Premium entry for '%s' -- using placeholder", item.id))
 			end
 
-			-- Determine model path for ViewportFrame rendering
-			local modelPath = catEntry and catEntry.modelPath or nil
-
-			-- For ExclusivePet / ExclusiveCrown with model paths, use ThumbnailRenderer
-			local wantsThumbnail = modelPath and (filterType == "ExclusivePet" or filterType == "ExclusiveCrown")
-
+			-- Determine explicit image from catalog (preferred over 3D rendering)
 			local catalogImage: string
 			if filterType == "Currency" then
 				catalogImage = _fateCoinImage
@@ -220,14 +215,23 @@ local function populateCards(filterType: string)
 				catalogImage = catEntry and ItemCatalog.GetImage(catEntry) or ""
 			end
 
+			local modelPath = catEntry and catEntry.modelPath or nil
 			local catalogIconText = catEntry and catEntry.iconText or nil
+
+			-- If an explicit image exists, use it directly. Only fall back to
+			-- ThumbnailRenderer when there is NO image (static screenshots
+			-- already include VFX baked in — no need for 3D rendering).
+			local hasExplicitImage = (catalogImage ~= "")
+			local wantsThumbnail = (not hasExplicitImage) and modelPath
+				and (filterType == "ExclusivePet" or filterType == "ExclusiveCrown")
 
 			local cardData = {
 				name = item.name,
 				rarity = item.rarity or "Rare",
 				iconColor = item.iconColor,
+				thumbnailBgColor = catEntry and catEntry.thumbnailBgColor or nil,
 				iconText = catalogIconText,
-				image = wantsThumbnail and "" or catalogImage, -- suppress ImageLabel for model items
+				image = catalogImage,
 				modelPath = modelPath,
 				tag = item.tag,
 				actionText = actionText,
@@ -237,33 +241,19 @@ local function populateCards(filterType: string)
 				end,
 			}
 
-			-- Always use CreateItemCard as the base (CreateViewportItemCard silently falls
-			-- back to CreateItemCard anyway because ReplicatedStorage.ItemModels doesn't exist).
 			local card = Components.CreateItemCard(contentFrame, cardData)
 			card.LayoutOrder = order
 
-			-- For crown/pet items: create ViewportFrame and call ThumbnailRenderer
+			-- Only use ThumbnailRenderer as fallback when no explicit image exists
 			if wantsThumbnail then
-				print(string.format(
-					"[PremiumShop] Attempting ThumbnailRenderer for: id=%s name=%s modelPath=%s",
-					item.id, item.name, modelPath or "(nil)"
-				))
-
 				local vpFrame = ensureViewportInCard(card, item.iconColor)
 				if vpFrame then
-					local renderOk = ThumbnailRenderer.RenderItemToViewport(vpFrame, {
+					ThumbnailRenderer.RenderItemToViewport(vpFrame, {
 						modelPath = modelPath,
 						id = item.id,
 						name = item.name,
 						type = filterType,
 					})
-					if renderOk then
-						print(string.format("[PremiumShop] Rendered card via ThumbnailRenderer: %s", item.id))
-					else
-						warn(string.format("[PremiumShop] ThumbnailRenderer FAILED for: %s", item.id))
-					end
-				else
-					warn(string.format("[PremiumShop] Could not create ViewportFrame for: %s", item.id))
 				end
 			end
 
