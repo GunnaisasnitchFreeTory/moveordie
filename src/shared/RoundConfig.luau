@@ -11,6 +11,7 @@ local RoundConfig = {}
 
 -- Phase durations (seconds)
 RoundConfig.FreeMoveSeconds = 7.5     -- Players can reposition freely
+RoundConfig.TelegraphGraceSeconds = 0.6  -- Grace: telegraph visible but players can still move
 RoundConfig.TelegraphSeconds = 2.0    -- Tile warning pulse (BEFORE beams appear)
 RoundConfig.FreezeSeconds = 6.0       -- Total freeze time (telegraph + beam warning)
 RoundConfig.StrikeSeconds = 0.25      -- Beam fires

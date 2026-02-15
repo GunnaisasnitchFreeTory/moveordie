@@ -37,9 +37,10 @@ SpinWheelConfig.DEBUG_UNLIMITED_SPINS = false
 --   "Pet"    → grant pet from ItemCatalog (catalogId field)
 --   "Crown"  → grant crown from ItemCatalog (catalogId field)
 --
--- Optional: wheelImage = "rbxassetid://..."
---   Overrides all other image logic for this segment's wheel icon.
---   If nil/empty, the wheel script resolves from ItemCatalog automatically.
+-- wheelImage = "rbxassetid://..."
+--   Explicit wheel-only icon for this segment.
+--   The wheel renderer uses ONLY this field (no ItemCatalog lookups).
+--   If nil/empty, the wheel shows a "?" placeholder and warns.
 -- ═══════════════════════════════════════════
 
 SpinWheelConfig.Segments = {
@@ -54,12 +55,13 @@ SpinWheelConfig.Segments = {
 		color      = Color3.fromRGB(72, 180, 255),   -- sky blue
 		modelPath  = nil,
 	},
-	-- Segment 2: Random Common Pet (HIGH)
+	-- Segment 2: Dog Pet (HIGH)
 	{
-		name       = "Common Pet",
+		name       = "Dog Pet",
 		icon       = "\240\159\144\190",
 		reward     = "Pet",
 		catalogId  = "pet_dog",
+		wheelImage = "rbxassetid://81462451441223",
 		amount     = 0,
 		weight     = 20,
 		rarity     = "Common",
@@ -77,24 +79,26 @@ SpinWheelConfig.Segments = {
 		color      = Color3.fromRGB(85, 215, 130),    -- green
 		modelPath  = nil,
 	},
-	-- Segment 4: Random Rare Pet (MEDIUM)
+	-- Segment 4: Noob Pet (MEDIUM)
 	{
-		name       = "Rare Pet",
+		name       = "Noob Pet",
 		icon       = "\240\159\144\190",
 		reward     = "Pet",
-		catalogId  = "pet_shark",
+		catalogId  = "pet_noob",
+		wheelImage = "rbxassetid://81702684827965",
 		amount     = 0,
 		weight     = 12,
 		rarity     = "Rare",
 		color      = Color3.fromRGB(38, 150, 255),    -- blue
-		modelPath  = "ItemModels.Pets.Rare.shark",
+		modelPath  = "ItemModels.Pets.Common.Noob",
 	},
-	-- Segment 5: Findable Crown (MEDIUM)
+	-- Segment 5: Sparkle Crown (MEDIUM)
 	{
-		name       = "Crown",
+		name       = "Sparkle Crown",
 		icon       = "\240\159\145\145",
 		reward     = "Crown",
 		catalogId  = "crown_sparkle",
+		wheelImage = "rbxassetid://123657387753624",
 		amount     = 0,
 		weight     = 10,
 		rarity     = "Rare",
@@ -112,17 +116,18 @@ SpinWheelConfig.Segments = {
 		color      = Color3.fromRGB(175, 85, 255),    -- purple
 		modelPath  = nil,
 	},
-	-- Segment 7: Random Epic Pet (LOW)
+	-- Segment 7: Penguin Pet (LOW)
 	{
-		name       = "Epic Pet",
+		name       = "Penguin Pet",
 		icon       = "\240\159\144\190",
 		reward     = "Pet",
-		catalogId  = "pet_axolotl",
+		catalogId  = "pet_penguin",
+		wheelImage = "rbxassetid://115903577500727",
 		amount     = 0,
 		weight     = 4,
 		rarity     = "Epic",
 		color      = Color3.fromRGB(178, 42, 255),    -- deep purple
-		modelPath  = "ItemModels.Pets.Epic.axolotl",
+		modelPath  = "ItemModels.Pets.Common.Penguin",
 	},
 	-- Segment 8: 4000 Coins — JACKPOT (VERY LOW)
 	{

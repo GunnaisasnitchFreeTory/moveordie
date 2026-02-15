@@ -27,8 +27,12 @@ local StatService         = require(Server:WaitForChild("StatService"))
 local CrateService        = require(Server:WaitForChild("CrateService"))
 local LevelCrownService   = require(Server:WaitForChild("LevelCrownService"))
 local CrownAttachService  = require(Server:WaitForChild("CrownAttachService"))
+local DailyRewardService  = require(Server:WaitForChild("DailyRewardService"))
+
+local PlayerStateService  = require(Server:WaitForChild("PlayerStateService"))
 
 local Shared      = ReplicatedStorage:WaitForChild("Shared")
+local PlayerState = require(Shared:WaitForChild("PlayerState"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 
 local IS_STUDIO = RunService:IsStudio()
@@ -45,6 +49,7 @@ StatService.Init()
 CrateService.Init()
 LevelCrownService.Init()
 CrownAttachService.Init()
+DailyRewardService.Init()
 
 -- ═══════════════════════════════════════════════════════════════════
 -- LAZY-LOAD GLBS (avoid circular require; GLBS may not be init yet)
@@ -116,6 +121,14 @@ equipEvent.OnServerEvent:Connect(function(player, category, id)
 		return
 	end
 
+	-- Block equip during match
+	local state = PlayerStateService.GetState(player)
+	if state == PlayerState.States.InMatch then
+		warn(string.format("[PlayerDataBootstrap] Equip rejected — %s is InMatch (cannot change %s/%s)",
+			player.Name, category, id))
+		return
+	end
+
 	local result = InventoryService.EquipItem(player, category, id)
 	if result.success then
 		StatService.RecalculateStats(player)
@@ -128,6 +141,14 @@ end)
 unequipEvent.OnServerEvent:Connect(function(player, category)
 	if type(category) ~= "string" then return end
 	if not PlayerDataService.IsLoaded(player) then return end
+
+	-- Block unequip during match
+	local state = PlayerStateService.GetState(player)
+	if state == PlayerState.States.InMatch then
+		warn(string.format("[PlayerDataBootstrap] Unequip rejected — %s is InMatch (cannot change %s)",
+			player.Name, category))
+		return
+	end
 
 	local result = InventoryService.UnequipItem(player, category)
 	if result.success then
@@ -182,10 +203,15 @@ local function onPlayerAdded(player: Player)
 			end
 		end
 		-- Also ensure enough coins for testing crate purchases
-		if (data.Coins or 0) < 5000 then
-			data.Coins = 5000
-			PlayerDataService.SetField(player, "Coins", 5000)
+		if (data.Coins or 0) < 50000 then
+			data.Coins = 50000
+			PlayerDataService.SetField(player, "Coins", 50000)
 		end
+		-- Reset daily rewards every join so the developer can re-test the full 7-day flow
+		PlayerDataService.SetField(player, "LastDailyRewardTime", 0)
+		PlayerDataService.SetField(player, "DailyStreak", 0)
+		print("[DEBUG] Daily rewards RESET for", player.Name, "(Studio testing)")
+
 		if granted > 0 then
 			print(string.format("[DEBUG] Granted %d items to %s (Studio grant-all)", granted, player.Name))
 		end
@@ -271,4 +297,4 @@ game:BindToClose(function()
 	PlayerDataService.SaveAll()
 end)
 
-print("[PlayerDataBootstrap] Persistence + equip + crate + level crowns + leaderboard seed systems ready")
+print("[PlayerDataBootstrap] Persistence + equip + crate + level crowns + daily rewards + leaderboard seed systems ready")

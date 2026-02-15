@@ -27,12 +27,13 @@ local MapManager = require(Server:WaitForChild("MapManager"))
 local RoundManager = require(Server:WaitForChild("RoundManager"))
 local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
 local EconomyService = require(Server:WaitForChild("EconomyService"))
+local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 
 --[[ CONFIGURATION ]]
 local Config = {
 	IntermissionSeconds = 15,
 	PlayingSeconds = 20,
-	EndingSeconds = 5,
+	EndingSeconds = 8,
 	MinPlayersToStart = 1,
 	MinIntermissionFloor = 10,  -- min seconds a late-joining player must see
 	DebugLog = true,
@@ -47,10 +48,23 @@ local loopRunning = false
 local replicatedState: StringValue = nil
 local replicatedRound: IntValue = nil
 local replicatedPhaseEnd: NumberValue = nil
+local matchResultsEvent: RemoteEvent = nil
 
 local MatchManager = {}
 
 --[[ HELPERS ]]
+
+-- Get the surrounding crown milestones for a given win count
+local function getMilestoneContext(wins: number)
+	local milestones = ItemCatalog.LevelCrownMilestones
+	local prev, next_ = nil, nil
+	for _, m in ipairs(milestones) do
+		if m.wins <= wins then prev = m end
+		if m.wins > wins and not next_ then next_ = m end
+	end
+	if not prev then prev = { wins = 0, crownId = "" } end
+	return prev, next_
+end
 
 local function log(...)
 	if Config.DebugLog then
@@ -389,7 +403,7 @@ local function resolveRankingsAndReward()
 	
 	if #rankings == 0 then
 		log("No rankings to process (no players)")
-		return
+		return rankings
 	end
 	
 	local totalAwarded = 0
@@ -402,6 +416,9 @@ local function resolveRankingsAndReward()
 		end)
 		if ok and mod then PDS = mod end
 	end
+	
+	-- Track which players got crown grants this match (playerId → crownId)
+	local crownGrants: { [number]: string } = {}
 	
 	for _, group in ipairs(rankings) do
 		for _, entry in ipairs(group.players) do
@@ -431,12 +448,67 @@ local function resolveRankingsAndReward()
 						LifetimeWins = lifetimeWins,
 						WeeklyWins   = weeklyWins,
 					})
+					
+					-- Check if a crown was granted (LevelCrownService handles this
+					-- via attribute change, but we peek at the milestone to inform the UI)
+					local _, nextM = getMilestoneContext(lifetimeWins - 1) -- before this win
+					if nextM and lifetimeWins >= nextM.wins then
+						crownGrants[entry.playerId] = nextM.crownId
+					end
 				end
 			end
 		end
 	end
 	
 	log(string.format("Awarded %d total coins across %d placement groups", totalAwarded, #rankings))
+	
+	-- Fire match results to each player
+	if matchResultsEvent then
+		-- Build flat rankings list for client display
+		local flatRankings = {}
+		for _, group in ipairs(rankings) do
+			for _, entry in ipairs(group.players) do
+				table.insert(flatRankings, {
+					placement = group.placement,
+					playerName = entry.playerName,
+					coins = group.coins,
+				})
+			end
+		end
+		
+		for _, group in ipairs(rankings) do
+			for _, entry in ipairs(group.players) do
+				if entry.player and entry.player.Parent then
+					local lifetimeWins = 0
+					if PDS then
+						lifetimeWins = PDS.GetField(entry.player, "LifetimeWins") or 0
+					end
+					local prevM, nextM = getMilestoneContext(lifetimeWins)
+					
+					local payload = {
+						yourPlacement = group.placement,
+						yourCoins = group.coins,
+						yourXP = 0, -- placeholder for future XP system
+						rankings = flatRankings,
+						lifetimeWins = lifetimeWins,
+						crownGranted = crownGrants[entry.playerId] or nil,
+						nextMilestone = nextM, -- { wins, crownId } or nil
+						prevMilestone = prevM, -- { wins, crownId }
+					}
+					
+					local fireOk, fireErr = pcall(function()
+						matchResultsEvent:FireClient(entry.player, payload)
+					end)
+					if not fireOk then
+						warn("[MatchManager] Failed to fire results to", entry.playerName, fireErr)
+					end
+				end
+			end
+		end
+		log("Fired MatchResultsEvent to all match participants")
+	end
+	
+	return rankings
 end
 
 local function runEnding()
@@ -480,9 +552,10 @@ function MatchManager.Init()
 		return
 	end
 
+	-- Create MatchStatus folder + children BEFORE parenting to RS.
+	-- This ensures the client sees all children atomically when the folder replicates.
 	local matchStatusFolder = Instance.new("Folder")
 	matchStatusFolder.Name = "MatchStatus"
-	matchStatusFolder.Parent = ReplicatedStorage
 
 	replicatedState = Instance.new("StringValue")
 	replicatedState.Name = "State"
@@ -499,7 +572,26 @@ function MatchManager.Init()
 	replicatedPhaseEnd.Value = 0
 	replicatedPhaseEnd.Parent = matchStatusFolder
 
+	-- Parent folder to RS AFTER all children are attached (atomic replication)
+	matchStatusFolder.Parent = ReplicatedStorage
 	log("MatchStatus folder + replicated values created")
+
+	-- Create MatchResultsEvent for sending end-of-match data to clients
+	local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotesFolder then
+		remotesFolder = Instance.new("Folder")
+		remotesFolder.Name = "Remotes"
+		remotesFolder.Parent = ReplicatedStorage
+	end
+	local existing = remotesFolder:FindFirstChild("MatchResultsEvent")
+	if not existing then
+		matchResultsEvent = Instance.new("RemoteEvent")
+		matchResultsEvent.Name = "MatchResultsEvent"
+		matchResultsEvent.Parent = remotesFolder
+	else
+		matchResultsEvent = existing
+	end
+	log("MatchResultsEvent remote created")
 
 	MapManager.Init()
 	RoundManager.Init()

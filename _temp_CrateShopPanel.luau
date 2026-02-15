@@ -270,29 +270,8 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 		thumbContainer.LayoutOrder = i
 		thumbContainer.Parent = thumbRow
 
-		-- Thumbnail: prefer static image from ItemCatalog if available
-		local staticImage = ""
-		if item.itemId then
-			local catEntry = ItemCatalog.Crowns and ItemCatalog.Crowns[item.itemId]
-			if not catEntry then catEntry = ItemCatalog.Pets and ItemCatalog.Pets[item.itemId] end
-			if catEntry then staticImage = ItemCatalog.GetImage(catEntry) end
-		end
-
-		if staticImage ~= "" then
-			-- Use static image — no ThumbnailRenderer needed
-			local imgLbl = Instance.new("ImageLabel")
-			imgLbl.Name = "ThumbImage"
-			imgLbl.Position = UDim2.fromOffset(4, 0)
-			imgLbl.Size = UDim2.fromOffset(60, 52)
-			imgLbl.BackgroundColor3 = C.CardBgDark
-			imgLbl.BackgroundTransparency = 0.2
-			imgLbl.BorderSizePixel = 0
-			imgLbl.Image = staticImage
-			imgLbl.ScaleType = Enum.ScaleType.Fit
-			imgLbl.ZIndex = 3
-			imgLbl.Parent = thumbContainer
-			Instance.new("UICorner", imgLbl).CornerRadius = UDim.new(0, 6)
-		elseif item.modelPath and item.modelPath ~= "" then
+		-- Thumbnail viewport
+		if item.modelPath then
 			local vp = Components.CreateViewportThumbnail(
 				thumbContainer,
 				item.modelPath,
@@ -301,6 +280,7 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 				item.name and string.sub(item.name, 1, 2) or "?"
 			)
 			vp.Position = UDim2.fromOffset(4, 0)
+			-- Force ThumbnailRenderer (registry-only, no Workspace fallback)
 			ThumbnailRenderer.RenderItemToViewport(vp, item)
 		end
 
@@ -367,7 +347,7 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 
 	for pi, price in ipairs(crateData.prices) do
 		local isRobux = price.currency == "Robux"
-		local priceText = isRobux and string.format("%d ROBUX", price.cost) or string.format("F %d", price.cost)
+		local priceText = isRobux and string.format("R$ %d", price.cost) or string.format("F %d", price.cost)
 		local btnColor = isRobux and C.RobuxButton or C.BuyButton
 
 		local pBtn = Instance.new("TextButton")

@@ -248,6 +248,7 @@ function SpinWheelService.GetPlayerData(player: Player): { freeSpinAvailable: bo
 		return {
 			freeSpinAvailable = true,
 			nextFreeSpinTime = 0,
+			nextFreeSpinAt = 0, -- absolute timestamp (0 = available now)
 			purchasedSpins = data.purchasedSpins,
 		}
 	end
@@ -256,10 +257,12 @@ function SpinWheelService.GetPlayerData(player: Player): { freeSpinAvailable: bo
 	local elapsed = now - data.lastFreeSpinTime
 	local freeAvailable = elapsed >= SpinWheelConfig.FREE_SPIN_COOLDOWN
 	local nextFreeTime = freeAvailable and 0 or (data.lastFreeSpinTime + SpinWheelConfig.FREE_SPIN_COOLDOWN - now)
+	local absoluteNextFree = freeAvailable and 0 or (data.lastFreeSpinTime + SpinWheelConfig.FREE_SPIN_COOLDOWN)
 
 	return {
 		freeSpinAvailable = freeAvailable,
 		nextFreeSpinTime = math.max(0, nextFreeTime),
+		nextFreeSpinAt = absoluteNextFree, -- absolute unix timestamp for drift-free client timer
 		purchasedSpins = data.purchasedSpins,
 	}
 end
@@ -357,7 +360,16 @@ function SpinWheelService.RequestSpin(player: Player)
 
 		if pending.rewardType == "Pet" and pending.catalogId then
 			grantPet(livePlayer, pending.catalogId)
+			log(string.format("GRANTED spinId=%s Pet %s to %s", spinId, pending.catalogId, livePlayer.Name))
+		elseif pending.rewardType == "Crown" and pending.catalogId then
+			-- Grant crown via InventoryService (same pattern as pets)
+			local IS = getInventoryService()
+			if IS and type(IS.GrantItem) == "function" then
+				IS.GrantItem(livePlayer, "Crowns", pending.catalogId)
+			end
+			log(string.format("GRANTED spinId=%s Crown %s to %s", spinId, pending.catalogId, livePlayer.Name))
 		else
+			-- Coins reward
 			local ES = getEconomyService()
 			if ES and type(ES.AwardCoins) == "function" then
 				ES.AwardCoins(livePlayer, pending.coinsAwarded, "SpinWheel")
@@ -380,6 +392,7 @@ function SpinWheelService.RequestSpin(player: Player)
 		coinsAwarded = coinsToAward,
 		catalogId = catalogId,
 		rarity = rarity,
+		wheelImage = segment.wheelImage or "",
 		spinId = spinId,
 	}
 end

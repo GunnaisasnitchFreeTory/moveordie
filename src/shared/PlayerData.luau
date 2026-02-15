@@ -31,6 +31,8 @@ PlayerData.Attributes = {
 	LifetimeCoinsAchieved = "LifetimeCoinsAchieved",
 	WeeklyWins            = "WeeklyWins",
 	WeeklyCoinsAchieved   = "WeeklyCoinsAchieved",
+	LastDailyRewardTime   = "LastDailyRewardTime",
+	DailyStreak           = "DailyStreak",
 }
 
 --- Compute current UTC week identifier.
@@ -54,6 +56,8 @@ function PlayerData.GetDefaults(): { [string]: any }
 		WeeklyWins            = 0,
 		WeeklyCoinsAchieved   = 0,
 		WeeklyResetId         = "",
+		LastDailyRewardTime   = 0,
+		DailyStreak           = 0,
 	}
 end
 
@@ -77,6 +81,8 @@ function PlayerData.Validate(data: { [string]: any }): { [string]: any }
 	if type(data.WeeklyWins) ~= "number" then data.WeeklyWins = 0 end
 	if type(data.WeeklyCoinsAchieved) ~= "number" then data.WeeklyCoinsAchieved = 0 end
 	if type(data.WeeklyResetId) ~= "string" then data.WeeklyResetId = "" end
+	if type(data.LastDailyRewardTime) ~= "number" then data.LastDailyRewardTime = 0 end
+	if type(data.DailyStreak) ~= "number" then data.DailyStreak = 0 end
 
 	if data.EquippedPet ~= nil and type(data.EquippedPet) ~= "string" then
 		data.EquippedPet = nil

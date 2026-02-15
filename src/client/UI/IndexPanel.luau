@@ -134,6 +134,12 @@ end
 
 --- Build sub-label for unowned crowns based on source
 local function getCrownSubLabel(crown): string?
+	if crown.obtainable == false then
+		if crown.source == "DailyReward" then
+			return "Daily Reward"
+		end
+		return "Bundle / Exclusive"
+	end
 	if crown.source == "Level" then
 		local milestone = ItemCatalog.GetMilestoneWins(crown.id)
 		if milestone then
@@ -176,13 +182,17 @@ local function populateCrowns()
 		})
 		card.LayoutOrder = i
 
-		-- Render real 3D model via ThumbnailRenderer (replaces any placeholder)
-		local vpFrame = card:FindFirstChild("ModelPreview", true)
-		if vpFrame and vpFrame:IsA("ViewportFrame") then
-			ThumbnailRenderer.RenderItemToViewport(vpFrame, crown)
-			if not isOwned then
-				applyLockOverlay(vpFrame)
+		-- Only use ThumbnailRenderer if the item has NO static image asset
+		local hasStaticImage = (ItemCatalog.GetImage(crown) ~= "")
+		if not hasStaticImage then
+			local vpFrame = card:FindFirstChild("ModelPreview", true)
+			if vpFrame and vpFrame:IsA("ViewportFrame") then
+				ThumbnailRenderer.RenderItemToViewport(vpFrame, crown)
 			end
+		end
+		if not isOwned then
+			local vpFrame = card:FindFirstChild("ModelPreview", true)
+			if vpFrame then applyLockOverlay(vpFrame) end
 		end
 	end
 end
@@ -198,7 +208,9 @@ local function populatePets()
 		local isOwned = ownedSet[pet.id] == true
 		local subLabel = nil
 		if not isOwned then
-			if pet.shopOnly then
+			if pet.obtainable == false then
+				subLabel = "Bundle / Exclusive"
+			elseif pet.shopOnly then
 				subLabel = "Shop Only"
 			else
 				subLabel = "Pet Crate"
@@ -219,13 +231,17 @@ local function populatePets()
 		})
 		card.LayoutOrder = i
 
-		-- Render real 3D model via ThumbnailRenderer (replaces any placeholder)
-		local vpFrame = card:FindFirstChild("ModelPreview", true)
-		if vpFrame and vpFrame:IsA("ViewportFrame") then
-			ThumbnailRenderer.RenderItemToViewport(vpFrame, pet)
-			if not isOwned then
-				applyLockOverlay(vpFrame)
+		-- Only use ThumbnailRenderer if the item has NO static image asset
+		local hasStaticImage = (ItemCatalog.GetImage(pet) ~= "")
+		if not hasStaticImage then
+			local vpFrame = card:FindFirstChild("ModelPreview", true)
+			if vpFrame and vpFrame:IsA("ViewportFrame") then
+				ThumbnailRenderer.RenderItemToViewport(vpFrame, pet)
 			end
+		end
+		if not isOwned then
+			local vpFrame = card:FindFirstChild("ModelPreview", true)
+			if vpFrame then applyLockOverlay(vpFrame) end
 		end
 	end
 end

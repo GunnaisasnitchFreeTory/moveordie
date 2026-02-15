@@ -31,6 +31,20 @@ if not SpinWheelConfig then
 	warn("[SpinWheelScript] SpinWheelConfig not available — spin wheel disabled")
 	return
 end
+
+-- Shared reward popup (in PlayerScripts — safe from SharedSanity cleanup)
+local RewardPopup = nil
+pcall(function()
+	local playerScripts = Players.LocalPlayer:WaitForChild("PlayerScripts", 5)
+	local clientUI = playerScripts and playerScripts:WaitForChild("Client", 5)
+	clientUI = clientUI and clientUI:WaitForChild("UI", 5)
+	local mod = clientUI and clientUI:WaitForChild("RewardPopup", 5)
+	if mod then RewardPopup = require(mod) end
+end)
+if not RewardPopup then
+	warn("[SpinWheelScript] RewardPopup not found in PlayerScripts — popup will fallback to text")
+end
+
 local player = Players.LocalPlayer
 local ui = player:WaitForChild("PlayerGui"):WaitForChild("SpinWheelGuiScripts")
 local spinFrame = ui.Handler.Frames.SpinWheel
@@ -130,9 +144,7 @@ local RequestSpinRF = Remotes and Remotes:WaitForChild("SpinWheel_RequestSpin", 
 local GetDataRF     = Remotes and Remotes:WaitForChild("SpinWheel_GetData", 10) or nil
 local BuySpinsRF    = Remotes and Remotes:WaitForChild("SpinWheel_BuySpins", 10) or nil
 
-local stopAngles = {
-	-23, -203, 22, -68, 113, -113, -158, 67,
-}
+-- (stopAngles removed — target angle computed from segment geometry in doSpin)
 
 local isSpinning = false
 local debounce = false
@@ -149,122 +161,157 @@ local idleTween = nil
 local isAnimating = false
 
 -- ═══════════════════════════════════════════
--- WHEEL SEGMENT ICONS — resolve images from ItemCatalog
--- Handles: Coins (CoinImage), Pets, Crowns
--- Fallback: emoji text overlay when no explicit image exists
+-- WHEEL SEGMENT ICONS — Radial SliceContainer layout
+-- Uses per-wedge containers for clean rotation + positioning
+-- Images: explicit wheelImage per segment — no ItemCatalog / ThumbnailRenderer lookups
+-- No ThumbnailRenderer, no ItemCatalog lookups, no per-slice hacks
 -- ═══════════════════════════════════════════
 do
+	-- 1) Clean up old Rewards children (template ImageLabels + rotation scripts)
 	local rewardsFrame = spinHandler:FindFirstChild("Rewards")
 	if rewardsFrame then
-		local labels = {}
 		for _, child in ipairs(rewardsFrame:GetChildren()) do
-			if child:IsA("ImageLabel") then
-				table.insert(labels, child)
-			end
+			child:Destroy()
 		end
-		table.sort(labels, function(a, b) return a.Rotation < b.Rotation end)
-		local segments = SpinWheelConfig.Segments
-		for i, seg in ipairs(segments) do
-			local label = labels[i]
-			if not label then continue end
-
-			-- Resolve image: explicit wheelImage > ItemCatalog lookup > fallback
-			local imageToSet = ""
-
-			-- 1) Segment-level override (wheelImage field in SpinWheelConfig)
-			if seg.wheelImage and seg.wheelImage ~= "" then
-				imageToSet = seg.wheelImage
-
-			-- 2) Coin segments: use dedicated Fate Coin icon
-			elseif seg.reward == "Coins" then
-				imageToSet = ItemCatalog.CoinImage or ""
-
-			-- 3) Pet segments: look up in ItemCatalog.Pets
-			elseif seg.reward == "Pet" and seg.catalogId then
-				local petInfo = ItemCatalog.GetPet(seg.catalogId)
-				if petInfo then
-					imageToSet = ItemCatalog.GetImage(petInfo)
-				end
-
-			-- 4) Crown segments: look up in ItemCatalog.Crowns
-			elseif seg.reward == "Crown" and seg.catalogId then
-				local crownInfo = ItemCatalog.Crowns and ItemCatalog.Crowns[seg.catalogId]
-				if crownInfo then
-					imageToSet = ItemCatalog.GetImage(crownInfo)
-				end
-			end
-
-			-- Apply image or show emoji fallback text
-			label.BackgroundTransparency = 1
-
-			if imageToSet and imageToSet ~= "" then
-				label.Image = imageToSet
-				label.ScaleType = Enum.ScaleType.Fit
-				-- Remove any previous emoji fallback
-				local oldEmoji = label:FindFirstChild("FallbackEmoji")
-				if oldEmoji then oldEmoji:Destroy() end
-			else
-				-- No image available: clear broken placeholder, show emoji
-				label.Image = ""
-				local existing = label:FindFirstChild("FallbackEmoji")
-				if not existing then
-					local txt = Instance.new("TextLabel")
-					txt.Name = "FallbackEmoji"
-					txt.Size = UDim2.fromScale(1, 1)
-					txt.BackgroundTransparency = 1
-					txt.Text = seg.icon or "?"
-					txt.TextScaled = true
-					txt.Font = Enum.Font.GothamBold
-					txt.TextColor3 = Color3.fromRGB(255, 255, 255)
-					txt.ZIndex = label.ZIndex + 1
-					txt.Parent = label
-					local emojiStroke = Instance.new("UIStroke")
-					emojiStroke.Color = Color3.fromRGB(0, 0, 0)
-					emojiStroke.Thickness = 1.5
-					emojiStroke.Transparency = 0.2
-					emojiStroke.Parent = txt
-				end
-			end
-
-			-- For coin segments, overlay the amount (e.g. "+100")
-			if seg.reward == "Coins" and seg.amount then
-				local existing = label:FindFirstChild("CoinAmountLabel")
-				if not existing then
-					local amtLabel = Instance.new("TextLabel")
-					amtLabel.Name = "CoinAmountLabel"
-					amtLabel.Size = UDim2.new(1, 0, 0.35, 0)
-					amtLabel.Position = UDim2.new(0, 0, 0.65, 0)
-					amtLabel.AnchorPoint = Vector2.new(0, 0)
-					amtLabel.BackgroundTransparency = 1
-					amtLabel.Text = "+" .. tostring(seg.amount)
-					amtLabel.TextScaled = true
-					amtLabel.Font = Enum.Font.GothamBold
-					amtLabel.TextColor3 = Color3.fromRGB(255, 220, 60)
-					amtLabel.ZIndex = label.ZIndex + 2
-					amtLabel.Parent = label
-					local amtStroke = Instance.new("UIStroke")
-					amtStroke.Color = Color3.fromRGB(0, 0, 0)
-					amtStroke.Thickness = 2
-					amtStroke.Transparency = 0.15
-					amtStroke.Parent = amtLabel
-				end
-			end
-
-			local imageStatus = (imageToSet ~= "" and imageToSet ~= nil) and "image" or "emoji"
-			print("[SpinWheel] Seg " .. i .. " (" .. seg.name .. ") -> " .. imageStatus)
-		end
-
-		-- Clear any extra template labels beyond segment count
-		for j = #segments + 1, #labels do
-			labels[j].Image = ""
-			labels[j].BackgroundTransparency = 1
-		end
-		print("[SpinWheel] Segment visuals updated from ItemCatalog (" .. #segments .. " segments, " .. #labels .. " labels)")
+		rewardsFrame.Visible = false
 	end
+
+	-- Remove any previously-created SliceContainers (idempotent on re-run)
+	for _, child in ipairs(spinHandler:GetChildren()) do
+		if child.Name:match("^Slice_") then
+			child:Destroy()
+		end
+	end
+
+	-- 2) Constants
+	local FATE_COIN_WHEEL_IMAGE = "rbxassetid://130002796842909"
+	local segments = SpinWheelConfig.Segments
+	local numSegments = #segments
+	local sliceAngle = 360 / numSegments
+	-- How far from center the icon sits (fraction of container half-size)
+	local ICON_RADIUS = 0.30
+	-- Icon sizes per reward type (fraction of SpinHandler size)
+	local SIZE_COIN   = UDim2.fromScale(0.15, 0.15)
+	local SIZE_PET    = UDim2.fromScale(0.14, 0.14)
+	local SIZE_CROWN  = UDim2.fromScale(0.16, 0.16)
+
+	-- 3) Build one SliceContainer per wedge
+	for i, seg in ipairs(segments) do
+		local midAngle = (i - 1 + 0.5) * sliceAngle  -- 0-indexed midpoint in degrees
+
+		-- SliceContainer: invisible, centered, full-size, rotated to wedge angle
+		local slice = Instance.new("Frame")
+		slice.Name = "Slice_" .. i
+		slice.AnchorPoint = Vector2.new(0.5, 0.5)
+		slice.Position = UDim2.fromScale(0.5, 0.5)
+		slice.Size = UDim2.fromScale(1, 1)
+		slice.BackgroundTransparency = 1
+		slice.BorderSizePixel = 0
+		slice.Rotation = midAngle
+		slice.ZIndex = 100
+		slice.Parent = spinHandler
+
+		-- Determine correct image + icon size for this segment
+		-- Coins always use the hardcoded Fate Coin icon.
+		-- Everything else uses seg.wheelImage (explicit per-segment asset).
+		-- NO ItemCatalog lookups, NO ThumbnailRenderer.
+		local imageToSet = ""
+		local iconSize = SIZE_COIN
+
+		if seg.reward == "Coins" then
+			imageToSet = FATE_COIN_WHEEL_IMAGE
+			iconSize = SIZE_COIN
+		else
+			imageToSet = (seg.wheelImage and seg.wheelImage ~= "") and seg.wheelImage or ""
+			iconSize = (seg.reward == "Crown") and SIZE_CROWN or SIZE_PET
+		end
+
+		-- IconMask: clipped container for clean image rendering
+		local iconMask = Instance.new("Frame")
+		iconMask.Name = "IconMask"
+		iconMask.AnchorPoint = Vector2.new(0.5, 0.5)
+		-- Offset upward from center; container rotation places it into correct wedge
+		iconMask.Position = UDim2.fromScale(0.5, 0.5 - ICON_RADIUS)
+		iconMask.Size = iconSize
+		iconMask.BackgroundTransparency = 1
+		iconMask.BorderSizePixel = 0
+		iconMask.ClipsDescendants = true
+		iconMask.ZIndex = 101
+		iconMask.Parent = slice
+
+		-- Keep icon square
+		local aspect = Instance.new("UIAspectRatioConstraint")
+		aspect.AspectRatio = 1
+		aspect.Parent = iconMask
+
+		-- Place image or fallback inside the mask
+		if imageToSet and imageToSet ~= "" then
+			local img = Instance.new("ImageLabel")
+			img.Name = "Icon"
+			img.AnchorPoint = Vector2.new(0.5, 0.5)
+			img.Position = UDim2.fromScale(0.5, 0.5)
+			img.Size = UDim2.fromScale(1, 1)
+			img.BackgroundTransparency = 1
+			img.BorderSizePixel = 0
+			img.Image = imageToSet
+			img.ScaleType = Enum.ScaleType.Fit
+			img.ZIndex = 102
+			img.Parent = iconMask
+		else
+			-- No image: show "?" fallback + warn
+			local fallback = Instance.new("TextLabel")
+			fallback.Name = "FallbackIcon"
+			fallback.AnchorPoint = Vector2.new(0.5, 0.5)
+			fallback.Position = UDim2.fromScale(0.5, 0.5)
+			fallback.Size = UDim2.fromScale(1, 1)
+			fallback.BackgroundTransparency = 1
+			fallback.Text = "?"
+			fallback.TextScaled = true
+			fallback.Font = Enum.Font.GothamBold
+			fallback.TextColor3 = Color3.fromRGB(255, 255, 255)
+			fallback.ZIndex = 102
+			fallback.Parent = iconMask
+			local stroke = Instance.new("UIStroke")
+			stroke.Color = Color3.fromRGB(0, 0, 0)
+			stroke.Thickness = 1.5
+			stroke.Transparency = 0.2
+			stroke.Parent = fallback
+			warn("[SpinWheel] Missing wheelImage for segment " .. i .. " (" .. seg.name .. ") — add wheelImage to SpinWheelConfig")
+		end
+
+		-- Coin amount text (e.g. "+500") placed just below the icon
+		if seg.reward == "Coins" and seg.amount then
+			local amtLabel = Instance.new("TextLabel")
+			amtLabel.Name = "CoinAmount"
+			amtLabel.AnchorPoint = Vector2.new(0.5, 0)
+			local iconBottom = 0.5 - ICON_RADIUS + iconSize.Y.Scale * 0.5
+			amtLabel.Position = UDim2.fromScale(0.5, iconBottom + 0.005)
+			amtLabel.Size = UDim2.fromScale(0.18, 0.055)
+			amtLabel.BackgroundTransparency = 1
+			amtLabel.BorderSizePixel = 0
+			amtLabel.Text = "+" .. tostring(seg.amount)
+			amtLabel.TextScaled = true
+			amtLabel.Font = Enum.Font.GothamBold
+			amtLabel.TextColor3 = Color3.fromRGB(255, 220, 60)
+			amtLabel.ZIndex = 103
+			amtLabel.Parent = slice
+			local amtStroke = Instance.new("UIStroke")
+			amtStroke.Color = Color3.fromRGB(0, 0, 0)
+			amtStroke.Thickness = 2
+			amtStroke.Transparency = 0.15
+			amtStroke.Parent = amtLabel
+		end
+
+		local status = (imageToSet ~= "" and imageToSet ~= nil) and "image" or "fallback"
+		print("[SpinWheel] Seg " .. i .. " (" .. seg.name .. ") -> " .. status)
+	end
+
+	print("[SpinWheel] Wheel icons rebuilt — radial layout (" .. numSegments .. " segments)")
 end
 
 local freeSpinReady = false
-local nextFreeSpinCountdown = 0
+local nextFreeSpinAt = 0        -- absolute unix timestamp (from server) — 0 = free spin available
+local nextFreeSpinCountdown = 0 -- derived seconds remaining (display only)
 local purchasedSpinCount = 0
 local buyPanelSpinsLabel: TextLabel = nil
 local buyPanelTimerLabel: TextLabel = nil
@@ -287,9 +334,23 @@ local function refreshSpinStatus()
 	statusRefreshLock = true
 	local ok, data = pcall(function() return GetDataRF:InvokeServer() end)
 	statusRefreshLock = false
-	if not ok or not data then return end
+	if not ok or not data then
+		warn("[SpinWheel] GetData failed:", tostring(data))
+		return
+	end
 	freeSpinReady = data.freeSpinAvailable == true
-	nextFreeSpinCountdown = data.nextFreeSpinTime or 0
+	-- Prefer absolute timestamp from server for accuracy; fall back to relative seconds
+	if data.nextFreeSpinAt and data.nextFreeSpinAt > 0 then
+		nextFreeSpinAt = data.nextFreeSpinAt
+		nextFreeSpinCountdown = math.max(0, data.nextFreeSpinAt - os.time())
+		print(string.format("[SpinWheel] Timer: nextFreeSpinAt=%d  remaining=%ds  freeReady=%s",
+			nextFreeSpinAt, nextFreeSpinCountdown, tostring(freeSpinReady)))
+	else
+		nextFreeSpinAt = 0
+		nextFreeSpinCountdown = data.nextFreeSpinTime or 0
+		print(string.format("[SpinWheel] Timer: relative=%ds  freeReady=%s",
+			nextFreeSpinCountdown, tostring(freeSpinReady)))
+	end
 	purchasedSpinCount = data.purchasedSpins or 0
 	local totalAvail = purchasedSpinCount + (freeSpinReady and 1 or 0)
 	if buyPanelSpinsLabel then buyPanelSpinsLabel.Text = "\xF0\x9F\x8E\x9F\xEF\xB8\x8F Spins: " .. tostring(totalAvail) end
@@ -304,6 +365,12 @@ local function refreshSpinStatus()
 			buyPanelTimerLabel.Text = string.format("\xE2\x8F\xB1\xEF\xB8\x8F Free in: %02d:%02d:%02d", h, m, s)
 			buyPanelTimerLabel.TextColor3 = Color3.fromRGB(180, 200, 255)
 		end
+		buyPanelTimerLabel.Visible = true
+		buyPanelTimerLabel.TextTransparency = 0
+		print(string.format("[SpinWheel] refreshSpinStatus → Timer.Text=%s  Visible=%s  ZIndex=%d",
+			buyPanelTimerLabel.Text, tostring(buyPanelTimerLabel.Visible), buyPanelTimerLabel.ZIndex))
+	else
+		warn("[SpinWheel] refreshSpinStatus: buyPanelTimerLabel is NIL!")
 	end
 end
 
@@ -370,18 +437,45 @@ do
 	spinsLbl.Parent = panel
 	buyPanelSpinsLabel = spinsLbl
 	local timerLbl = Instance.new("TextLabel")
-	timerLbl.Name = "Timer"
-	timerLbl.Size = UDim2.new(1, -20, 0, 18)
-	timerLbl.Position = UDim2.new(0, 10, 0, 68)
+	timerLbl.Name = "DailyTimerLabel"
+	timerLbl.Size = UDim2.new(1, -20, 0, 26)
+	timerLbl.Position = UDim2.new(0, 10, 0, 66)
 	timerLbl.BackgroundTransparency = 1
-	timerLbl.Font = Enum.Font.GothamSemibold
-	timerLbl.Text = "Loading..."
-	timerLbl.TextColor3 = Color3.fromRGB(180, 200, 255)
-	timerLbl.TextSize = 13
+	timerLbl.Font = Enum.Font.GothamBold
+	timerLbl.Text = "\xE2\x9C\x85 Free spin ready!"
+	timerLbl.TextColor3 = Color3.fromRGB(80, 255, 120)
+	timerLbl.TextSize = 14
 	timerLbl.TextXAlignment = Enum.TextXAlignment.Left
-	timerLbl.ZIndex = 21
+	timerLbl.Visible = true
+	timerLbl.TextTransparency = 0
+	timerLbl.TextStrokeTransparency = 0.6
+	timerLbl.ZIndex = 9999
 	timerLbl.Parent = panel
 	buyPanelTimerLabel = timerLbl
+	print("[SpinWheel] DailyTimerLabel created:", timerLbl:GetFullName(), "Visible:", timerLbl.Visible, "ZIndex:", timerLbl.ZIndex)
+	-- Delayed debug: print AbsolutePosition/Size + parent chain after layout settles
+	task.delay(0.5, function()
+		if buyPanelTimerLabel and buyPanelTimerLabel.Parent then
+			print(string.format("[SpinWheel] Timer DEBUG: AbsPos=%.0f,%.0f AbsSize=%.0f,%.0f Text=%s",
+				buyPanelTimerLabel.AbsolutePosition.X, buyPanelTimerLabel.AbsolutePosition.Y,
+				buyPanelTimerLabel.AbsoluteSize.X, buyPanelTimerLabel.AbsoluteSize.Y,
+				buyPanelTimerLabel.Text))
+			local p = buyPanelTimerLabel.Parent
+			while p and p:IsA("GuiObject") do
+				local clips = false
+				pcall(function() clips = p.ClipsDescendants end)
+				print(string.format("[SpinWheel] Timer parent: %s Visible=%s ClipDesc=%s AbsPos=%.0f,%.0f AbsSize=%.0f,%.0f ZIndex=%d",
+					p:GetFullName(), tostring(p.Visible),
+					tostring(clips),
+					p.AbsolutePosition.X, p.AbsolutePosition.Y,
+					p.AbsoluteSize.X, p.AbsoluteSize.Y,
+					p.ZIndex))
+				p = p.Parent
+			end
+		else
+			warn("[SpinWheel] Timer DEBUG: buyPanelTimerLabel is NIL or has no Parent after 0.5s!")
+		end
+	end)
 	local sep1 = Instance.new("Frame")
 	sep1.Name = "Sep1"
 	sep1.Size = UDim2.new(1, -24, 0, 1)
@@ -464,7 +558,7 @@ do
 	coinsHdr.Parent = panel
 	local coinBtnY = 122
 	for i, pkg in ipairs(SpinWheelConfig.SpinPrices) do
-		local label = pkg.label .. "  \xE2\x80\x94  " .. tostring(pkg.coins) .. " \xF0\x9F\xAA\x99"
+		local label = pkg.label .. "  —  " .. tostring(pkg.coins) .. " F"
 		makeBuyBtn(coinBtnY, label, Color3.fromRGB(40, 140, 60), function()
 			if not BuySpinsRF then showBuyError("Not connected"); return end
 			local ok, result = pcall(function() return BuySpinsRF:InvokeServer(i) end)
@@ -500,7 +594,7 @@ do
 	robuxHdr.Parent = panel
 	local robuxBtnY = sep2Y + 30
 	for i, pkg in ipairs(SpinWheelConfig.SpinPrices) do
-		local label = pkg.label .. "  \xE2\x80\x94  R$ " .. tostring(pkg.robux)
+		local label = pkg.label .. "  —  " .. tostring(pkg.robux) .. " ROBUX"
 		makeBuyBtn(robuxBtnY, label, Color3.fromRGB(30, 100, 180), function()
 			local productId = pkg.productId
 			if not productId or productId == 0 then showBuyError("Product not configured"); return end
@@ -512,19 +606,49 @@ do
 end
 
 task.spawn(function()
+	local _firstTick = true
 	while true do
 		task.wait(1)
-		if not freeSpinReady and nextFreeSpinCountdown > 0 then
-			nextFreeSpinCountdown = nextFreeSpinCountdown - 1
+		if _firstTick then
+			_firstTick = false
+			if not buyPanelTimerLabel then
+				warn("[SpinWheel] buyPanelTimerLabel is NIL in timer loop — timer won't display!")
+			else
+				print(string.format("[SpinWheel] Timer loop started. freeReady=%s remaining=%d Visible=%s ZIndex=%d Text=%s",
+					tostring(freeSpinReady), nextFreeSpinCountdown,
+					tostring(buyPanelTimerLabel.Visible), buyPanelTimerLabel.ZIndex,
+					buyPanelTimerLabel.Text))
+			end
+		end
+
+		-- ALWAYS recompute remaining from absolute timestamp
+		if not freeSpinReady then
+			if nextFreeSpinAt > 0 then
+				nextFreeSpinCountdown = math.max(0, nextFreeSpinAt - os.time())
+			else
+				nextFreeSpinCountdown = math.max(0, nextFreeSpinCountdown - 1)
+			end
 			if nextFreeSpinCountdown <= 0 then
 				freeSpinReady = true
 				task.spawn(refreshSpinStatus)
-			elseif buyPanelTimerLabel then
+			end
+		end
+
+		-- ALWAYS set the timer text every tick (including freeReady=true)
+		if buyPanelTimerLabel then
+			if freeSpinReady or nextFreeSpinCountdown <= 0 then
+				buyPanelTimerLabel.Text = "\xE2\x9C\x85 Free spin ready!"
+				buyPanelTimerLabel.TextColor3 = Color3.fromRGB(80, 255, 120)
+			else
 				local h = math.floor(nextFreeSpinCountdown / 3600)
 				local m = math.floor((nextFreeSpinCountdown % 3600) / 60)
 				local s = math.floor(nextFreeSpinCountdown % 60)
 				buyPanelTimerLabel.Text = string.format("\xE2\x8F\xB1\xEF\xB8\x8F Free in: %02d:%02d:%02d", h, m, s)
+				buyPanelTimerLabel.TextColor3 = Color3.fromRGB(180, 200, 255)
 			end
+			-- Force visibility every tick (paranoia)
+			buyPanelTimerLabel.Visible = true
+			buyPanelTimerLabel.TextTransparency = 0
 		end
 	end
 end)
@@ -853,6 +977,22 @@ local function spinToTarget(targetAngle)
 	return tween
 end
 
+-- ═══════════════════════════════════════════
+-- WHEEL-ONLY ICON MAP (for reward reveal)
+-- ═══════════════════════════════════════════
+local WHEEL_ICONS = {
+	pet_dog       = "rbxassetid://81462451441223",
+	pet_noob      = "rbxassetid://81702684827965",
+	pet_penguin   = "rbxassetid://115903577500727",
+	crown_sparkle = "rbxassetid://123657387753624",
+	Coins         = "rbxassetid://130002796842909",
+}
+
+-- ═══════════════════════════════════════════
+-- SPIN (Request + Animate + Reveal via RewardPopup)
+-- Server is authoritative: returns winningIndex, client animates to that exact wedge.
+-- Target angle computed from segment geometry — no hardcoded stopAngles.
+-- ═══════════════════════════════════════════
 local function doSpin()
 	if debounce then return end
 	debounce = true
@@ -871,19 +1011,60 @@ local function doSpin()
 		task.delay(2, function() debounce = false; updateSpinButtonState(true) end)
 		return
 	end
+
+	-- ── Compute target angle from segment geometry (server-authoritative index) ──
 	local segIndex = result.segmentIndex or 1
-	local targetAngle = stopAngles[segIndex] or stopAngles[1]
-	targetAngle = targetAngle + math.random(-8, 8)
+	local numSegs = #SpinWheelConfig.Segments
+	local sliceAngle = 360 / numSegs
+	local midAngle = (segIndex - 1 + 0.5) * sliceAngle
+	local targetAngle = -midAngle + math.random(-8, 8) -- jitter stays inside 45° wedge
+
+	-- ── Validation: confirm server segment matches config ──
+	local configSeg = SpinWheelConfig.Segments[segIndex]
+	if configSeg then
+		print(string.format("[SpinWheel] Spin: idx=%d config=%s server=%s angle=%.1f",
+			segIndex, configSeg.name, result.rewardName or "?", targetAngle))
+	end
+
 	local tween = spinToTarget(targetAngle)
 	task.spawn(function() animateWheelStart() end)
-	task.spawn(function() task.wait(spinDuration-1.8); animateWheelEnd() end)
+	task.spawn(function() task.wait(spinDuration - 1.8); animateWheelEnd() end)
 	tween.Completed:Wait()
-	if result.rewardType == "Pet" then
-		updateSpinButtonState(false, "Won: "..(result.rewardName or "Pet").."!")
-	else
-		updateSpinButtonState(false, "+"..tostring(result.coinsAwarded or 0).." Fate Coins!")
+
+	-- ── Show reward popup via RewardPopup (PlayerScripts — safe from cleanup) ──
+	local popupIcon = ""
+	if result.rewardType == "Coins" then
+		popupIcon = WHEEL_ICONS.Coins
+	elseif result.catalogId and WHEEL_ICONS[result.catalogId] then
+		popupIcon = WHEEL_ICONS[result.catalogId]
 	end
-	task.wait(2)
+	local displayName = result.rewardName or "Reward"
+	if result.rewardType == "Coins" then
+		displayName = "+" .. tostring(result.coinsAwarded or 0) .. " Fate Coins"
+	end
+
+	local revealDone = false
+	if RewardPopup then
+		RewardPopup.Show({
+			title      = "YOU WON!",
+			icon       = popupIcon,
+			name       = displayName,
+			rarityText = result.rarity or "Common",
+			itemId     = result.catalogId or "",
+			itemType   = result.rewardType or "",
+			okText     = "OK",
+			onDismiss  = function()
+				revealDone = true
+			end,
+		})
+		-- Wait until player dismisses
+		while not revealDone and RewardPopup.IsActive() do task.wait(0.1) end
+	else
+		-- Fallback if RewardPopup not available
+		updateSpinButtonState(false, displayName)
+		task.wait(2)
+	end
+
 	isSpinning = false; debounce = false
 	updateSpinButtonState(true)
 	startIdleSpin()

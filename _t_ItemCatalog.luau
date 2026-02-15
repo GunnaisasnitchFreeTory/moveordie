@@ -37,7 +37,7 @@ ItemCatalog.FALLBACK_IMAGE = ""
 ItemCatalog.Pets = {
 	-- ── Common (8) ──
 	pet_bald_guest = {
-		id        = "pet_bald_uest",
+		id        = "pet_bald_guest",
 		name      = "Bald Guest",
 		modelName = "Bald Guest",
 		type      = "Pet",
@@ -233,37 +233,7 @@ ItemCatalog.Pets = {
 		stats     = { WalkSpeed = 3, CoinMultiplier = 1.07 },
 	},
 
-	-- ── Legendary (6) — Shop-only / Exclusive ──
-	pet_rbhp = {
-		id        = "pet_rbhp",
-		name      = "RBHP Pet",
-		modelName = "RBHP Pet",
-		type      = "Pet",
-		rarity    = "Legendary",
-		modelPath = "ItemModels.Pets.Legendary.RBHP Pet",
-		image     = "rbxassetid://130563974863986",
-		iconText  = "\240\159\148\165",
-		iconColor = Color3.fromRGB(255, 58, 58),
-		stats     = { CoinMultiplier = 1.20, WalkSpeed = 4, JumpPower = 8 },
-		shopOnly  = true,
-		obtainable = false,
-		source    = "bundle_future",
-	},
-	pet_toji = {
-		id        = "pet_toji",
-		name      = "Toji Pet",
-		modelName = "Toji Pet",
-		type      = "Pet",
-		rarity    = "Legendary",
-		modelPath = "ItemModels.Pets.Epic.Toji Pet",
-		image     = "rbxassetid://70371140256856",
-		iconText  = "\240\159\151\161",
-		iconColor = Color3.fromRGB(58, 58, 78),
-		stats     = { CoinMultiplier = 1.18, WalkSpeed = 3, JumpPower = 6 },
-		shopOnly  = true,
-		obtainable = false,
-		source    = "bundle_future",
-	},
+	-- ── Legendary (4) — Shop-only ──
 	pet_glitched_dragon = {
 		id        = "pet_glitched_dragon",
 		name      = "Glitched Dragon",
@@ -372,7 +342,7 @@ ItemCatalog.Crowns = {
 		rarity    = "Rare",
 		source    = "Findable",
 		modelPath = "ItemModels.Crowns.Findable.Darkness Crown",
-		image     = "rbxassetid://74957106349993",
+		image     = "rbxassetid://73151609115044",
 		iconText  = "\240\159\145\145",
 		iconColor = Color3.fromRGB(28, 18, 48),
 		thumbnailBgColor = Color3.fromRGB(12, 8, 22),
@@ -522,7 +492,7 @@ ItemCatalog.Crowns = {
 		rarity    = "Uncommon",
 		source    = "Level",
 		modelPath = "ItemModels.Crowns.Level.Ice Crown",
-		image     = "rbxassetid://140333135289717",
+		image     = "rbxassetid://139442180955039",
 		iconText  = "\240\159\145\145",
 		iconColor = Color3.fromRGB(112, 198, 255),
 		stats     = { WalkSpeed = 1 },
@@ -591,44 +561,14 @@ ItemCatalog.Crowns = {
 		rarity    = "Legendary",
 		source    = "Level",
 		modelPath = "ItemModels.Crowns.Level.Gold Star Crown",
-		image     = "rbxassetid://96348372111632",
+		image     = "rbxassetid://96446065706899",
 		iconText  = "\240\159\145\145",
 		iconColor = Color3.fromRGB(255, 208, 48),
 		thumbnailBgColor = Color3.fromRGB(42, 35, 12),
 		stats     = { CoinMultiplier = 1.12, WalkSpeed = 2, JumpPower = 3 },
 	},
 
-	-- ── Exclusive / Special (6) — Shop-only (Robux) + Daily + Crate ──
-	crown_hollow_purple = {
-		id        = "crown_hollow_purple",
-		name      = "Hollow Purple Crown",
-		modelName = "Hollow Purple Crown",
-		type      = "Crown",
-		rarity    = "Legendary",
-		source    = "DailyReward",
-		modelPath = "ItemModels.Crowns.Exclusive.Hollow Purple Crown",
-		image     = "rbxassetid://71121412594159",
-		iconText  = "\240\159\145\145",
-		iconColor = Color3.fromRGB(148, 48, 255),
-		thumbnailBgColor = Color3.fromRGB(28, 12, 48),
-		stats     = { CoinMultiplier = 1.15, WalkSpeed = 3, JumpPower = 5 },
-		shopOnly  = true,
-		obtainable = false,
-	},
-	crown_aura = {
-		id        = "crown_aura",
-		name      = "Aura Crown",
-		modelName = "Aura Crown",
-		type      = "Crown",
-		rarity    = "Legendary",
-		source    = "Findable",
-		modelPath = "ItemModels.Crowns.Findable.Aura Crown",
-		image     = "rbxassetid://125632977173073",
-		iconText  = "\240\159\145\145",
-		iconColor = Color3.fromRGB(255, 215, 128),
-		thumbnailBgColor = Color3.fromRGB(38, 32, 18),
-		stats     = { CoinMultiplier = 1.14, WalkSpeed = 2, JumpPower = 4 },
-	},
+	-- ── Exclusive (4) — Shop-only (Robux) ──
 	crown_electric = {
 		id        = "crown_electric",
 		name      = "Electric Crown",
@@ -909,12 +849,11 @@ function ItemCatalog.GetRarityColor(rarity: string): Color3
 		Rare      = Color3.fromRGB(38, 150, 255),
 		Epic      = Color3.fromRGB(178, 42, 255),
 		Legendary = Color3.fromRGB(255, 198, 18),
-		Exclusive = Color3.fromRGB(255, 58, 58),
 	}
 	return colors[rarity] or colors.Common
 end
 
-local RARITY_ORDER = { Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5, Exclusive = 6 }
+local RARITY_ORDER = { Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 }
 
 function ItemCatalog.GetAllPetsSorted(): { any }
 	local list = {}

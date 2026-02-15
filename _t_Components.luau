@@ -327,13 +327,12 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 function Components.CreateDimOverlay(parent: Instance, onClose: () -> ()): Frame
-	-- Fully transparent click-catcher (no dark/dim overlay — user preference)
 	local overlay = Instance.new("TextButton")
 	overlay.Name = "DimOverlay"
 	overlay.Size = UDim2.fromScale(1, 1)
 	overlay.Position = UDim2.fromScale(0, 0)
-	overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	overlay.BackgroundTransparency = 1 -- invisible; only intercepts clicks to close
+	overlay.BackgroundColor3 = C.Overlay
+	overlay.BackgroundTransparency = C.OverlayTransparency
 	overlay.BorderSizePixel = 0
 	overlay.Text = ""
 	overlay.AutoButtonColor = false
@@ -641,8 +640,7 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	local card = Instance.new("Frame")
 	card.Name = "Card_" .. data.name
 	card.Size = UDim2.fromOffset(S.CardWidth, S.CardHeight)
-	card.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	card.BackgroundTransparency = 0
+	card.BackgroundColor3 = data.locked and C.CardBgDark or C.CardBg
 	card.BorderSizePixel = 0
 	card.Parent = parent
 
@@ -656,6 +654,10 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	cStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	cStroke.Transparency = data.locked and 0.4 or 0.1
 	cStroke.Parent = card
+
+	if not data.locked then
+		addGloss(card, 0.80, 0.92)
+	end
 
 	addStudTexture(card, S.CardCorner)
 
@@ -681,7 +683,7 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	local displayText = data.iconText or string.sub(data.name, 1, 1)
 
 	if data.locked then
-		iconFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		iconFrame.BackgroundColor3 = Color3.fromRGB(25, 28, 45)
 		local q = Instance.new("TextLabel")
 		q.Size = UDim2.fromScale(1, 1)
 		q.BackgroundTransparency = 1
@@ -696,9 +698,9 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		qs.Transparency = 0.35
 		qs.Parent = q
 	else
-		-- Fully black icon area — rarity only shown via card border stroke
-		iconFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		iconFrame.BackgroundTransparency = 0
+		-- Use thumbnailBgColor (matches image background) if provided, else iconColor
+		iconFrame.BackgroundColor3 = data.thumbnailBgColor or data.iconColor
+		addGloss(iconFrame, 0.48, 0.78)
 
 		if data.image and data.image ~= "" then
 			local img = Instance.new("ImageLabel")
@@ -785,15 +787,15 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "ItemName"
-	nameLabel.Size = UDim2.new(1, -10, 0, 18)
-	nameLabel.Position = UDim2.new(0, 5, 0, 100)
+	nameLabel.Size = UDim2.new(1, -10, 0, 0)
+	nameLabel.Position = UDim2.new(0, 5, 0, 102)
+	nameLabel.AutomaticSize = Enum.AutomaticSize.Y
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Font = Enum.Font.GothamBold
 	nameLabel.TextColor3 = data.locked and Color3.fromRGB(55, 58, 80) or C.TextWhite
-	nameLabel.TextSize = 12
+	nameLabel.TextSize = 14
 	nameLabel.TextScaled = false
-	nameLabel.TextWrapped = false
-	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.TextWrapped = true
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
 	nameLabel.Text = data.locked and "???" or data.name
 	nameLabel.Parent = card
@@ -808,11 +810,11 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	local rarLabel = Instance.new("TextLabel")
 	rarLabel.Name = "Rarity"
 	rarLabel.Size = UDim2.new(1, -10, 0, 16)
-	rarLabel.Position = UDim2.new(0, 5, 0, 119)
+	rarLabel.Position = UDim2.new(0, 5, 0, 120)
 	rarLabel.BackgroundTransparency = 1
 	rarLabel.Font = Enum.Font.GothamBold
 	rarLabel.TextColor3 = data.locked and Color3.fromRGB(42, 45, 65) or rarityColor
-	rarLabel.TextSize = 12
+	rarLabel.TextSize = 13
 	rarLabel.TextXAlignment = Enum.TextXAlignment.Center
 	rarLabel.Text = data.locked and "" or rarityInfo.label
 	rarLabel.Parent = card
@@ -1401,8 +1403,7 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 	local card = Instance.new("Frame")
 	card.Name = "Card_" .. (data.name or "Item")
 	card.Size = UDim2.fromOffset(S.CardWidth, S.CardHeight)
-	card.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	card.BackgroundTransparency = 0
+	card.BackgroundColor3 = data.locked and C.CardBgDark or C.CardBg
 	card.BorderSizePixel = 0
 	card.Parent = parent
 
@@ -1424,8 +1425,8 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 	vpFrame.Name = "ModelPreview"
 	vpFrame.Size = UDim2.new(1, -16, 0, 90)
 	vpFrame.Position = UDim2.fromOffset(8, 8)
-	vpFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	vpFrame.BackgroundTransparency = 0
+	vpFrame.BackgroundColor3 = data.locked and Color3.fromRGB(25, 28, 45) or (data.iconColor or C.CardBg)
+	vpFrame.BackgroundTransparency = data.locked and 0 or 0.3
 	vpFrame.BorderSizePixel = 0
 	vpFrame.Ambient = Color3.fromRGB(180, 180, 200)
 	vpFrame.LightColor = Color3.fromRGB(255, 255, 255)
@@ -1535,15 +1536,15 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 	-- Name label
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "ItemName"
-	nameLabel.Size = UDim2.new(1, -10, 0, 18)
-	nameLabel.Position = UDim2.new(0, 5, 0, 100)
+	nameLabel.Size = UDim2.new(1, -10, 0, 0)
+	nameLabel.Position = UDim2.new(0, 5, 0, 102)
+	nameLabel.AutomaticSize = Enum.AutomaticSize.Y
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Font = Enum.Font.GothamBold
 	nameLabel.TextColor3 = data.locked and Color3.fromRGB(55, 58, 80) or C.TextWhite
-	nameLabel.TextSize = 12
+	nameLabel.TextSize = 14
 	nameLabel.TextScaled = false
-	nameLabel.TextWrapped = false
-	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.TextWrapped = true
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
 	nameLabel.Text = data.locked and "???" or (data.name or "???")
 	nameLabel.Parent = card
@@ -1559,11 +1560,11 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 	local rarLabel = Instance.new("TextLabel")
 	rarLabel.Name = "Rarity"
 	rarLabel.Size = UDim2.new(1, -10, 0, 16)
-	rarLabel.Position = UDim2.new(0, 5, 0, 119)
+	rarLabel.Position = UDim2.new(0, 5, 0, 120)
 	rarLabel.BackgroundTransparency = 1
 	rarLabel.Font = Enum.Font.GothamBold
 	rarLabel.TextColor3 = data.locked and Color3.fromRGB(42, 45, 65) or rarityColor
-	rarLabel.TextSize = 12
+	rarLabel.TextSize = 13
 	rarLabel.TextXAlignment = Enum.TextXAlignment.Center
 	rarLabel.Text = data.locked and "" or rarityInfo.label
 	rarLabel.Parent = card

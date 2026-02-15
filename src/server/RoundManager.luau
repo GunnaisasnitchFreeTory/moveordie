@@ -292,13 +292,28 @@ local function runRoundCycle(): boolean
 		return false
 	end
 	
-	-- Freeze players before telegraph begins
-	freezeAllPlayers()
+	-- Select unsafe zones and show telegraph BEFORE freezing (grace window)
 	HazardManager.SelectUnsafeZones(currentRound)
-	
-	-- Phase 2: Telegraph (tile warnings pulse — NO beams yet)
 	HazardManager.ShowTelegraph()
-	if not runPhase(Phase.Telegraph, RoundConfig.TelegraphSeconds) then
+
+	-- Grace window: telegraph is visible but players can still move
+	local graceTime = RoundConfig.TelegraphGraceSeconds or 0
+	if graceTime > 0 then
+		log(string.format("Round %d: Telegraph grace window (%.2fs — players can still move)", currentRound, graceTime))
+		if not safeWait(graceTime) then
+			unfreezeAllPlayers()
+			HazardManager.Cleanup()
+			return false
+		end
+	end
+
+	-- Freeze players after grace ends
+	freezeAllPlayers()
+	log(string.format("Round %d: Grace ended — players frozen", currentRound))
+	
+	-- Phase 2: Telegraph remainder (tile warnings continue — NO beams yet)
+	local remainingTelegraph = math.max(0, RoundConfig.TelegraphSeconds - graceTime)
+	if not runPhase(Phase.Telegraph, remainingTelegraph) then
 		unfreezeAllPlayers()
 		HazardManager.Cleanup()
 		return false

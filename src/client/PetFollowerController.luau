@@ -208,13 +208,16 @@ local function spawnPetFor(player: Player, petId: string)
 
 	local modelPath = petDef.modelPath
 	if not modelPath or modelPath == "" then
-		warn(TAG, "No modelPath for pet:", petId)
+		warn(TAG, "No modelPath for pet:", petId,
+			"| catalogEntry:", petDef.name or "?", "rarity:", petDef.rarity or "?",
+			"| image:", petDef.image or "nil", "| modelName:", petDef.modelName or "nil")
 		return
 	end
 
 	local sourceModel = ItemModelRegistry.Get(modelPath)
 	if not sourceModel then
-		warn(TAG, "Model not found:", modelPath)
+		warn(TAG, "modelPath exists but model NOT FOUND in registry:", modelPath,
+			"| petId:", petId, "| Try checking ReplicatedStorage.ItemModels hierarchy")
 		return
 	end
 
@@ -225,6 +228,25 @@ local function spawnPetFor(player: Player, petId: string)
 	log("Spawning pet for", player.Name .. ":", petId, "path:", modelPath)
 
 	local clone = sourceModel:Clone()
+
+	-- Unwrap Accessory → extract children into a Model wrapper
+	-- (Accessories have a Handle BasePart that we want to use as PrimaryPart)
+	if clone:IsA("Accessory") then
+		local wrapper = Instance.new("Model")
+		wrapper.Name = clone.Name
+		local handle = clone:FindFirstChild("Handle")
+		for _, child in ipairs(clone:GetChildren()) do
+			child.Parent = wrapper
+		end
+		if handle and handle:IsA("BasePart") then
+			wrapper.PrimaryPart = handle
+		else
+			local firstPart = wrapper:FindFirstChildWhichIsA("BasePart", true)
+			if firstPart then wrapper.PrimaryPart = firstPart end
+		end
+		clone:Destroy()
+		clone = wrapper
+	end
 
 	-- Wrap bare BaseParts (e.g. Glitched Dragon is a Part, not a Model) into a
 	-- Model so ScaleTo / GetBoundingBox / PivotTo all work uniformly.

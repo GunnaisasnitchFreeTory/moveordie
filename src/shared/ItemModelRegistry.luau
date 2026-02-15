@@ -86,7 +86,7 @@ local function scanFolder(folder: Instance, pathSegments: { string })
 		end
 		table.insert(childPath, seg)
 
-		local isRenderable = child:IsA("Model") or child:IsA("BasePart")
+		local isRenderable = child:IsA("Model") or child:IsA("BasePart") or child:IsA("Accessory")
 		local isContainer = child:IsA("Folder")
 
 		if isRenderable then

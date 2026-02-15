@@ -200,6 +200,53 @@ function SpinWheelPanel.Show()
 	spinFrame:TweenSize(UDim2.new(1, 0, 1, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.4, true)
 	spinFrame:TweenPosition(UDim2.new(0.5, 0, 0.5, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Back, 0.5, true)
 
+	-- ── Force full ancestor chain visible (fixes DailyTimerLabel hidden by parent) ──
+	-- Walk up from spinFrame ensuring every GuiObject ancestor is Visible=true.
+	task.defer(function()
+		local current: Instance? = spinFrame
+		while current do
+			if current:IsA("GuiObject") then
+				if not current.Visible then
+					log("Force-showing hidden ancestor:", current.Name, current.ClassName)
+					current.Visible = true
+				end
+			end
+			current = current.Parent
+		end
+
+		-- Also ensure BuySpinsPanel (common timer host) is visible
+		local buyPanel = spinFrame:FindFirstChild("BuySpinsPanel", true)
+		if buyPanel and buyPanel:IsA("GuiObject") and not buyPanel.Visible then
+			buyPanel.Visible = true
+			log("Force-showed BuySpinsPanel")
+		end
+
+		-- Debug: log DailyTimerLabel state if it exists
+		local timerLbl = spinFrame:FindFirstChild("DailyTimerLabel", true)
+			or spinFrame:FindFirstChild("Timer", true)
+		if timerLbl then
+			log(string.format("Timer label found: %s Visible=%s Text='%s' AbsPos=(%.0f,%.0f) AbsSize=(%.0f,%.0f)",
+				timerLbl:GetFullName(),
+				tostring(timerLbl.Visible),
+				tostring((timerLbl :: any).Text or "?"),
+				timerLbl.AbsolutePosition.X, timerLbl.AbsolutePosition.Y,
+				timerLbl.AbsoluteSize.X, timerLbl.AbsoluteSize.Y))
+
+			-- Walk parent chain and log visibility
+			local p: Instance? = timerLbl.Parent
+			while p and p ~= spinGui do
+				if p:IsA("GuiObject") then
+					if not p.Visible then
+						log("  HIDDEN ancestor:", p.Name, p.ClassName)
+						p.Visible = true
+						log("  -> forced Visible=true")
+					end
+				end
+				p = p.Parent
+			end
+		end
+	end)
+
 	-- Background effects
 	if bgEffect and bgEffect:IsA("CanvasGroup") then
 		bgEffect.GroupTransparency = 1

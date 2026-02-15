@@ -30,7 +30,7 @@ UIConfig.Colors = {
 	CardBgDark      = Color3.fromRGB(30, 34, 55),
 	CardStroke      = Color3.fromRGB(72, 80, 115),
 	Overlay         = Color3.fromRGB(0, 0, 0),
-	OverlayTransparency = 1, -- fully invisible; overlay only intercepts clicks, no dim
+	OverlayTransparency = 0.35,
 
 	-- Per-panel accent (header gradient base) — BRIGHTER
 	HeaderShop    = Color3.fromRGB(245, 48, 72),
@@ -166,14 +166,14 @@ UIConfig.StudTexture = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════
--- ANIMATION  (smooth, stable — no overshoot)
+-- ANIMATION  (smooth, subtle, premium)
 -- ═══════════════════════════════════════════════════════════════════
 
 UIConfig.Anim = {
 	OpenDuration   = 0.30,
 	CloseDuration  = 0.20,
 	OpenStartScale = 0.92,
-	OpenEase       = Enum.EasingStyle.Quad,
+	OpenEase       = Enum.EasingStyle.Back,
 	CloseEase      = Enum.EasingStyle.Quad,
 
 	HoverScale     = 1.04,
@@ -268,7 +268,6 @@ UIConfig.MockCrates = {
 			{ name = "Love Crown",        chance = 2, rarity = "Rare",     itemId = "crown_love",         modelPath = "ItemModels.Crowns.Findable.Love Crown" },
 			{ name = "Glitch Crown",      chance = 1, rarity = "Epic",     itemId = "crown_glitch",       modelPath = "ItemModels.Crowns.Findable.Glitch Crown" },
 			{ name = "Mystical Crown",    chance = 1, rarity = "Epic",     itemId = "crown_mystical",     modelPath = "ItemModels.Crowns.Findable.Mystical Crown" },
-			{ name = "Aura Crown",        chance = 0.5, rarity = "Legendary", itemId = "crown_aura",      modelPath = "" },
 		},
 		prices = {
 			{ label = "1 Crate",  cost = 300, currency = "Coins" },

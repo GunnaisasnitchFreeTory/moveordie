@@ -16,6 +16,7 @@
 	API:
 		Init()
 		OpenCrate(player, crateId, quantity) → { results: {}, success: boolean, error: string? }
+		RollCrateFree(player, crateId, quantity) → { results: {}, success: boolean, error: string? }
 		DebugSimulate(crateId, rolls)  — Studio-only: simulate N rolls, print distribution
 ]]
 
@@ -57,14 +58,10 @@ end
 
 -- ═══════════════════════════════════════════════════════════════════
 -- REWARD TABLES  (explicit per-item weights — easy to tune)
---
--- To add a "common filler" crown later, just add an entry here with
--- a higher weight to dilute the rarer drops.
 -- ═══════════════════════════════════════════════════════════════════
 
 local REWARD_TABLES = {
 	crate_crown = {
-		-- ── Basic Color Crowns (Common) — most frequent drops ──
 		{ itemId = "crown_red",         category = "Crowns", weight = 25 },
 		{ itemId = "crown_blue",        category = "Crowns", weight = 25 },
 		{ itemId = "crown_green",       category = "Crowns", weight = 25 },
@@ -72,13 +69,13 @@ local REWARD_TABLES = {
 		{ itemId = "crown_pink",        category = "Crowns", weight = 25 },
 		{ itemId = "crown_white",       category = "Crowns", weight = 25 },
 		{ itemId = "crown_orange",      category = "Crowns", weight = 25 },
-		-- ── VFX Crowns (Rare/Epic) — rare pulls ──
 		{ itemId = "crown_sparkle",     category = "Crowns", weight = 5 },
 		{ itemId = "crown_anime_lines", category = "Crowns", weight = 4 },
 		{ itemId = "crown_darkness",    category = "Crowns", weight = 4 },
 		{ itemId = "crown_love",        category = "Crowns", weight = 4 },
 		{ itemId = "crown_glitch",      category = "Crowns", weight = 3 },
 		{ itemId = "crown_mystical",    category = "Crowns", weight = 3 },
+		{ itemId = "crown_aura",        category = "Crowns", weight = 1 },
 	},
 	crate_pet_common = {
 		{ itemId = "pet_bald_guest", category = "Pets", weight = 15 },
@@ -107,14 +104,12 @@ local REWARD_TABLES = {
 -- WEIGHTED ROLL HELPERS
 -- ═══════════════════════════════════════════════════════════════════
 
---- Sum weights in a reward table.
 local function totalWeight(entries): number
 	local t = 0
 	for _, e in ipairs(entries) do t += e.weight end
 	return t
 end
 
---- Normalize weights to percentages. Returns array of { itemId, weight, pct }.
 local function normalizeWeights(entries)
 	local tw = totalWeight(entries)
 	local result = {}
@@ -128,7 +123,6 @@ local function normalizeWeights(entries)
 	return result
 end
 
---- Pick one entry using weighted random selection.
 local function weightedRoll(entries)
 	local tw = totalWeight(entries)
 	if tw <= 0 then return entries[1] end
@@ -138,16 +132,13 @@ local function weightedRoll(entries)
 		cumulative += e.weight
 		if roll <= cumulative then return e end
 	end
-	return entries[#entries] -- safety
+	return entries[#entries]
 end
 
 -- ═══════════════════════════════════════════════════════════════════
 -- ROLLING LOGIC
 -- ═══════════════════════════════════════════════════════════════════
 
---- Roll from a reward table.
---- Crowns: reroll up to MAX_REROLL to try for a non-duplicate.
---- Pets: single roll, check for duplicate.
 local function rollItem(player: Player, crateId: string): (string, string, boolean)
 	local entries = REWARD_TABLES[crateId]
 	if not entries or #entries == 0 then
@@ -159,18 +150,15 @@ local function rollItem(player: Player, crateId: string): (string, string, boole
 	local isCrown = (crateId == "crate_crown")
 
 	if isCrown and inv then
-		-- Crown crates: reroll up to MAX_REROLL to avoid duplicates
 		for _ = 1, MAX_REROLL do
 			local entry = weightedRoll(entries)
 			if not inv.OwnsItem(player, entry.category, entry.itemId) then
 				return entry.itemId, entry.category, false
 			end
 		end
-		-- All rerolls were duplicates
 		local entry = weightedRoll(entries)
 		return entry.itemId, entry.category, true
 	else
-		-- Pet crates (or no inventory service): single roll + duplicate check
 		local entry = weightedRoll(entries)
 		local isDup = false
 		if inv and inv.OwnsItem(player, entry.category, entry.itemId) then
@@ -181,11 +169,7 @@ local function rollItem(player: Player, crateId: string): (string, string, boole
 end
 
 -- ═══════════════════════════════════════════════════════════════════
--- PRICE LOOKUP  (unified pricing for all crate types)
---
--- 1 crate  = 300 Fate Coins
--- 3 crates = 500 Fate Coins
--- 6 crates = 400 Robux
+-- PRICE LOOKUP
 -- ═══════════════════════════════════════════════════════════════════
 
 local UNIFIED_PRICES = {
@@ -220,7 +204,6 @@ function CrateService.Init()
 	if initialized then return end
 	initialized = true
 
-	-- Sanity check: compare known crate IDs across all tables
 	local priceIds, rewardIds, catalogIds = {}, {}, {}
 	for id in pairs(CRATE_PRICES) do table.insert(priceIds, id) end
 	for id in pairs(REWARD_TABLES) do table.insert(rewardIds, id) end
@@ -232,7 +215,6 @@ function CrateService.Init()
 	log("  REWARD_TABLES:      ", table.concat(rewardIds, ", "))
 	log("  ItemCatalog.Crates: ", table.concat(catalogIds, ", "))
 
-	-- Warn on mismatches
 	local priceSet, rewardSet, catalogSet = {}, {}, {}
 	for _, id in ipairs(priceIds) do priceSet[id] = true end
 	for _, id in ipairs(rewardIds) do rewardSet[id] = true end
@@ -246,7 +228,6 @@ function CrateService.Init()
 		if not priceSet[id] then warn("[CrateService] MISMATCH:", id, "in REWARD_TABLES but NOT in CRATE_PRICES") end
 	end
 
-	-- Print normalized weights for each table
 	for _, crateId in ipairs(rewardIds) do
 		local nw = normalizeWeights(REWARD_TABLES[crateId])
 		local parts = {}
@@ -260,7 +241,6 @@ function CrateService.Init()
 end
 
 function CrateService.OpenCrate(player: Player, crateId: string, quantity: number): { results: { any }, success: boolean, error: string? }
-	-- Validate inputs
 	if type(crateId) ~= "string" or type(quantity) ~= "number" then
 		return { results = {}, success = false, error = "Invalid arguments" }
 	end
@@ -271,18 +251,15 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 		return { results = {}, success = false, error = "Unknown crate: " .. tostring(crateId) }
 	end
 
-	-- Find price
 	local price = findPrice(crateId, quantity)
 	if not price then
 		return { results = {}, success = false, error = "No price for quantity " .. tostring(quantity) }
 	end
 
-	-- Only handle Coins currency server-side (Robux handled by ProcessReceipt)
 	if price.currency == "Robux" then
 		return { results = {}, success = false, error = "Robux crates must be purchased through the shop" }
 	end
 
-	-- Deduct coins
 	local economy = getEconomy()
 	if not economy then
 		return { results = {}, success = false, error = "Economy service unavailable" }
@@ -292,26 +269,26 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 		return { results = {}, success = false, error = "Not enough coins" }
 	end
 
-	-- Roll items
 	local inv = getInventory()
 	local results = {}
 
 	for _ = 1, quantity do
 		local itemId, category, isDuplicate = rollItem(player, crateId)
 
+		local catalogEntry = ItemCatalog.Get(category, itemId)
 		local result = {
 			itemId = itemId,
 			category = category,
 			isDuplicate = isDuplicate,
-			coinsAwarded = 0,  -- No refund for duplicates
+			coinsAwarded = 0,
+			displayName = catalogEntry and catalogEntry.name or itemId,
+			rarity = catalogEntry and catalogEntry.rarity or "Common",
 		}
 
 		if isDuplicate or itemId == "" then
-			-- Duplicate: no reward, no coins — client shows "Already Owned"
 			log(string.format("%s opened %s — already owned: %s (%s)",
 				player.Name, crateId, itemId, category))
 		else
-			-- Grant item
 			if inv then
 				inv.GrantItem(player, category, itemId)
 			end
@@ -326,9 +303,57 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 	return { results = results, success = true }
 end
 
+--[[
+	RollCrateFree — rolls crates WITHOUT charging coins.
+	Used by DailyRewardService for reward crates.
+	Same rolling + granting logic as OpenCrate, but no price lookup / coin deduction.
+]]
+function CrateService.RollCrateFree(player: Player, crateId: string, quantity: number): { results: { any }, success: boolean, error: string? }
+	if type(crateId) ~= "string" or type(quantity) ~= "number" then
+		return { results = {}, success = false, error = "Invalid arguments" }
+	end
+
+	quantity = math.clamp(math.floor(quantity), 1, MAX_QUANTITY)
+
+	if not REWARD_TABLES[crateId] then
+		return { results = {}, success = false, error = "Unknown crate: " .. tostring(crateId) }
+	end
+
+	local inv = getInventory()
+	local results = {}
+
+	for i = 1, quantity do
+		local itemId, category, isDuplicate = rollItem(player, crateId)
+
+		local catalogEntry = ItemCatalog.Get(category, itemId)
+		local result = {
+			itemId = itemId,
+			category = category,
+			isDuplicate = isDuplicate,
+			coinsAwarded = 0,
+			displayName = catalogEntry and catalogEntry.name or itemId,
+			rarity = catalogEntry and catalogEntry.rarity or "Common",
+		}
+
+		if isDuplicate or itemId == "" then
+			log(string.format("%s FREE roll #%d %s — already owned: %s (%s)",
+				player.Name, i, crateId, itemId, category))
+		else
+			if inv then
+				inv.GrantItem(player, category, itemId)
+			end
+			log(string.format("%s FREE roll #%d %s — got %s (%s)",
+				player.Name, i, crateId, catalogEntry and catalogEntry.name or itemId, category))
+		end
+
+		table.insert(results, result)
+	end
+
+	return { results = results, success = true }
+end
+
 -- ═══════════════════════════════════════════════════════════════════
 -- DEBUG: Simulate rolls (Studio only)
--- Usage: require(CrateService).DebugSimulate("crate_crown", 10000)
 -- ═══════════════════════════════════════════════════════════════════
 
 function CrateService.DebugSimulate(crateId: string, rolls: number?)

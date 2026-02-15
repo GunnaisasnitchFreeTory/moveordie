@@ -86,17 +86,11 @@ local SettingsPanel     = safeRequire("SettingsPanel")
 local IconImagesPanel   = safeRequire("IconImagesPanel")
 local SpinWheelPanel    = safeRequire("SpinWheelPanel")
 local KillFeed          = safeRequire("KillFeed")
-local MatchResultsPanel = safeRequire("MatchResultsPanel")
-local DailyRewardsPanel = safeRequire("DailyRewardsPanel")
 
 local LocalPlayer = Players.LocalPlayer
 
 local initialized = false
 local currentPanel: string? = nil
-local matchLocked = false  -- true when player is InMatch (blocks Pets/Crowns)
-
--- Panels that are locked during a match
-local MATCH_LOCKED_PANELS = { Crowns = true, Pets = true }
 
 local UIController = {}
 
@@ -125,8 +119,6 @@ local function closeCurrentPanel()
 		IconImagesPanel.Hide()
 	elseif currentPanel == "SpinWheel" and SpinWheelPanel.IsVisible() then
 		SpinWheelPanel.Hide()
-	elseif currentPanel == "Daily" and DailyRewardsPanel.IsVisible() then
-		DailyRewardsPanel.Hide()
 	end
 	currentPanel = nil
 
@@ -134,12 +126,6 @@ local function closeCurrentPanel()
 end
 
 local function openPanel(name: string)
-	-- Block Pets/Crowns during match
-	if matchLocked and MATCH_LOCKED_PANELS[name] then
-		log("Blocked opening " .. name .. " — player is InMatch")
-		return
-	end
-
 	if currentPanel == name then
 		closeCurrentPanel()
 		return
@@ -165,8 +151,6 @@ local function openPanel(name: string)
 		IconImagesPanel.Show()
 	elseif name == "SpinWheel" then
 		SpinWheelPanel.Show()
-	elseif name == "Daily" then
-		DailyRewardsPanel.Show()
 	end
 
 	HUDPanel.SetBannerOverrideHidden(true)
@@ -263,13 +247,9 @@ function UIController.Init()
 	safeInit("SettingsPanel", SettingsPanel.Init, panelGui, onPanelClosed)
 	safeInit("IconImagesPanel", IconImagesPanel.Init, panelGui, onPanelClosed)
 	safeInit("SpinWheelPanel", SpinWheelPanel.Init, panelGui, onPanelClosed)
-	safeInit("DailyRewardsPanel", DailyRewardsPanel.Init, panelGui, onPanelClosed)
 
 	-- 4b. Init Kill Feed (always visible on HUD layer)
 	safeInit("KillFeed", KillFeed.Init, hudGui)
-
-	-- 4c. Init Match Results Panel (auto-shows on match end, HUD layer)
-	safeInit("MatchResultsPanel", MatchResultsPanel.Init, hudGui)
 
 	-- 5. Init HUD (2x4 sidebar grid)
 	local hudInitOk, hudInitErr = pcall(function()
@@ -281,7 +261,6 @@ function UIController.Init()
 			onSpectate = function() openPanel("Spectate") end,
 			onSettings = function() openPanel("Settings") end,
 			onIcons    = function() openPanel("Icons") end,
-			onDaily    = function() openPanel("Daily") end,
 			onAFK      = function()
 				task.spawn(function()
 					local remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -307,26 +286,6 @@ function UIController.Init()
 			closeCurrentPanel()
 		end
 	end)
-
-	-- 6b. Lock Pets/Crowns UI during match (listen for PlayerState attribute)
-	local function onPlayerStateChanged()
-		local state = LocalPlayer:GetAttribute("PlayerState")
-		local wasLocked = matchLocked
-		matchLocked = (state == "InMatch")
-
-		if matchLocked and not wasLocked then
-			log("Match started — locking Pets/Crowns UI")
-			-- Force-close if currently open
-			if currentPanel and MATCH_LOCKED_PANELS[currentPanel] then
-				log("Force-closing " .. currentPanel .. " (match started)")
-				closeCurrentPanel()
-			end
-		elseif not matchLocked and wasLocked then
-			log("Match ended — unlocking Pets/Crowns UI")
-		end
-	end
-	onPlayerStateChanged() -- Check initial state
-	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(onPlayerStateChanged)
 
 	-- 7. Walk-up CrownPetShop (ProximityPrompt + distance auto-close)
 	task.spawn(function()
@@ -621,43 +580,6 @@ function UIController.Init()
 	else
 		print("[UIController] READY")
 	end
-
-	-- 11. Auto-show Daily Rewards on join (once per session, if claimable)
-	if DailyRewardsPanel and DailyRewardsPanel.TryAutoShow then
-		DailyRewardsPanel.TryAutoShow()
-	end
-
-	-- 12. Preload new/critical image assets and log failures
-	task.spawn(function()
-		local ContentProvider = game:GetService("ContentProvider")
-		local PRELOAD_ASSETS = {
-			"rbxassetid://71121412594159",  -- Hollow Purple Crown
-			"rbxassetid://125632977173073", -- Aura Crown
-			"rbxassetid://74957106349993",  -- Darkness Crown (updated)
-			"rbxassetid://96348372111632",  -- Gold Star Crown (updated)
-			"rbxassetid://140333135289717", -- Ice Crown (updated)
-			"rbxassetid://130563974863986", -- RBHP Pet
-			"rbxassetid://70371140256856",  -- Toji Pet
-		}
-		local preloadInstances = {}
-		for _, assetId in ipairs(PRELOAD_ASSETS) do
-			local img = Instance.new("ImageLabel")
-			img.Image = assetId
-			table.insert(preloadInstances, img)
-		end
-		local preloadOk, preloadErr = pcall(function()
-			ContentProvider:PreloadAsync(preloadInstances)
-		end)
-		if preloadOk then
-			print("[UIController] Asset preload complete —", #PRELOAD_ASSETS, "assets loaded successfully")
-		else
-			warn("[UIController] Asset preload FAILED:", preloadErr)
-		end
-		-- Cleanup temp instances
-		for _, inst in ipairs(preloadInstances) do
-			inst:Destroy()
-		end
-	end)
 end
 
 return UIController

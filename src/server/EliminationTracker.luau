@@ -123,8 +123,8 @@ end
 	  1. Survivors (still InMatch at match end) form the top group
 	  2. Eliminated players sorted by eliminationTime descending (latest = better)
 	  3. Players within SimultaneousWindow of each other share a placement
-	  4. Placements: 1st→FirstPlace, 2nd→SecondPlace, 3rd→ThirdPlace,
-	     middle→Participation, last group→LastPlace(0)
+	  4. Small match (2–4 players): use SmallMatchPayouts table (last > 0)
+	     Normal match (5+ players): standard tiers, last = 0
 	  5. If only 1 group total → everyone gets FirstPlace
 	
 	Returns an ordered list of PlacementGroups from best to worst.
@@ -199,6 +199,17 @@ function EliminationTracker.BuildRankings(survivors: { Player }): { PlacementGro
 		})
 	end
 	
+	-- Determine total match player count (for small-match payout rule)
+	local totalMatchPlayers = 0
+	for _ in pairs(matchPlayerIds) do totalMatchPlayers += 1 end
+	local isSmallMatch = totalMatchPlayers <= CoinConfig.SmallMatchMaxPlayers
+
+	-- Resolve small-match payout table (if applicable)
+	local smallPayouts = nil
+	if isSmallMatch and CoinConfig.SmallMatchPayouts then
+		smallPayouts = CoinConfig.SmallMatchPayouts[totalMatchPlayers]
+	end
+
 	-- Assign placements and coin rewards
 	local totalGroups = #groups
 	
@@ -208,18 +219,23 @@ function EliminationTracker.BuildRankings(survivors: { Player }): { PlacementGro
 		if totalGroups == 1 then
 			-- Everyone shares 1st (solo player, everyone died at once, etc.)
 			group.coins = CoinConfig.FirstPlace
-		elseif i == totalGroups then
-			-- Last group always gets LastPlace reward (0 coins)
-			group.coins = CoinConfig.LastPlace
-		elseif i == 1 then
-			group.coins = CoinConfig.FirstPlace
-		elseif i == 2 then
-			group.coins = CoinConfig.SecondPlace
-		elseif i == 3 then
-			group.coins = CoinConfig.ThirdPlace
+		elseif smallPayouts then
+			-- Small match (2–4 players): use scaled payout table
+			-- Index by placement; fallback to Participation if more groups than entries
+			group.coins = smallPayouts[i] or CoinConfig.Participation
 		else
-			-- Middle groups get participation
-			group.coins = CoinConfig.Participation
+			-- Normal match (5+ players): standard tiers, last = 0
+			if i == totalGroups then
+				group.coins = CoinConfig.LastPlace
+			elseif i == 1 then
+				group.coins = CoinConfig.FirstPlace
+			elseif i == 2 then
+				group.coins = CoinConfig.SecondPlace
+			elseif i == 3 then
+				group.coins = CoinConfig.ThirdPlace
+			else
+				group.coins = CoinConfig.Participation
+			end
 		end
 	end
 	
@@ -237,19 +253,23 @@ function EliminationTracker.BuildRankings(survivors: { Player }): { PlacementGro
 	end
 	
 	if totalGroups > 0 then
-		log(string.format("[MatchEnd] Rankings — %s", table.concat(parts, " | ")))
+		log(string.format("[MatchEnd] playerCount=%d isSmallMatch=%s payoutTable=%s Rankings — %s",
+			totalMatchPlayers, tostring(isSmallMatch),
+			smallPayouts and "SmallMatchPayouts["..totalMatchPlayers.."]" or "Standard",
+			table.concat(parts, " | ")))
 	else
 		log("[MatchEnd] No players to rank")
 	end
 	
-	-- Log last place explicitly when applicable
+	-- Log last place explicitly
 	if totalGroups > 1 then
 		local lastGroup = groups[totalGroups]
 		local lastNames = {}
 		for _, p in ipairs(lastGroup.players) do
 			table.insert(lastNames, p.playerName)
 		end
-		log(string.format("[MatchEnd] Last place (0 coins): %s", table.concat(lastNames, ",")))
+		log(string.format("[MatchEnd] Last place (%d coins, smallMatch=%s): %s",
+			lastGroup.coins, tostring(isSmallMatch), table.concat(lastNames, ",")))
 	end
 	
 	return groups
@@ -270,4 +290,3 @@ function EliminationTracker.GetMatchId(): number
 end
 
 return EliminationTracker
-

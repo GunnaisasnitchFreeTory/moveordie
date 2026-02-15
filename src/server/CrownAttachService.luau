@@ -70,13 +70,16 @@ local function attachCrown(character: Model, crownId: string)
 
 	local modelPath = crownDef.modelPath
 	if not modelPath or modelPath == "" then
-		warn(TAG, "No modelPath for crown:", crownId)
+		warn(TAG, "No modelPath for crown:", crownId,
+			"| catalogEntry:", crownDef.name or "?", "rarity:", crownDef.rarity or "?",
+			"| image:", crownDef.image or "nil", "| modelName:", crownDef.modelName or "nil")
 		return
 	end
 
 	local sourceModel = ItemModelRegistry.Get(modelPath)
 	if not sourceModel then
-		warn(TAG, "Model not found in registry:", modelPath)
+		warn(TAG, "modelPath exists but model NOT FOUND in registry:", modelPath,
+			"| crownId:", crownId, "| Try checking ReplicatedStorage.ItemModels hierarchy")
 		return
 	end
 
@@ -93,6 +96,19 @@ local function attachCrown(character: Model, crownId: string)
 		clone.Name = "Handle"
 		clone.Anchored = false
 		clone.CanCollide = false
+
+		-- Weld any child BaseParts to Handle (e.g. VFX carrier parts)
+		for _, desc in ipairs(clone:GetDescendants()) do
+			if desc:IsA("BasePart") and desc ~= clone then
+				desc.Anchored = false
+				desc.CanCollide = false
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0 = clone
+				weld.Part1 = desc
+				weld.Parent = desc
+			end
+		end
+
 		clone.Parent = accessory
 
 	elseif clone:IsA("Model") then
@@ -143,7 +159,27 @@ local function attachCrown(character: Model, crownId: string)
 
 	-- Parent to character — Roblox Accessory system auto-welds via matching Attachment
 	accessory.Parent = character
-	log("Crown attached:", crownId)
+
+	-- Enable all VFX (ParticleEmitters, Beams, Trails, PointLights, etc.)
+	-- These may be disabled in ReplicatedStorage; force-enable after attaching.
+	local vfxCount = 0
+	for _, desc in ipairs(accessory:GetDescendants()) do
+		if desc:IsA("ParticleEmitter") or desc:IsA("Trail") then
+			desc.Enabled = true
+			vfxCount += 1
+		elseif desc:IsA("Beam") then
+			desc.Enabled = true
+			vfxCount += 1
+		elseif desc:IsA("Fire") or desc:IsA("Sparkles") or desc:IsA("Smoke") then
+			desc.Enabled = true
+			vfxCount += 1
+		elseif desc:IsA("PointLight") or desc:IsA("SpotLight") or desc:IsA("SurfaceLight") then
+			desc.Enabled = true
+			vfxCount += 1
+		end
+	end
+
+	log("Crown attached:", crownId, vfxCount > 0 and string.format("(%d VFX enabled)", vfxCount) or "(no VFX)")
 end
 
 -- =====================================================================
