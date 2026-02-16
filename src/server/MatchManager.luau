@@ -52,6 +52,8 @@ local replicatedState: StringValue = nil
 local replicatedRound: IntValue = nil
 local replicatedPhaseEnd: NumberValue = nil
 local replicatedMode: StringValue = nil
+local replicatedVoteActive: BoolValue = nil
+local replicatedVoteEndTime: NumberValue = nil
 local matchResultsEvent: RemoteEvent = nil
 
 -- Vote state
@@ -143,9 +145,17 @@ end
 local function startVote()
 	votes = {}
 	voteActive = true
+
+	-- Replicate vote-active state so late-joining / slow clients can catch up
+	if replicatedVoteActive then
+		replicatedVoteActive.Value = true
+	end
+	if replicatedVoteEndTime then
+		replicatedVoteEndTime.Value = workspace:GetServerTimeNow() + math.max(0, phaseEndTime - tick())
+	end
+
 	if voteRemote then
 		for _, player in ipairs(Players:GetPlayers()) do
-			-- Do not show vote UI to AFK players
 			if not PlayerStateService.IsAFK(player) then
 				voteRemote:FireClient(player, "Start", {})
 			end
@@ -156,6 +166,12 @@ end
 
 local function endVote(): string
 	voteActive = false
+
+	-- Clear replicated vote state
+	if replicatedVoteActive then
+		replicatedVoteActive.Value = false
+	end
+
 	local normal, brainrot = getVoteCounts()
 	local result = "Normal"
 	if brainrot > normal then
@@ -678,6 +694,16 @@ function MatchManager.Init()
 	replicatedMode.Name = "Mode"
 	replicatedMode.Value = "Normal"
 	replicatedMode.Parent = matchStatusFolder
+
+	replicatedVoteActive = Instance.new("BoolValue")
+	replicatedVoteActive.Name = "ModeVoteActive"
+	replicatedVoteActive.Value = false
+	replicatedVoteActive.Parent = matchStatusFolder
+
+	replicatedVoteEndTime = Instance.new("NumberValue")
+	replicatedVoteEndTime.Name = "ModeVoteEndTime"
+	replicatedVoteEndTime.Value = 0
+	replicatedVoteEndTime.Parent = matchStatusFolder
 
 	-- Parent folder to RS AFTER all children are attached (atomic replication)
 	matchStatusFolder.Parent = ReplicatedStorage

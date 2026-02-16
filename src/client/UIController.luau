@@ -36,7 +36,6 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
--- Bounded wait for Shared folder (10s — should be instant with Rojo)
 local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
 if not Shared then
 	warn("[UIController] Shared not found after 10s -- FAILED")
@@ -58,7 +57,6 @@ local SoundUtil         = require(UI:WaitForChild("SoundUtil"))
 local Components        = require(UI:WaitForChild("Components"))
 local HUDPanel          = require(UI:WaitForChild("HUDPanel"))
 
--- Helper: safely require a panel module; returns stub if module fails to load
 local PANEL_STUB = {
 	Init = function() end, Show = function() end, Hide = function() end,
 	IsVisible = function() return false end, Toggle = function() end,
@@ -66,12 +64,34 @@ local PANEL_STUB = {
 
 local _failedPanels = {}
 
+local SAFE_REQUIRE_RETRIES = { 0.25, 1.0 }
+
 local function safeRequire(name)
-	local ok, mod = pcall(function()
-		return require(UI:WaitForChild(name, 10))
-	end)
+	local moduleInstance = UI:WaitForChild(name, 10)
+	if not moduleInstance then
+		warn(string.format("[UIController] Module '%s' not found in UI folder after 10s", name))
+		table.insert(_failedPanels, name)
+		return PANEL_STUB
+	end
+
+	local ok, mod = pcall(require, moduleInstance)
 	if ok and mod then return mod end
-	warn("[UIController] Failed to load " .. name .. ": " .. tostring(mod))
+
+	warn(string.format("[UIController] Failed to load %s (path: %s): %s",
+		name, moduleInstance:GetFullName(), tostring(mod)))
+
+	for i, delay in ipairs(SAFE_REQUIRE_RETRIES) do
+		task.wait(delay)
+		warn(string.format("[UIController] Retry #%d for %s after %.2fs...", i, name, delay))
+		ok, mod = pcall(require, moduleInstance)
+		if ok and mod then
+			print(string.format("[UIController] %s loaded OK on retry #%d", name, i))
+			return mod
+		end
+		warn(string.format("[UIController] Retry #%d for %s FAILED: %s", i, name, tostring(mod)))
+	end
+
+	warn(string.format("[UIController] GIVING UP on %s after %d retries", name, #SAFE_REQUIRE_RETRIES))
 	table.insert(_failedPanels, name)
 	return PANEL_STUB
 end
@@ -95,9 +115,8 @@ local LocalPlayer = Players.LocalPlayer
 
 local initialized = false
 local currentPanel: string? = nil
-local matchLocked = false  -- true when player is InMatch (blocks Pets/Crowns)
+local matchLocked = false
 
--- Panels that are locked during a match
 local MATCH_LOCKED_PANELS = { Crowns = true, Pets = true, Daily = true, Stats = true }
 
 local UIController = {}
@@ -138,9 +157,8 @@ local function closeCurrentPanel()
 end
 
 local function openPanel(name: string)
-	-- Block Pets/Crowns during match
 	if matchLocked and MATCH_LOCKED_PANELS[name] then
-		log("Blocked opening " .. name .. " — player is InMatch")
+		log("Blocked opening " .. name .. " -- player is InMatch")
 		return
 	end
 
@@ -229,10 +247,8 @@ function UIController.Init()
 	if initialized then return end
 	initialized = true
 
-	-- 1. Bootstrap sounds
 	SoundUtil.Init()
 
-	-- 2. Create ScreenGuis
 	local hudOk, hudGui = pcall(Components.CreateScreenGui, "HUDGui", 1)
 	if not hudOk or not hudGui then
 		warn("[UIController] FAILED: Could not create HUD ScreenGui: " .. tostring(hudGui))
@@ -240,13 +256,11 @@ function UIController.Init()
 	end
 	local panelGui = Components.CreateScreenGui("PanelGui", 10)
 
-	-- 3. Panel close callback
 	local function onPanelClosed()
 		currentPanel = nil
 		HUDPanel.SetBannerOverrideHidden(false)
 	end
 
-	-- 4. Init all panels (wrapped in pcall -- one failure doesn't kill all UI)
 	local function safeInit(name, fn, ...)
 		local args = {...}
 		local ok, err = pcall(function()
@@ -272,16 +286,12 @@ function UIController.Init()
 	safeInit("DailyRewardsPanel", DailyRewardsPanel.Init, panelGui, onPanelClosed)
 	safeInit("StatsPanel", StatsPanel.Init, panelGui, onPanelClosed)
 
-	-- 4a. Init ModeVotePanel (self-managing overlay, not part of panel system)
 	safeInit("ModeVotePanel", ModeVotePanel.Init)
 
-	-- 4b. Init Kill Feed (always visible on HUD layer)
 	safeInit("KillFeed", KillFeed.Init, hudGui)
 
-	-- 4c. Init Match Results Panel (auto-shows on match end, HUD layer)
 	safeInit("MatchResultsPanel", MatchResultsPanel.Init, hudGui)
 
-	-- 5. Init HUD (2x4 sidebar grid)
 	local hudInitOk, hudInitErr = pcall(function()
 		HUDPanel.Init(hudGui, {
 			onShop     = function() openPanel("Shop") end,
@@ -311,7 +321,6 @@ function UIController.Init()
 		return
 	end
 
-	-- 6. ESC key handler
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 		if input.KeyCode == Enum.KeyCode.Escape and currentPanel then
@@ -319,27 +328,24 @@ function UIController.Init()
 		end
 	end)
 
-	-- 6b. Lock Pets/Crowns UI during match (listen for PlayerState attribute)
 	local function onPlayerStateChanged()
 		local state = LocalPlayer:GetAttribute("PlayerState")
 		local wasLocked = matchLocked
 		matchLocked = (state == "InMatch")
 
 		if matchLocked and not wasLocked then
-			log("Match started — locking Pets/Crowns UI")
-			-- Force-close if currently open
+			log("Match started -- locking Pets/Crowns UI")
 			if currentPanel and MATCH_LOCKED_PANELS[currentPanel] then
 				log("Force-closing " .. currentPanel .. " (match started)")
 				closeCurrentPanel()
 			end
 		elseif not matchLocked and wasLocked then
-			log("Match ended — unlocking Pets/Crowns UI")
+			log("Match ended -- unlocking Pets/Crowns UI")
 		end
 	end
-	onPlayerStateChanged() -- Check initial state
+	onPlayerStateChanged()
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(onPlayerStateChanged)
 
-	-- 7. Walk-up CrownPetShop (ProximityPrompt + distance auto-close)
 	task.spawn(function()
 		local crateShopModel = nil
 		local MAX_RETRIES = 15
@@ -368,17 +374,13 @@ function UIController.Init()
 			return
 		end
 
-		-- Get a reference BasePart for prompt placement + position detection
 		local refPart = nil
-		-- Try PrimaryPart first
 		if crateShopModel:IsA("Model") and crateShopModel.PrimaryPart then
 			refPart = crateShopModel.PrimaryPart
 		end
-		-- Try any descendant BasePart
 		if not refPart then
 			refPart = crateShopModel:FindFirstChildWhichIsA("BasePart", true)
 		end
-		-- Wait for streaming
 		if not refPart then
 			print("[UIController] CrownPetShop: waiting for BasePart to stream in...")
 			local waitConn
@@ -398,14 +400,13 @@ function UIController.Init()
 		end
 
 		if not refPart then
-			warn("[UIController] CrownPetShop has NO BasePart — walk-up disabled")
+			warn("[UIController] CrownPetShop has NO BasePart -- walk-up disabled")
 			return
 		end
 
 		print(string.format("[UIController] CrownPetShop refPart: %s at (%.1f, %.1f, %.1f)",
 			refPart:GetFullName(), refPart.Position.X, refPart.Position.Y, refPart.Position.Z))
 
-		-- ── Create ProximityPrompt if none exists ──
 		local prompt: ProximityPrompt? = nil
 		for _, desc in ipairs(crateShopModel:GetDescendants()) do
 			if desc:IsA("ProximityPrompt") then
@@ -419,7 +420,6 @@ function UIController.Init()
 		local crateOpenTime = 0
 
 		if not prompt then
-			-- Create an invisible anchor part for the prompt
 			local anchor = Instance.new("Part")
 			anchor.Name = "CrateShopPromptAnchor"
 			anchor.Size = Vector3.new(2, 2, 2)
@@ -448,7 +448,6 @@ function UIController.Init()
 
 		local promptPart = prompt.Parent
 
-		-- ── Prompt triggered → open crate shop ──
 		prompt.Triggered:Connect(function(playerWhoTriggered)
 			if playerWhoTriggered ~= LocalPlayer then return end
 			print("[UIController] CrateShop prompt triggered")
@@ -456,7 +455,6 @@ function UIController.Init()
 			openPanel("CrateShop")
 		end)
 
-		-- ── Auto-close when walking away (same pattern as SpinWheel) ──
 		local GRACE_PERIOD = 3
 		RunService.Heartbeat:Connect(function()
 			if currentPanel ~= "CrateShop" then return end
@@ -482,7 +480,6 @@ function UIController.Init()
 		end)
 	end)
 
-	-- 8. OpenCrateShop RemoteEvent (server fallback)
 	task.spawn(function()
 		local remotes = ReplicatedStorage:WaitForChild("Remotes", 15)
 		if not remotes then return end
@@ -495,7 +492,6 @@ function UIController.Init()
 		end
 	end)
 
-	-- 9. Walk-up SpinTheWheel
 	task.spawn(function()
 		local okSWC, SpinWheelCfg = pcall(require, Shared:WaitForChild("SpinWheelConfig", 10))
 		if not okSWC or not SpinWheelCfg then
@@ -626,31 +622,28 @@ function UIController.Init()
 		end)
 	end)
 
-	-- 10. Outcome log
 	if #_failedPanels > 0 then
 		warn("[UIController] DEGRADED: panels failed: " .. table.concat(_failedPanels, ", "))
 	else
 		print("[UIController] READY")
 	end
 
-	-- 11. Auto-show Daily Rewards on join (once per session, if claimable)
 	if DailyRewardsPanel and DailyRewardsPanel.TryAutoShow then
 		DailyRewardsPanel.TryAutoShow(function()
 			openPanel("Daily")
 		end)
 	end
 
-	-- 12. Preload new/critical image assets and log failures
 	task.spawn(function()
 		local ContentProvider = game:GetService("ContentProvider")
 		local PRELOAD_ASSETS = {
-			"rbxassetid://71121412594159",  -- Hollow Purple Crown
-			"rbxassetid://125632977173073", -- Aura Crown
-			"rbxassetid://74957106349993",  -- Darkness Crown (updated)
-			"rbxassetid://96348372111632",  -- Gold Star Crown (updated)
-			"rbxassetid://140333135289717", -- Ice Crown (updated)
-			"rbxassetid://130563974863986", -- RBHP Pet
-			"rbxassetid://70371140256856",  -- Toji Pet
+			"rbxassetid://71121412594159",
+			"rbxassetid://125632977173073",
+			"rbxassetid://74957106349993",
+			"rbxassetid://96348372111632",
+			"rbxassetid://140333135289717",
+			"rbxassetid://130563974863986",
+			"rbxassetid://70371140256856",
 		}
 		local preloadInstances = {}
 		for _, assetId in ipairs(PRELOAD_ASSETS) do
@@ -662,11 +655,10 @@ function UIController.Init()
 			ContentProvider:PreloadAsync(preloadInstances)
 		end)
 		if preloadOk then
-			print("[UIController] Asset preload complete —", #PRELOAD_ASSETS, "assets loaded successfully")
+			print("[UIController] Asset preload complete --", #PRELOAD_ASSETS, "assets loaded successfully")
 		else
 			warn("[UIController] Asset preload FAILED:", preloadErr)
 		end
-		-- Cleanup temp instances
 		for _, inst in ipairs(preloadInstances) do
 			inst:Destroy()
 		end

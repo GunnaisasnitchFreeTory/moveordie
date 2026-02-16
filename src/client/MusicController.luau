@@ -33,13 +33,13 @@ local MusicController = {}
 -- CONFIG
 -- ═══════════════════════════════════════════════════════════════════
 
--- Lobby track A: original lobby music (70%)
+-- Lobby track A: original lobby music (10%)
 local LOBBY_TRACK_A_ID      = "rbxassetid://132796863583176"
 local LOBBY_TRACK_A_START   = 0
 local LOBBY_TRACK_A_VOLUME  = 0.35
-local LOBBY_TRACK_A_CHANCE  = 0.90
+local LOBBY_TRACK_A_CHANCE  = 0.10
 
--- Lobby track B: alt lobby music (30%)
+-- Lobby track B: alt lobby music (90%)
 local LOBBY_TRACK_B_ID      = "rbxassetid://100199384595840"
 local LOBBY_TRACK_B_START   = 10
 local LOBBY_TRACK_B_VOLUME  = 1.0

@@ -11,9 +11,11 @@
 	  - Small "Vote" button to reopen during vote window
 	  - AFK players do NOT see the panel
 	  - Panel auto-closes when intermission ends
+	  - Resilient to timing: catches up via replicated ModeVoteActive value
+	  - High DisplayOrder (150) + Global ZIndex so it renders above all panels
 
 	NOT part of the "one panel at a time" system -- this is a
-	temporary overlay that floats above everything.
+	priority overlay that floats above everything (including DailyRewards).
 
 	Top-right layout (no overlaps):
 	  Vote  reopen btn : Y=8   h=36 (ends Y=44)
@@ -33,6 +35,7 @@ local ModeVotePanel = {}
 
 local player = Players.LocalPlayer
 local initialized = false
+local panelReady = false
 local gui = nil
 local panelFrame = nil
 local normalBtn = nil
@@ -43,6 +46,11 @@ local currentVote = nil
 local voteRemote = nil
 local reopenBtn = nil
 local voteWindowOpen = false
+
+local VOTE_DISPLAY_ORDER = 150
+
+-- Event queue: if remote fires before panel is ready, buffer events here
+local eventQueue = {}
 
 local PANEL_BG = Color3.fromRGB(22, 25, 38)
 local HEADER_COLOR = Color3.fromRGB(255, 215, 48)
@@ -69,9 +77,9 @@ local function createGui()
 
 	gui = Instance.new("ScreenGui")
 	gui.Name = "ModeVoteGui"
-	gui.DisplayOrder = 105
+	gui.DisplayOrder = VOTE_DISPLAY_ORDER
 	gui.IgnoreGuiInset = true
-	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 	gui.Enabled = false
 	gui.Parent = pg
 
@@ -132,7 +140,7 @@ local function createGui()
 			if panelFrame then panelFrame.Visible = false end
 			if reopenBtn then reopenBtn.Visible = voteWindowOpen end
 		end)
-		print("[ModeVotePanel] Closed by player")
+		print("[ModeVote] Closed by player")
 	end)
 
 	local title = Instance.new("TextLabel")
@@ -328,7 +336,7 @@ local function createGui()
 				sc.Scale = 0.9
 				TweenService:Create(sc, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 			end
-			print("[ModeVotePanel] Reopened by player")
+			print("[ModeVote] Reopened by player")
 		end
 	end)
 end
@@ -353,7 +361,7 @@ end
 
 local function showPanel()
 	if isPlayerAFK() then
-		print("[ModeVotePanel] Skipping show -- player is AFK")
+		print("[ModeVote] Skipping show -- player is AFK")
 		return
 	end
 
@@ -379,7 +387,8 @@ local function showPanel()
 		end
 	end
 
-	print("[ModeVotePanel] Shown")
+	print(string.format("[ModeVote] Showing UI displayOrder=%d enabled=%s visible=%s",
+		gui.DisplayOrder, tostring(gui.Enabled), tostring(panelFrame and panelFrame.Visible)))
 end
 
 local function hidePanel()
@@ -399,7 +408,7 @@ local function hidePanel()
 		if reopenBtn then reopenBtn.Visible = false end
 	end)
 
-	print("[ModeVotePanel] Hidden")
+	print("[ModeVote] Hidden")
 end
 
 local function updateCounts(data)
@@ -415,44 +424,108 @@ local function updateCounts(data)
 	end
 end
 
+-- Process a single remote event action
+local function handleVoteEvent(action, data)
+	print("[ModeVote] Received:", action)
+	if action == "Start" then
+		showPanel()
+	elseif action == "Update" then
+		updateCounts(data)
+	elseif action == "End" then
+		updateCounts(data)
+		task.delay(1.5, function()
+			hidePanel()
+		end)
+	end
+end
+
+-- Drain any queued events that arrived before panel was ready
+local function drainQueue()
+	if #eventQueue == 0 then return end
+	print(string.format("[ModeVote] Draining %d queued events", #eventQueue))
+	for _, entry in ipairs(eventQueue) do
+		handleVoteEvent(entry.action, entry.data)
+	end
+	table.clear(eventQueue)
+end
+
 function ModeVotePanel.Init()
 	if initialized then return end
 	initialized = true
 
-	print("[ModeVotePanel] Init starting...")
+	print("[ModeVote] Init starting...")
 	createGui()
 
 	task.spawn(function()
 		local remotes = ReplicatedStorage:WaitForChild("Remotes", 15)
 		if not remotes then
-			warn("[ModeVotePanel] Remotes folder not found")
+			warn("[ModeVote] Remotes folder not found")
 			return
 		end
 
 		voteRemote = remotes:WaitForChild("ModeVote", 15)
 		if not voteRemote then
-			warn("[ModeVotePanel] ModeVote remote not found")
+			warn("[ModeVote] ModeVote remote not found")
 			return
 		end
 
+		-- Connect to the remote event
 		voteRemote.OnClientEvent:Connect(function(action, data)
-			print("[ModeVotePanel] Received:", action)
-			if action == "Start" then
-				showPanel()
-			elseif action == "Update" then
-				updateCounts(data)
-			elseif action == "End" then
-				updateCounts(data)
-				task.delay(1.5, function()
-					hidePanel()
-				end)
+			if panelReady then
+				handleVoteEvent(action, data)
+			else
+				table.insert(eventQueue, { action = action, data = data })
+				print("[ModeVote] Queued event (panel not ready):", action)
 			end
 		end)
 
-		print("[ModeVotePanel] Connected to ModeVote remote")
+		print("[ModeVote] Connected to ModeVote remote")
+
+		-- Mark panel as ready and drain any buffered events
+		panelReady = true
+		drainQueue()
+		print("[ModeVote] Panel ready")
+
+		-- ── Replicated state catch-up ──
+		-- If the server vote is already active (e.g. we loaded late, or
+		-- the remote "Start" event was lost), read the replicated BoolValue
+		-- and show the panel immediately.
+		local matchStatus = ReplicatedStorage:WaitForChild("MatchStatus", 10)
+		if matchStatus then
+			local voteActiveVal = matchStatus:WaitForChild("ModeVoteActive", 5)
+
+			if voteActiveVal then
+				-- Check current value right now
+				if voteActiveVal.Value == true and not voteWindowOpen then
+					print("[ModeVote] Replicated active detected on init — showing UI")
+					showPanel()
+				end
+
+				-- Also listen for future changes as a backup trigger
+				voteActiveVal.Changed:Connect(function(newVal)
+					print("[ModeVote] ModeVoteActive changed to:", tostring(newVal))
+					if newVal == true and not voteWindowOpen then
+						print("[ModeVote] Replicated active detected — showing UI")
+						showPanel()
+					elseif newVal == false and voteWindowOpen then
+						-- Vote ended via replicated state (safety net)
+						task.delay(1.5, function()
+							if not voteWindowOpen then return end
+							hidePanel()
+						end)
+					end
+				end)
+
+				print("[ModeVote] Watching MatchStatus.ModeVoteActive for changes")
+			else
+				warn("[ModeVote] ModeVoteActive value not found in MatchStatus")
+			end
+		else
+			warn("[ModeVote] MatchStatus folder not found — replicated catch-up disabled")
+		end
 	end)
 
-	print("[ModeVotePanel] Initialized")
+	print("[ModeVote] Initialized")
 end
 
 return ModeVotePanel
