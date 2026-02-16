@@ -2,11 +2,14 @@
 	KillFeed
 	Right-side kill feed — shows elimination messages with slide-in + fade-out.
 
-	• Listens for KillFeedEvent RemoteEvent (fired by server on elimination)
-	• Also listens for player Humanoid.Died as a local fallback
-	• Each message disappears after ~3 seconds
-	• Stacks nicely (max 5 visible at once)
-	• Vibrant, readable text with dark stroke
+	* Listens for KillFeedEvent RemoteEvent (fired by server on elimination)
+	* Also listens for player Humanoid.Died as a local fallback
+	* Each message disappears after ~3 seconds
+	* Stacks nicely (max 5 visible at once)
+	* Vibrant, readable text with dark stroke
+
+	Position: right side, vertically centered at ~45% from top.
+	This avoids overlap with top-right HUD buttons (Stats, Daily, Vote).
 
 	Used by: UIController (initialized once)
 ]]
@@ -22,28 +25,26 @@ local C = UIConfig.Colors
 
 local KillFeed = {}
 
-local feedGui: ScreenGui = nil
-local feedContainer: Frame = nil
+local feedGui = nil
+local feedContainer = nil
 local MAX_MESSAGES = 5
 local MESSAGE_LIFETIME = 3.0
 local SLIDE_DURATION = 0.3
 local FADE_DURATION = 0.5
 
--- Map elimination reasons to display text
 local REASON_MAP = {
 	Beam       = "a Beam",
 	OOB        = "the Barrier",
 	Disconnect = "Disconnecting",
 }
 
-local function getReasonText(reason: string): string
+local function getReasonText(reason)
 	return REASON_MAP[reason] or reason
 end
 
-local function createFeedEntry(text: string, color: Color3?)
+local function createFeedEntry(text, color)
 	color = color or C.TextWhite
 
-	-- Remove old messages if at max
 	local children = {}
 	for _, child in ipairs(feedContainer:GetChildren()) do
 		if child:IsA("Frame") then table.insert(children, child) end
@@ -54,7 +55,6 @@ local function createFeedEntry(text: string, color: Color3?)
 		table.remove(children, 1)
 	end
 
-	-- Create entry frame
 	local entry = Instance.new("Frame")
 	entry.Name = "FeedEntry"
 	entry.Size = UDim2.new(1, 0, 0, 32)
@@ -63,9 +63,7 @@ local function createFeedEntry(text: string, color: Color3?)
 	entry.BorderSizePixel = 0
 	entry.Parent = feedContainer
 
-	local ec = Instance.new("UICorner")
-	ec.CornerRadius = UDim.new(0, 8)
-	ec.Parent = entry
+	Instance.new("UICorner", entry).CornerRadius = UDim.new(0, 8)
 
 	local label = Instance.new("TextLabel")
 	label.Name = "Text"
@@ -86,33 +84,27 @@ local function createFeedEntry(text: string, color: Color3?)
 	ls.Transparency = 0.15
 	ls.Parent = label
 
-	-- Slide in animation (from right)
 	local startPos = entry.Position
 	entry.Position = UDim2.new(0, 40, startPos.Y.Scale, startPos.Y.Offset)
 	entry.BackgroundTransparency = 1
 	label.TextTransparency = 1
 
-	local slideIn = TweenService:Create(entry, TweenInfo.new(SLIDE_DURATION, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+	TweenService:Create(entry, TweenInfo.new(SLIDE_DURATION, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
 		Position = startPos,
 		BackgroundTransparency = 0.45,
-	})
-	local textIn = TweenService:Create(label, TweenInfo.new(SLIDE_DURATION, Enum.EasingStyle.Quad), {
+	}):Play()
+	TweenService:Create(label, TweenInfo.new(SLIDE_DURATION, Enum.EasingStyle.Quad), {
 		TextTransparency = 0,
-	})
-	slideIn:Play()
-	textIn:Play()
+	}):Play()
 
-	-- Fade out after lifetime
 	task.delay(MESSAGE_LIFETIME, function()
 		if not entry or not entry.Parent then return end
-		local fadeOut = TweenService:Create(entry, TweenInfo.new(FADE_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+		TweenService:Create(entry, TweenInfo.new(FADE_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 			BackgroundTransparency = 1,
-		})
-		local textOut = TweenService:Create(label, TweenInfo.new(FADE_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+		}):Play()
+		TweenService:Create(label, TweenInfo.new(FADE_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 			TextTransparency = 1,
-		})
-		fadeOut:Play()
-		textOut:Play()
+		}):Play()
 		task.delay(FADE_DURATION + 0.1, function()
 			if entry and entry.Parent then
 				entry:Destroy()
@@ -121,14 +113,13 @@ local function createFeedEntry(text: string, color: Color3?)
 	end)
 end
 
-function KillFeed.Init(screenGui: ScreenGui)
+function KillFeed.Init(screenGui)
 	feedGui = screenGui
 
-	-- Container on the right side
 	feedContainer = Instance.new("Frame")
 	feedContainer.Name = "KillFeedContainer"
-	feedContainer.AnchorPoint = Vector2.new(1, 0)
-	feedContainer.Position = UDim2.new(1, -16, 0, 80)
+	feedContainer.AnchorPoint = Vector2.new(1, 0.5)
+	feedContainer.Position = UDim2.new(1, -16, 0.45, 0)
 	feedContainer.Size = UDim2.new(0, 320, 0, (32 + 6) * MAX_MESSAGES)
 	feedContainer.BackgroundTransparency = 1
 	feedContainer.BorderSizePixel = 0
@@ -142,16 +133,14 @@ function KillFeed.Init(screenGui: ScreenGui)
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
 	layout.Parent = feedContainer
 
-	-- Listen for server KillFeed event
 	task.spawn(function()
 		local remotes = ReplicatedStorage:WaitForChild("Remotes", 15)
 		if not remotes then return end
 		local killFeedEvent = remotes:WaitForChild("KillFeedEvent", 10)
 		if killFeedEvent then
-			killFeedEvent.OnClientEvent:Connect(function(playerName: string, reason: string)
+			killFeedEvent.OnClientEvent:Connect(function(playerName, reason)
 				local reasonText = getReasonText(reason)
 				local text = playerName .. " was eliminated by " .. reasonText
-				-- Color based on reason
 				local color = C.TextWhite
 				if reason == "Beam" then
 					color = C.Orange
@@ -164,10 +153,8 @@ function KillFeed.Init(screenGui: ScreenGui)
 	end)
 end
 
--- Public method to manually push a feed entry (for local testing)
-function KillFeed.Push(text: string, color: Color3?)
+function KillFeed.Push(text, color)
 	createFeedEntry(text, color)
 end
 
 return KillFeed
-

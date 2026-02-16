@@ -65,10 +65,20 @@ local function findBGMusic(): { Sound }
 end
 
 local function applyMusicSettings()
-	local sounds = findBGMusic()
 	local vol = musicEnabled and (musicVolume / 100) or 0
+
+	-- Prefer setting SoundGroup volume (lets MusicController manage per-sound fades)
+	local bgmGroup = SoundService:FindFirstChild("BGM") or SoundService:FindFirstChild("Music")
+	if bgmGroup and bgmGroup:IsA("SoundGroup") then
+		bgmGroup.Volume = vol
+	end
+
+	-- Also apply to any orphan sounds not managed by a group
+	local sounds = findBGMusic()
 	for _, sound in ipairs(sounds) do
-		sound.Volume = vol
+		if not sound.SoundGroup or sound.SoundGroup == SoundService then
+			sound.Volume = vol
+		end
 	end
 end
 

@@ -118,10 +118,15 @@ local function resolveRarity(data)
 end
 
 -- ═══════════════════════════════════════════
--- RESOLVE ICON (multi-level fallback + ThumbnailRenderer for pets)
--- Rule: If catalog has a non-empty image → use it (no ThumbnailRenderer).
---       If pet has no image → use ThumbnailRenderer via ViewportFrame.
---       Else → emoji fallback.
+-- BRAINROT PLACEHOLDER (used when no image asset set for brainrot items)
+-- ═══════════════════════════════════════════
+local BRAINROT_PLACEHOLDER_IMAGE = "rbxassetid://85473787445447"
+
+-- ═══════════════════════════════════════════
+-- RESOLVE ICON (multi-level fallback + ThumbnailRenderer)
+-- Rule: If catalog has a non-empty image → use it (static).
+--       No static image but has modelPath → return entry for ThumbnailRenderer.
+--       Else → emoji fallback / placeholder.
 -- Returns: resolvedImage, fallbackEmoji, fallbackColor, catalogEntry (for ThumbnailRenderer)
 -- ═══════════════════════════════════════════
 local function resolveIcon(data)
@@ -136,7 +141,15 @@ local function resolveIcon(data)
 		if entry.image and entry.image ~= "" then
 			return entry.image, nil, nil, entry
 		end
-		-- No static image → return entry so caller can try ThumbnailRenderer
+		-- No static image but has modelPath → allow ThumbnailRenderer (works for all items)
+		if entry.modelPath and entry.modelPath ~= "" then
+			return nil, entry.iconText or data.iconText, entry.iconColor or data.iconColor, entry
+		end
+		-- No image and no modelPath: use placeholder for brainrots, emoji for others
+		if entry.source == "brainrot_mode" then
+			print("[RewardPopup] Brainrot item with no image or modelPath — using placeholder for:", entry.name or "?")
+			return BRAINROT_PLACEHOLDER_IMAGE, nil, nil, entry
+		end
 		return nil, entry.iconText or data.iconText, entry.iconColor or data.iconColor, entry
 	end
 

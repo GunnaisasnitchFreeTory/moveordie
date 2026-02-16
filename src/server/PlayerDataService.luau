@@ -64,6 +64,9 @@ local function replicateToClient(player: Player, data: { [string]: any })
 	player:SetAttribute(A.OwnedPets,   HttpService:JSONEncode(data.OwnedPets or {}))
 	player:SetAttribute(A.OwnedCrowns, HttpService:JSONEncode(data.OwnedCrowns or {}))
 	player:SetAttribute(A.OwnedIcons,  HttpService:JSONEncode(data.OwnedIcons or {}))
+
+	player:SetAttribute(A.LifetimeDeaths,    data.LifetimeDeaths or 0)
+	player:SetAttribute(A.TimePlayedSeconds, data.TimePlayedSeconds or 0)
 end
 
 local function replicateField(player: Player, key: string, value: any)
@@ -91,6 +94,10 @@ local function replicateField(player: Player, key: string, value: any)
 		player:SetAttribute(A.OwnedCrowns, HttpService:JSONEncode(value or {}))
 	elseif key == "OwnedIcons" then
 		player:SetAttribute(A.OwnedIcons, HttpService:JSONEncode(value or {}))
+	elseif key == "LifetimeDeaths" then
+		player:SetAttribute(A.LifetimeDeaths, value or 0)
+	elseif key == "TimePlayedSeconds" then
+		player:SetAttribute(A.TimePlayedSeconds, value or 0)
 	end
 end
 

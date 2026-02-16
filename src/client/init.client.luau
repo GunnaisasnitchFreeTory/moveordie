@@ -88,4 +88,37 @@ else
 	warn("[Client] PetFollowerController FAILED:", petErr)
 end
 
+-- 5. MusicController (lobby + map music with transitions)
+local musicOk, musicErr = pcall(function()
+	local MusicController = require(Client:WaitForChild("MusicController"))
+	MusicController.Init()
+end)
+if musicOk then
+	print("[Client] MusicController loaded OK")
+else
+	warn("[Client] MusicController FAILED:", musicErr)
+end
+
+-- 6. WorldIndicators (floating labels above SpinWheel + CrateShop)
+local indicatorsOk, indicatorsErr = pcall(function()
+	local WorldIndicators = require(Client:WaitForChild("WorldIndicators"))
+	WorldIndicators.Init()
+end)
+if indicatorsOk then
+	print("[Client] WorldIndicators loaded OK")
+else
+	warn("[Client] WorldIndicators FAILED:", indicatorsErr)
+end
+
+-- 7. BrainrotPickupController (floating animation + pickup popup)
+local brainrotOk, brainrotErr = pcall(function()
+	local BrainrotPickupController = require(Client:WaitForChild("BrainrotPickupController"))
+	BrainrotPickupController.Init()
+end)
+if brainrotOk then
+	print("[Client] BrainrotPickupController loaded OK")
+else
+	warn("[Client] BrainrotPickupController FAILED:", brainrotErr)
+end
+
 print(string.format("[Client] Init complete (t=%s)", ts()))

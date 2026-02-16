@@ -84,6 +84,8 @@ UIConfig.Colors = {
 	SideSettings = Color3.fromRGB(135, 145, 168),
 	SideAFK      = Color3.fromRGB(255, 205, 42),
 	SideIcons    = Color3.fromRGB(252, 95, 178),
+	SideDaily    = Color3.fromRGB(60, 180, 255),
+	SideStats    = Color3.fromRGB(48, 210, 190),
 
 	-- Extra panel header accents
 	HeaderSpectate = Color3.fromRGB(48, 172, 252),

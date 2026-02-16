@@ -88,6 +88,8 @@ local SpinWheelPanel    = safeRequire("SpinWheelPanel")
 local KillFeed          = safeRequire("KillFeed")
 local MatchResultsPanel = safeRequire("MatchResultsPanel")
 local DailyRewardsPanel = safeRequire("DailyRewardsPanel")
+local StatsPanel        = safeRequire("StatsPanel")
+local ModeVotePanel     = safeRequire("ModeVotePanel")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -96,7 +98,7 @@ local currentPanel: string? = nil
 local matchLocked = false  -- true when player is InMatch (blocks Pets/Crowns)
 
 -- Panels that are locked during a match
-local MATCH_LOCKED_PANELS = { Crowns = true, Pets = true }
+local MATCH_LOCKED_PANELS = { Crowns = true, Pets = true, Daily = true, Stats = true }
 
 local UIController = {}
 
@@ -127,6 +129,8 @@ local function closeCurrentPanel()
 		SpinWheelPanel.Hide()
 	elseif currentPanel == "Daily" and DailyRewardsPanel.IsVisible() then
 		DailyRewardsPanel.Hide()
+	elseif currentPanel == "Stats" and StatsPanel.IsVisible() then
+		StatsPanel.Hide()
 	end
 	currentPanel = nil
 
@@ -167,6 +171,8 @@ local function openPanel(name: string)
 		SpinWheelPanel.Show()
 	elseif name == "Daily" then
 		DailyRewardsPanel.Show()
+	elseif name == "Stats" then
+		StatsPanel.Show()
 	end
 
 	HUDPanel.SetBannerOverrideHidden(true)
@@ -264,6 +270,10 @@ function UIController.Init()
 	safeInit("IconImagesPanel", IconImagesPanel.Init, panelGui, onPanelClosed)
 	safeInit("SpinWheelPanel", SpinWheelPanel.Init, panelGui, onPanelClosed)
 	safeInit("DailyRewardsPanel", DailyRewardsPanel.Init, panelGui, onPanelClosed)
+	safeInit("StatsPanel", StatsPanel.Init, panelGui, onPanelClosed)
+
+	-- 4a. Init ModeVotePanel (self-managing overlay, not part of panel system)
+	safeInit("ModeVotePanel", ModeVotePanel.Init)
 
 	-- 4b. Init Kill Feed (always visible on HUD layer)
 	safeInit("KillFeed", KillFeed.Init, hudGui)
@@ -282,6 +292,7 @@ function UIController.Init()
 			onSettings = function() openPanel("Settings") end,
 			onIcons    = function() openPanel("Icons") end,
 			onDaily    = function() openPanel("Daily") end,
+			onStats    = function() openPanel("Stats") end,
 			onAFK      = function()
 				task.spawn(function()
 					local remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -624,7 +635,9 @@ function UIController.Init()
 
 	-- 11. Auto-show Daily Rewards on join (once per session, if claimable)
 	if DailyRewardsPanel and DailyRewardsPanel.TryAutoShow then
-		DailyRewardsPanel.TryAutoShow()
+		DailyRewardsPanel.TryAutoShow(function()
+			openPanel("Daily")
+		end)
 	end
 
 	-- 12. Preload new/critical image assets and log failures

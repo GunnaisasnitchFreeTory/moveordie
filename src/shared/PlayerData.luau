@@ -7,11 +7,12 @@
 	VERSION HISTORY:
 	  1 — Initial: Coins, Owned/Equipped pets/crowns/icons, LifetimeWins
 	  2 — Added: LifetimeCoinsAchieved, WeeklyWins, WeeklyCoinsAchieved, WeeklyResetId
+	  3 — Added: LifetimeDeaths, TimePlayedSeconds
 ]]
 
 local PlayerData = {}
 
-PlayerData.VERSION = 2
+PlayerData.VERSION = 3
 
 -- DataStore key
 PlayerData.STORE_NAME = "PlayerData_v1"
@@ -33,6 +34,8 @@ PlayerData.Attributes = {
 	WeeklyCoinsAchieved   = "WeeklyCoinsAchieved",
 	LastDailyRewardTime   = "LastDailyRewardTime",
 	DailyStreak           = "DailyStreak",
+	LifetimeDeaths        = "LifetimeDeaths",
+	TimePlayedSeconds     = "TimePlayedSeconds",
 }
 
 --- Compute current UTC week identifier.
@@ -58,6 +61,8 @@ function PlayerData.GetDefaults(): { [string]: any }
 		WeeklyResetId         = "",
 		LastDailyRewardTime   = 0,
 		DailyStreak           = 0,
+		LifetimeDeaths        = 0,
+		TimePlayedSeconds     = 0,
 	}
 end
 
@@ -83,6 +88,8 @@ function PlayerData.Validate(data: { [string]: any }): { [string]: any }
 	if type(data.WeeklyResetId) ~= "string" then data.WeeklyResetId = "" end
 	if type(data.LastDailyRewardTime) ~= "number" then data.LastDailyRewardTime = 0 end
 	if type(data.DailyStreak) ~= "number" then data.DailyStreak = 0 end
+	if type(data.LifetimeDeaths) ~= "number" then data.LifetimeDeaths = 0 end
+	if type(data.TimePlayedSeconds) ~= "number" then data.TimePlayedSeconds = 0 end
 
 	if data.EquippedPet ~= nil and type(data.EquippedPet) ~= "string" then
 		data.EquippedPet = nil

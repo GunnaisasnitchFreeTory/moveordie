@@ -29,6 +29,7 @@ local PlayerState = require(Shared:WaitForChild("PlayerState"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local HazardManager = require(Server:WaitForChild("HazardManager"))
 local MapManager = require(Server:WaitForChild("MapManager"))
+local BrainrotModeService = require(Server:WaitForChild("BrainrotModeService"))
 
 --[[ PHASE CONSTANTS ]]
 local Phase = {
@@ -58,6 +59,7 @@ local winner: Player? = nil
 -- Match tracking
 local matchStartTime: number = 0
 local initialAliveCount: number = 0
+local matchMode: string = "Normal"
 
 -- Freeze state storage (player -> original values)
 local frozenPlayers: { [Player]: { WalkSpeed: number, JumpPower: number, JumpHeight: number } } = {}
@@ -279,9 +281,15 @@ local function runRoundCycle(): boolean
 	
 	-- Notify MapManager of round start (handles shrinking)
 	MapManager.OnRoundStart(currentRound)
+
+	-- Brainrot mode: spawn pickups at round start
+	if matchMode == "Brainrot" then
+		BrainrotModeService.OnRoundStart(currentRound)
+	end
 	
 	-- Check caps before round starts
 	if checkMatchEnd() then
+		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
 		running = false
 		return false
 	end
@@ -289,6 +297,7 @@ local function runRoundCycle(): boolean
 	-- Phase 1: FreeMove (players can reposition)
 	if not runPhase(Phase.FreeMove, RoundConfig.FreeMoveSeconds) then
 		HazardManager.Cleanup()
+		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
 		return false
 	end
 	
@@ -303,6 +312,7 @@ local function runRoundCycle(): boolean
 		if not safeWait(graceTime) then
 			unfreezeAllPlayers()
 			HazardManager.Cleanup()
+			if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
 			return false
 		end
 	end
@@ -316,6 +326,7 @@ local function runRoundCycle(): boolean
 	if not runPhase(Phase.Telegraph, remainingTelegraph) then
 		unfreezeAllPlayers()
 		HazardManager.Cleanup()
+		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
 		return false
 	end
 	
@@ -326,6 +337,7 @@ local function runRoundCycle(): boolean
 	if not runPhase(Phase.BeamWarning, beamWarningTime) then
 		unfreezeAllPlayers()
 		HazardManager.Cleanup()
+		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
 		return false
 	end
 	
@@ -334,6 +346,7 @@ local function runRoundCycle(): boolean
 	if not runPhase(Phase.Strike, RoundConfig.StrikeSeconds) then
 		unfreezeAllPlayers()
 		HazardManager.Cleanup()
+		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
 		return false
 	end
 	unfreezeAllPlayers()
@@ -341,6 +354,7 @@ local function runRoundCycle(): boolean
 	-- Check for winner after Strike
 	if checkMatchEnd() then
 		HazardManager.Cleanup()
+		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
 		running = false  -- Stop the loop
 		return false
 	end
@@ -349,7 +363,13 @@ local function runRoundCycle(): boolean
 	HazardManager.ClearBeams()
 	if not runPhase(Phase.Recovery, RoundConfig.RecoverySeconds) then
 		HazardManager.Cleanup()
+		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
 		return false
+	end
+
+	-- Brainrot mode: cleanup pickups at round end
+	if matchMode == "Brainrot" then
+		BrainrotModeService.OnRoundEnd()
 	end
 	
 	return true
@@ -397,12 +417,13 @@ function RoundManager.GetWinner(): Player?
 	return winner
 end
 
-function RoundManager.StartRoundLoop()
+function RoundManager.StartRoundLoop(mode: string?)
 	if running then
 		warn("[RoundManager] Loop already running")
 		return
 	end
-	
+
+	matchMode = mode or "Normal"
 	running = true
 	currentRound = 0
 	currentPhase = nil

@@ -697,19 +697,20 @@ function DailyRewardsPanel.Toggle()
 	if visible then DailyRewardsPanel.Hide() else DailyRewardsPanel.Show() end
 end
 
-function DailyRewardsPanel.TryAutoShow()
+function DailyRewardsPanel.TryAutoShow(openerFn)
 	if _hasAutoShown then return end
 	_hasAutoShown = true
+	local doOpen = openerFn or function() DailyRewardsPanel.Show() end
 	task.spawn(function()
 		task.wait(3)
 		if FORCE_OPEN_DAILY_ON_JOIN then
 			log("FORCE_OPEN: auto-opening Daily Rewards")
-			DailyRewardsPanel.Show()
+			doOpen()
 		else
 			local status = fetchStatus()
 			if status and status.canClaim then
 				log("Auto-opening: reward available")
-				DailyRewardsPanel.Show()
+				doOpen()
 			end
 		end
 	end)

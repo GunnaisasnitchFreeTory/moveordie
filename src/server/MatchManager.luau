@@ -28,14 +28,16 @@ local RoundManager = require(Server:WaitForChild("RoundManager"))
 local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
 local EconomyService = require(Server:WaitForChild("EconomyService"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
+local BrainrotModeService = require(Server:WaitForChild("BrainrotModeService"))
 
 --[[ CONFIGURATION ]]
 local Config = {
-	IntermissionSeconds = 15,
+	IntermissionSeconds = 18,
 	PlayingSeconds = 20,
 	EndingSeconds = 8,
 	MinPlayersToStart = 1,
-	MinIntermissionFloor = 10,  -- min seconds a late-joining player must see
+	MinIntermissionFloor = 10,
+	VoteShowAtRemaining = 12,
 	DebugLog = true,
 }
 
@@ -44,11 +46,18 @@ local currentState: string = MatchState.States.Intermission
 local phaseEndTime: number = 0
 local initialized = false
 local loopRunning = false
+local currentMode: string = "Normal"
 
 local replicatedState: StringValue = nil
 local replicatedRound: IntValue = nil
 local replicatedPhaseEnd: NumberValue = nil
+local replicatedMode: StringValue = nil
 local matchResultsEvent: RemoteEvent = nil
+
+-- Vote state
+local voteRemote: RemoteEvent = nil
+local votes: { [Player]: string } = {}
+local voteActive = false
 
 local MatchManager = {}
 
@@ -104,6 +113,69 @@ local function reportStats(userId: number, username: string, updates: { [string]
 				userId, statKey, value, tostring(callErr)))
 		end
 	end
+end
+
+-- ── Mode Vote helpers ──
+
+local function getVoteCounts(): (number, number)
+	local normal, brainrot = 0, 0
+	for voter, choice in pairs(votes) do
+		-- Exclude AFK players from tally
+		if voter and voter.Parent and not PlayerStateService.IsAFK(voter) then
+			if choice == "Normal" then
+				normal = normal + 1
+			elseif choice == "Brainrot" then
+				brainrot = brainrot + 1
+			end
+		end
+	end
+	return normal, brainrot
+end
+
+local function broadcastVoteCounts()
+	if not voteRemote then return end
+	local normal, brainrot = getVoteCounts()
+	for _, player in ipairs(Players:GetPlayers()) do
+		voteRemote:FireClient(player, "Update", { normal = normal, brainrot = brainrot })
+	end
+end
+
+local function startVote()
+	votes = {}
+	voteActive = true
+	if voteRemote then
+		for _, player in ipairs(Players:GetPlayers()) do
+			-- Do not show vote UI to AFK players
+			if not PlayerStateService.IsAFK(player) then
+				voteRemote:FireClient(player, "Start", {})
+			end
+		end
+	end
+	log("Mode vote started")
+end
+
+local function endVote(): string
+	voteActive = false
+	local normal, brainrot = getVoteCounts()
+	local result = "Normal"
+	if brainrot > normal then
+		result = "Brainrot"
+	end
+	currentMode = result
+
+	if replicatedMode then
+		replicatedMode.Value = result
+	end
+
+	if voteRemote then
+		for _, player in ipairs(Players:GetPlayers()) do
+			voteRemote:FireClient(player, "End", { winner = result, normal = normal, brainrot = brainrot })
+		end
+	end
+
+	votes = {}
+	log(string.format("Mode vote ended — %s wins (Normal=%d, Brainrot=%d)", result, normal, brainrot))
+	return result
 end
 
 local function replicatePhaseEnd(durationSeconds: number)
@@ -337,9 +409,17 @@ local function runIntermission()
 	phaseEndTime = tick() + Config.IntermissionSeconds
 	replicatePhaseEnd(Config.IntermissionSeconds)
 	replicateRound(0)
+
+	-- Reset mode to Normal at start of intermission
+	currentMode = "Normal"
+	if replicatedMode then
+		replicatedMode.Value = "Normal"
+	end
+
 	log(string.format("Intermission started (%ds)", Config.IntermissionSeconds))
 	
 	local lastWaitingCount = 0
+	local voteStarted = false
 	
 	while tick() < phaseEndTime do
 		setEligibleToWaiting()
@@ -356,8 +436,20 @@ local function runIntermission()
 			end
 			lastWaitingCount = currentCount
 		end
+
+		-- Start vote when <= VoteShowAtRemaining seconds left
+		local timeLeft = phaseEndTime - tick()
+		if not voteStarted and timeLeft <= Config.VoteShowAtRemaining then
+			voteStarted = true
+			startVote()
+		end
 		
 		task.wait(1)
+	end
+
+	-- End vote and determine mode
+	if voteStarted then
+		endVote()
 	end
 	
 	setEligibleToWaiting()
@@ -375,15 +467,20 @@ local function runPlaying()
 	end
 	
 	setMatchState(MatchState.States.Playing)
-	log("Playing started — waiting for RoundManager to complete")
+	log(string.format("Playing started (mode=%s) — waiting for RoundManager to complete", currentMode))
 	
 	MapManager.OnMatchStart()
 	setWaitingToInMatch()
+
+	-- Start brainrot mode if voted
+	if currentMode == "Brainrot" then
+		BrainrotModeService.OnMatchStart()
+	end
 	
 	local matchPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
 	EliminationTracker.Reset(matchPlayers)
 	
-	RoundManager.StartRoundLoop()
+	RoundManager.StartRoundLoop(currentMode)
 	
 	while RoundManager.IsRunning() do
 		task.wait(0.5)
@@ -391,6 +488,11 @@ local function runPlaying()
 	
 	local endReason = RoundManager.GetMatchEndReason()
 	log(string.format("Round loop completed — reason: %s", endReason or "unknown"))
+
+	-- End brainrot mode cleanup
+	if currentMode == "Brainrot" then
+		BrainrotModeService.OnMatchEnd()
+	end
 	
 	MapManager.OnMatchEnd()
 	
@@ -572,6 +674,11 @@ function MatchManager.Init()
 	replicatedPhaseEnd.Value = 0
 	replicatedPhaseEnd.Parent = matchStatusFolder
 
+	replicatedMode = Instance.new("StringValue")
+	replicatedMode.Name = "Mode"
+	replicatedMode.Value = "Normal"
+	replicatedMode.Parent = matchStatusFolder
+
 	-- Parent folder to RS AFTER all children are attached (atomic replication)
 	matchStatusFolder.Parent = ReplicatedStorage
 	log("MatchStatus folder + replicated values created")
@@ -592,6 +699,40 @@ function MatchManager.Init()
 		matchResultsEvent = existing
 	end
 	log("MatchResultsEvent remote created")
+
+	-- Create ModeVote remote
+	local existingVote = remotesFolder:FindFirstChild("ModeVote")
+	if not existingVote then
+		voteRemote = Instance.new("RemoteEvent")
+		voteRemote.Name = "ModeVote"
+		voteRemote.Parent = remotesFolder
+	else
+		voteRemote = existingVote
+	end
+
+	voteRemote.OnServerEvent:Connect(function(player, action, data)
+		if action == "Cast" and voteActive and data and typeof(data) == "string" then
+			-- Reject votes from AFK players
+			if PlayerStateService.IsAFK(player) then return end
+			if data == "Normal" or data == "Brainrot" then
+				votes[player] = data
+				broadcastVoteCounts()
+			end
+		end
+	end)
+
+	Players.PlayerRemoving:Connect(function(player)
+		if votes[player] then
+			votes[player] = nil
+			if voteActive then
+				broadcastVoteCounts()
+			end
+		end
+	end)
+
+	log("ModeVote remote created")
+
+	BrainrotModeService.Init()
 
 	MapManager.Init()
 	RoundManager.Init()

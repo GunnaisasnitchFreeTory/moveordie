@@ -57,6 +57,20 @@ local function log(...)
 	end
 end
 
+-- Lazy-load PlayerDataService for death tracking (avoids tight coupling)
+local _PlayerDataService = nil
+local function getPDS()
+	if _PlayerDataService then return _PlayerDataService end
+	pcall(function()
+		local Server = game:GetService("ServerScriptService"):FindFirstChild("Server")
+		if Server then
+			local pds = Server:FindFirstChild("PlayerDataService")
+			if pds then _PlayerDataService = require(pds) end
+		end
+	end)
+	return _PlayerDataService
+end
+
 --[[ PUBLIC API ]]
 
 --[[
@@ -105,6 +119,13 @@ function EliminationTracker.RecordElimination(player: Player, roundNumber: numbe
 	table.insert(eliminations, record)
 	log(string.format("Recorded: %s eliminated (round %d, %s) — #%d this match",
 		player.Name, roundNumber, reason, #eliminations))
+
+	-- Increment lifetime death counter (persistent)
+	local PDS = getPDS()
+	if PDS and PDS.IsLoaded(player) then
+		local deaths = (PDS.GetField(player, "LifetimeDeaths") or 0) + 1
+		PDS.SetField(player, "LifetimeDeaths", deaths)
+	end
 
 	-- Broadcast to all clients for Kill Feed UI
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")

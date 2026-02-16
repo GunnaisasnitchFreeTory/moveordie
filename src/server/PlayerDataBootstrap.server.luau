@@ -297,4 +297,20 @@ game:BindToClose(function()
 	PlayerDataService.SaveAll()
 end)
 
-print("[PlayerDataBootstrap] Persistence + equip + crate + level crowns + daily rewards + leaderboard seed systems ready")
+-- ═══════════════════════════════════════════════════════════════════
+-- TIME PLAYED TRACKING
+-- Increment TimePlayedSeconds every 1s for each loaded player.
+-- ═══════════════════════════════════════════════════════════════════
+task.spawn(function()
+	while true do
+		task.wait(1)
+		for _, player in ipairs(Players:GetPlayers()) do
+			if PlayerDataService.IsLoaded(player) then
+				local secs = (PlayerDataService.GetField(player, "TimePlayedSeconds") or 0) + 1
+				PlayerDataService.SetField(player, "TimePlayedSeconds", secs)
+			end
+		end
+	end
+end)
+
+print("[PlayerDataBootstrap] Persistence + equip + crate + level crowns + daily rewards + leaderboard seed + stats tracking systems ready")

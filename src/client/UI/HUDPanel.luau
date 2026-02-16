@@ -70,6 +70,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	onAFK: () -> (),
 	onIcons: () -> (),
 	onDaily: () -> (),
+	onStats: () -> (),
 })
 	-- COIN COUNTER (glossy capsule)
 	local coinFrame = Instance.new("Frame")
@@ -315,8 +316,8 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	ibls.Transparency = 0.2
 	ibls.Parent = intermissionLabel
 
-	-- 2x5 SIDEBAR GRID (glossy, vibrant)
-	local SIDEBAR_ROWS = 5
+	-- 2x4 SIDEBAR GRID (glossy, vibrant)
+	local SIDEBAR_ROWS = 4
 	local sidebarBg = Instance.new("Frame")
 	sidebarBg.Name = "SidebarBg"
 	sidebarBg.AnchorPoint = Vector2.new(0, 0)
@@ -414,6 +415,82 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(updateAFKVisual)
 
 	Components.CreateSideButton(sidebar, "Icons", "\xF0\x9F\x96\xBC", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end)
+
+	-- ── TOP-RIGHT BUTTON HELPER ─────────────────────────────────
+	local function createTopRightPill(name, yOffset, text, bgColor, gradTop, gradBot, onClick)
+		local btn = Instance.new("TextButton")
+		btn.Name = name
+		btn.AnchorPoint = Vector2.new(1, 0)
+		btn.Position = UDim2.new(1, -16, 0, yOffset)
+		btn.Size = UDim2.fromOffset(100, 38)
+		btn.BackgroundColor3 = bgColor
+		btn.BorderSizePixel = 0
+		btn.Font = Enum.Font.GothamBold
+		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		btn.TextSize = 14
+		btn.Text = text
+		btn.AutoButtonColor = true
+		btn.ZIndex = 5
+		btn.Parent = screenGui
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 19)
+
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.fromRGB(255, 255, 255)
+		stroke.Thickness = 1.8
+		stroke.Transparency = 0.55
+		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		stroke.Parent = btn
+
+		local shadow = Instance.new("Frame")
+		shadow.Name = "Shadow"
+		shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+		shadow.Position = UDim2.new(0.5, 2, 0.5, 3)
+		shadow.Size = UDim2.new(1, 10, 1, 10)
+		shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		shadow.BackgroundTransparency = 0.55
+		shadow.BorderSizePixel = 0
+		shadow.ZIndex = 4
+		shadow.Parent = btn
+		Instance.new("UICorner", shadow).CornerRadius = UDim.new(0, 24)
+
+		local grad = Instance.new("UIGradient")
+		grad.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, gradTop),
+			ColorSequenceKeypoint.new(0.5, bgColor),
+			ColorSequenceKeypoint.new(1, gradBot),
+		})
+		grad.Rotation = 90
+		grad.Parent = btn
+
+		local textStroke = Instance.new("UIStroke")
+		textStroke.Color = Color3.fromRGB(0, 0, 0)
+		textStroke.Thickness = 1.5
+		textStroke.Transparency = 0.2
+		textStroke.Parent = btn
+
+		AnimUtil.WireButton(btn, onClick)
+		return btn
+	end
+
+	-- ── TOP-RIGHT: Stats button ─────────────────────────────────
+	createTopRightPill(
+		"StatsBtn", 52,
+		"\xF0\x9F\x93\x8A Stats",
+		C.SideStats,
+		Color3.fromRGB(80, 240, 220),
+		Color3.fromRGB(20, 140, 130),
+		function() if callbacks.onStats then callbacks.onStats() end end
+	)
+
+	-- ── TOP-RIGHT: Daily Rewards button ─────────────────────────
+	createTopRightPill(
+		"DailyBtn", 96,
+		"\xF0\x9F\x93\x85 Daily",
+		C.SideDaily,
+		Color3.fromRGB(100, 210, 255),
+		Color3.fromRGB(30, 120, 200),
+		function() if callbacks.onDaily then callbacks.onDaily() end end
+	)
 
 	-- INTERMISSION SHOW/HIDE HELPERS
 	local function showIntermission()

@@ -55,6 +55,55 @@ local function getPlayerStateService()
 	return ok and service or nil
 end
 
+-- ─── AFK Billboard helpers ───
+local Players = game:GetService("Players")
+
+local AFK_BILLBOARD_NAME = "AFKBillboard"
+
+local function createAFKBillboard(character: Model)
+	if not character then return end
+	-- Remove existing if any
+	local existing = character:FindFirstChild(AFK_BILLBOARD_NAME)
+	if existing then return end
+
+	local head = character:FindFirstChild("Head")
+	if not head then return end
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = AFK_BILLBOARD_NAME
+	billboard.Adornee = head
+	billboard.Size = UDim2.fromOffset(100, 40)
+	billboard.StudsOffset = Vector3.new(0, 3, 0)
+	billboard.AlwaysOnTop = true
+	billboard.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	billboard.MaxDistance = 80
+	billboard.Parent = character
+
+	local label = Instance.new("TextLabel")
+	label.Name = "AFKLabel"
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.TextColor3 = Color3.fromRGB(255, 200, 50)
+	label.TextSize = 24
+	label.Text = "AFK"
+	label.TextScaled = false
+	label.Parent = billboard
+
+	local textStroke = Instance.new("UIStroke")
+	textStroke.Color = Color3.fromRGB(0, 0, 0)
+	textStroke.Thickness = 2.5
+	textStroke.Parent = label
+end
+
+local function removeAFKBillboard(character: Model)
+	if not character then return end
+	local existing = character:FindFirstChild(AFK_BILLBOARD_NAME)
+	if existing then
+		existing:Destroy()
+	end
+end
+
 task.spawn(function()
 	local PSS = getPlayerStateService()
 	if not PSS then
@@ -68,8 +117,44 @@ task.spawn(function()
 		local success = PSS.SetAFK(player, not isAFK)
 		if success then
 			print(string.format("[Server] %s toggled AFK: %s", player.Name, isAFK and "OFF" or "ON"))
+			-- Manage AFK billboard
+			local character = player.Character
+			if not isAFK then
+				-- Was NOT AFK → now IS AFK → show billboard
+				createAFKBillboard(character)
+			else
+				-- Was AFK → now NOT AFK → remove billboard
+				removeAFKBillboard(character)
+			end
 		end
 	end)
+
+	-- Clean up billboard when character respawns (handle edge case)
+	Players.PlayerAdded:Connect(function(plr)
+		plr.CharacterAdded:Connect(function(character)
+			task.defer(function()
+				if plr:GetAttribute("PlayerState") == "AFK" then
+					createAFKBillboard(character)
+				end
+			end)
+		end)
+	end)
+
+	-- Handle players already in game
+	for _, plr in ipairs(Players:GetPlayers()) do
+		plr.CharacterAdded:Connect(function(character)
+			task.defer(function()
+				if plr:GetAttribute("PlayerState") == "AFK" then
+					createAFKBillboard(character)
+				end
+			end)
+		end)
+		-- If already AFK with existing character
+		if plr:GetAttribute("PlayerState") == "AFK" and plr.Character then
+			createAFKBillboard(plr.Character)
+		end
+	end
+
 	print("[CrownPetShopServer] ToggleAFK handler ready")
 end)
 
