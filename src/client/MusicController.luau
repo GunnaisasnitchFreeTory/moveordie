@@ -84,6 +84,14 @@ local _initialized               = false
 local winSfx: Sound?             = nil
 local intermissionSfx: Sound?    = nil
 
+-- Hard-stop intermission countdown SFX and reset playback position
+local function stopIntermissionSfx()
+	if intermissionSfx and intermissionSfx.Playing then
+		intermissionSfx:Stop()
+		intermissionSfx.TimePosition = 0
+	end
+end
+
 -- ═══════════════════════════════════════════════════════════════════
 -- LOGGING
 -- ═══════════════════════════════════════════════════════════════════
@@ -372,8 +380,13 @@ function MusicController.Init()
 
 	-- 4. Listen for PlayerState changes (primary context signal)
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(function()
+		local state = LocalPlayer:GetAttribute("PlayerState")
 		updateContext()
-		intermissionWarned = false
+		-- Stop countdown SFX immediately when going AFK; do NOT reset
+		-- intermissionWarned so it won't replay on the same intermission
+		if state == "AFK" then
+			stopIntermissionSfx()
+		end
 	end)
 
 	-- 5. Listen for MatchStatus (secondary signal + intermission countdown)
@@ -391,10 +404,15 @@ function MusicController.Init()
 		local phaseEndVal = matchStatus:WaitForChild("PhaseEndTime", 10)
 
 		if stateVal then
-			stateVal.Changed:Connect(function()
-				onMatchStateChanged(stateVal.Value)
-				intermissionWarned = false
-			end)
+		stateVal.Changed:Connect(function()
+			onMatchStateChanged(stateVal.Value)
+			-- Reset flag so the next intermission cycle can trigger the SFX
+			intermissionWarned = false
+			-- If leaving intermission, hard-stop any playing countdown SFX
+			if stateVal.Value ~= "Intermission" then
+				stopIntermissionSfx()
+			end
+		end)
 		end
 
 		-- Intermission 5-second countdown SFX
@@ -402,6 +420,7 @@ function MusicController.Init()
 			RunService.Heartbeat:Connect(function()
 				if intermissionWarned then return end
 				if stateVal.Value ~= "Intermission" then return end
+				if LocalPlayer:GetAttribute("PlayerState") == "AFK" then return end
 				local remaining = phaseEndVal.Value - workspace:GetServerTimeNow()
 				if remaining <= COUNTDOWN_THRESHOLD and remaining > 0.5 then
 					intermissionWarned = true

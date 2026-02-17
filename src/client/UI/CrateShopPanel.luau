@@ -8,9 +8,8 @@
 
 	Each section shows:
 	  • Left: Big ViewportFrame showing a representative model
-	  • Right-top: 4 preview thumbnails with item names + drop %
+	  • Right-top: All preview thumbnails with item names + drop % (horizontal scroll)
 	  • Right-bottom: 3 buy buttons
-	  • Shuffles preview items on open
 
 	After purchase, shows reward via CrateRevealUI.
 
@@ -164,12 +163,13 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 	bps.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	bps.Parent = bigPreview
 
-	-- Get preview items (used for thumbnail row, not big preview)
-	local previewItems = getPreviewItems(crateData.id, 4)
+	-- All drops for this crate (show every item, no limit)
+	local allDrops = crateData.drops or {}
+	print(string.format("[CrateShop] %s: %d items to display", crateData.name, #allDrops))
 
 	-- Big preview: show crate box representation (not a random drop item)
 	do
-		local crateModelPath = crateData.modelPath -- optional crate box model
+		local crateModelPath = crateData.modelPath
 		local rendered = false
 		if crateModelPath and crateModelPath ~= "" then
 			local vp = Components.CreateViewportThumbnail(
@@ -184,7 +184,6 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 			rendered = ThumbnailRenderer.RenderItemToViewport(vp, { modelPath = crateModelPath })
 		end
 		if not rendered then
-			-- Styled crate box fallback: emoji centered
 			local emoji = Instance.new("TextLabel")
 			emoji.Size = UDim2.new(1, 0, 0, 80)
 			emoji.Position = UDim2.fromOffset(0, 20)
@@ -239,13 +238,19 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 	trs.Transparency = 0.22
 	trs.Parent = titleR
 
-	-- ── Right: Preview thumbnails row ──
-	local thumbRow = Instance.new("Frame")
+	-- ── Right: Preview thumbnails row (horizontal scroll) ──
+	local thumbRow = Instance.new("ScrollingFrame")
 	thumbRow.Name = "Thumbnails"
-	thumbRow.Size = UDim2.new(1, -155, 0, 96)
+	thumbRow.Size = UDim2.new(1, -155, 0, 104)
 	thumbRow.Position = UDim2.fromOffset(143, 36)
 	thumbRow.BackgroundTransparency = 1
 	thumbRow.BorderSizePixel = 0
+	thumbRow.ScrollingDirection = Enum.ScrollingDirection.X
+	thumbRow.ScrollBarThickness = 4
+	thumbRow.ScrollBarImageColor3 = Color3.fromRGB(180, 180, 180)
+	thumbRow.ScrollBarImageTransparency = 0.3
+	thumbRow.AutomaticCanvasSize = Enum.AutomaticSize.X
+	thumbRow.CanvasSize = UDim2.fromScale(0, 0)
 	thumbRow.Parent = section
 
 	local thumbLayout = Instance.new("UIListLayout")
@@ -257,18 +262,21 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 
 	-- Compute total chances for percentage display
 	local totalChance = 0
-	for _, drop in ipairs(crateData.drops or {}) do
+	for _, drop in ipairs(allDrops) do
 		totalChance = totalChance + (drop.chance or 0)
 	end
 
-	for i, item in ipairs(previewItems) do
-		if i > 4 then break end
+	local cardsCreated = 0
+	for i, item in ipairs(allDrops) do
 		local thumbContainer = Instance.new("Frame")
 		thumbContainer.Name = "Thumb" .. i
 		thumbContainer.Size = UDim2.fromOffset(68, 96)
-		thumbContainer.BackgroundTransparency = 1
+		thumbContainer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		thumbContainer.BackgroundTransparency = 0
+		thumbContainer.BorderSizePixel = 0
 		thumbContainer.LayoutOrder = i
 		thumbContainer.Parent = thumbRow
+		Instance.new("UICorner", thumbContainer).CornerRadius = UDim.new(0, 6)
 
 		-- Thumbnail: prefer static image from ItemCatalog if available
 		local staticImage = ""
@@ -279,13 +287,12 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 		end
 
 		if staticImage ~= "" then
-			-- Use static image — no ThumbnailRenderer needed
 			local imgLbl = Instance.new("ImageLabel")
 			imgLbl.Name = "ThumbImage"
 			imgLbl.Position = UDim2.fromOffset(4, 0)
 			imgLbl.Size = UDim2.fromOffset(60, 52)
-			imgLbl.BackgroundColor3 = C.CardBgDark
-			imgLbl.BackgroundTransparency = 0.2
+			imgLbl.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+			imgLbl.BackgroundTransparency = 0
 			imgLbl.BorderSizePixel = 0
 			imgLbl.Image = staticImage
 			imgLbl.ScaleType = Enum.ScaleType.Fit
@@ -297,7 +304,7 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 				thumbContainer,
 				item.modelPath,
 				UDim2.fromOffset(60, 52),
-				C.CardBgDark,
+				Color3.fromRGB(0, 0, 0),
 				item.name and string.sub(item.name, 1, 2) or "?"
 			)
 			vp.Position = UDim2.fromOffset(4, 0)
@@ -346,7 +353,9 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 		rarLbl.Text = item.rarity or ""
 		rarLbl.TextXAlignment = Enum.TextXAlignment.Center
 		rarLbl.Parent = thumbContainer
+		cardsCreated += 1
 	end
+	print(string.format("[CrateShop] %s: %d cards created", crateData.name, cardsCreated))
 
 	-- ── Buy buttons row ──
 	local btnRow = Instance.new("Frame")
@@ -496,6 +505,17 @@ function CrateShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		SoundUtil.Close()
 		CrateShopPanel.Hide()
 	end)
+
+	-- Override stud texture to Fate Beams asset (only this panel)
+	do
+		local stud = canvas:FindFirstChild("StudTexture")
+		if stud then
+			stud.Image = "rbxassetid://70851348312450"
+			stud.TileSize = UDim2.fromOffset(96, 96)
+			stud.ImageTransparency = 0.88
+			stud.ImageColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	end
 
 	Components.AddListLayout(content, 16)
 
