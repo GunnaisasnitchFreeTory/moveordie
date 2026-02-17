@@ -272,6 +272,17 @@ function IndexPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		end)
 	end
 
+	-- Override stud texture to Fate Beams asset (only this panel)
+	do
+		local stud = canvas:FindFirstChild("StudTexture")
+		if stud then
+			stud.Image = "rbxassetid://70851348312450"
+			stud.TileSize = UDim2.fromOffset(96, 96)
+			stud.ImageTransparency = 0.88
+			stud.ImageColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	end
+
 	local setActiveTab: ((number) -> ())? = nil
 	local tabBar
 	tabBar, setActiveTab = Components.CreateTabBar(canvas, TABS, function(idx)

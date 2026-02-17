@@ -162,16 +162,13 @@ function DailyRewardService.Claim(player)
 		if inv then
 			local alreadyOwned = inv.OwnsItem(player, "Crowns", rewardDef.crownId)
 			if alreadyOwned then
-				-- Give coin compensation instead
-				local eco = getEconomy()
-				local compensation = 500
-				if eco then
-					eco.AwardCoins(player, compensation, "DailyReward_DupeCrown_Day" .. streak)
-				end
+				-- Direct DailyReward crowns: do NOT convert duplicates to coins.
+				-- No EconomyService call, no leaderboard stat updates.
+				-- Just mark as claimed; popup still shows the crown.
 				grantResult.duplicate = true
-				grantResult.coinsInstead = compensation
-				log(string.format("%s claimed Day %d: crown %s (already owned, gave %d coins)",
-					player.Name, streak, rewardDef.crownId, compensation))
+				grantResult.coinsInstead = 0
+				log(string.format("%s claimed Day %d: crown %s (already owned, NO coins — DailyReward bypass)",
+					player.Name, streak, rewardDef.crownId))
 			else
 				inv.GrantItem(player, "Crowns", rewardDef.crownId)
 				grantResult.crownId = rewardDef.crownId

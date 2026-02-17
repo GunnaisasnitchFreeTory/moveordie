@@ -137,15 +137,49 @@ function SpinWheelPanel.Init(screenGui, onClose)
 	bgEffect = handler:FindFirstChild("BackgroundEffects")
 	bgEffectRainbow = handler:FindFirstChild("RainbowBackgroundEffect")
 
-	-- ── HIDE ORPHANED BUTTONS ──────────────────────────────────────────
+	-- ── MAKE ORPHANED BUTTONS INVISIBLE (preserve layout) ────────────
 	-- The original AnimateFrames (disabled) used these for navigation.
 	-- Their TextButtons have ZIndex=999999999 and Active=true, which
-	-- intercepts mouse clicks on the left side of the screen. Hide them.
-	-- Search recursively in case "Buttons" is nested deeper in the hierarchy.
+	-- intercepts mouse clicks on the left side of the screen.
+	-- Instead of Visible=false (which removes from layout and causes
+	-- UI shifting during animations), make all visual elements transparent
+	-- and disable input while keeping the frames present for layout math.
 	buttonsFrame = handler:FindFirstChild("Buttons", true)
 	if buttonsFrame then
-		buttonsFrame.Visible = false
-		log("Hid orphaned Buttons frame (prevents click interception)")
+		-- Make the Buttons frame itself a passive layout placeholder
+		buttonsFrame.BackgroundTransparency = 1
+		buttonsFrame.Active = false
+
+		for _, desc in ipairs(buttonsFrame:GetDescendants()) do
+			if desc:IsA("TextButton") or desc:IsA("ImageButton") then
+				desc.BackgroundTransparency = 1
+				desc.Active = false
+				desc.Selectable = false
+				if desc:IsA("TextButton") then
+					desc.TextTransparency = 1
+				end
+			elseif desc:IsA("ImageLabel") then
+				desc.ImageTransparency = 1
+				desc.BackgroundTransparency = 1
+			elseif desc:IsA("TextLabel") then
+				desc.TextTransparency = 1
+				desc.BackgroundTransparency = 1
+			elseif desc:IsA("Frame") then
+				desc.BackgroundTransparency = 1
+				desc.Active = false
+				desc.Selectable = false
+			end
+			-- Make any UIStroke fully transparent
+			if desc:IsA("UIStroke") then
+				desc.Transparency = 1
+			end
+			for _, child in ipairs(desc:GetChildren()) do
+				if child:IsA("UIStroke") then
+					child.Transparency = 1
+				end
+			end
+		end
+		log("Made orphaned Buttons invisible (layout preserved, no click interception)")
 	end
 
 	-- Ensure spin frame starts hidden

@@ -94,6 +94,7 @@ local function createGui()
 	panelFrame.ZIndex = 2
 	panelFrame.Parent = gui
 
+	panelFrame.ClipsDescendants = true
 	Instance.new("UICorner", panelFrame).CornerRadius = UDim.new(0, 16)
 
 	local stroke = Instance.new("UIStroke")
@@ -101,6 +102,21 @@ local function createGui()
 	stroke.Thickness = 2
 	stroke.Transparency = 0.3
 	stroke.Parent = panelFrame
+
+	-- Fate Beams stud texture overlay
+	local studTex = Instance.new("ImageLabel")
+	studTex.Name = "StudTexture"
+	studTex.Size = UDim2.fromScale(1, 1)
+	studTex.Position = UDim2.fromScale(0, 0)
+	studTex.BackgroundTransparency = 1
+	studTex.Image = "rbxassetid://70851348312450"
+	studTex.ScaleType = Enum.ScaleType.Tile
+	studTex.TileSize = UDim2.fromOffset(96, 96)
+	studTex.ImageTransparency = 0.88
+	studTex.ImageColor3 = Color3.fromRGB(255, 255, 255)
+	studTex.ZIndex = 2
+	studTex.Parent = panelFrame
+	Instance.new("UICorner", studTex).CornerRadius = UDim.new(0, 16)
 
 	local uiScale = Instance.new("UIScale")
 	uiScale.Scale = 0.9

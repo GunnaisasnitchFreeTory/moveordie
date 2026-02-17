@@ -364,9 +364,9 @@ function RewardPopup.Show(data)
 	stroke.Parent = card
 
 	local sc = Instance.new("UIScale")
-	sc.Scale = 0.7
+	sc.Scale = 0
 	sc.Parent = card
-	TweenService:Create(sc, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	TweenService:Create(sc, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 
 	local header = Instance.new("TextLabel")
 	header.Name = "Header"
@@ -509,9 +509,9 @@ function RewardPopup.ShowBatch(items)
 	panelStroke.Parent = panel
 
 	local sc = Instance.new("UIScale")
-	sc.Scale = 0.7
+	sc.Scale = 0
 	sc.Parent = panel
-	TweenService:Create(sc, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	TweenService:Create(sc, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 
 	-- Header
 	local header = Instance.new("TextLabel")

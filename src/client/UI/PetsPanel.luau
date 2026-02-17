@@ -187,7 +187,7 @@ function PetsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "🐾 PETS", C.HeaderPets, "Pets")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "\xF0\x9F\x90\xBE PETS", C.HeaderPets, "Pets")
 	contentFrame = content
 
 	Components.AddGridLayout(content)
@@ -196,6 +196,17 @@ function PetsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		SoundUtil.Close()
 		PetsPanel.Hide()
 	end)
+
+	-- Override stud texture to Fate Beams asset (only this panel)
+	do
+		local stud = canvas:FindFirstChild("StudTexture")
+		if stud then
+			stud.Image = "rbxassetid://70851348312450"
+			stud.TileSize = UDim2.fromOffset(96, 96)
+			stud.ImageTransparency = 0.88
+			stud.ImageColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	end
 
 	player:GetAttributeChangedSignal("OwnedPets"):Connect(function()
 		if visible then refresh() end

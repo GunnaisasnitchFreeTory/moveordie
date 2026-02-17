@@ -270,8 +270,10 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	Components.AddStudTexture(intermissionBar, S.IntermissionCorner)
 	local ibStud = intermissionBar:FindFirstChild("StudTexture")
 	if ibStud then
-		ibStud.ImageColor3 = Color3.fromRGB(200, 225, 255)
-		ibStud.ImageTransparency = 0.72
+		ibStud.Image = "rbxassetid://70851348312450"
+		ibStud.TileSize = UDim2.fromOffset(96, 96)
+		ibStud.ImageTransparency = 0.88
+		ibStud.ImageColor3 = Color3.fromRGB(255, 255, 255)
 		ibStud.ZIndex = 10
 	end
 
