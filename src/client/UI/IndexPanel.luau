@@ -5,9 +5,9 @@
 	  * Locked -> greyed-out ViewportFrame + lock overlay + source label
 
 	Features:
-	  * Tab bar: Crowns / Pets
-	  * Both tabs sourced from ItemCatalog (single source of truth)
-	  * Ownership from player attributes (OwnedCrowns / OwnedPets)
+	  * Tab bar: Crowns / Pets / Icon Images
+	  * All tabs sourced from ItemCatalog (single source of truth)
+	  * Ownership from player attributes (OwnedCrowns / OwnedPets / OwnedIconImages)
 	  * ViewportFrame 3D model previews for all items
 	  * Live refresh on ownership changes + InventoryUpdated event
 
@@ -69,6 +69,7 @@ local activeTab = 1
 local TABS = {
 	{ label = "Crowns" },
 	{ label = "Pets" },
+	{ label = "Icon Images" },
 }
 
 local IndexPanel = {}
@@ -246,11 +247,50 @@ local function populatePets()
 	end
 end
 
+local function populateIconImages()
+	clearCards()
+	ensureGrid()
+
+	local allIconImages = {}
+	if ItemCatalog.GetAllIconImagesSorted then
+		allIconImages = ItemCatalog.GetAllIconImagesSorted()
+	end
+	local ownedSet = getOwnedSet("OwnedIconImages")
+
+	for i, iconImg in ipairs(allIconImages) do
+		local isOwned = ownedSet[iconImg.id] == true
+		local subLabel = nil
+		if not isOwned then
+			subLabel = "Bundle / Exclusive"
+		end
+
+		local card = Components.CreateViewportItemCard(contentFrame, {
+			name = iconImg.name,
+			rarity = iconImg.rarity,
+			iconColor = iconImg.iconColor,
+			iconText = iconImg.iconText or "\240\159\150\188",
+			image = ItemCatalog.GetImage(iconImg),
+			modelPath = iconImg.modelPath,
+			locked = not isOwned,
+			owned = isOwned,
+			subLabel = subLabel,
+		})
+		card.LayoutOrder = i
+
+		if not isOwned then
+			local vpFrame = card:FindFirstChild("ModelPreview", true)
+			if vpFrame then applyLockOverlay(vpFrame) end
+		end
+	end
+end
+
 local function showTab(idx: number)
 	if idx == 1 then
 		populateCrowns()
-	else
+	elseif idx == 2 then
 		populatePets()
+	elseif idx == 3 then
+		populateIconImages()
 	end
 end
 
@@ -316,6 +356,9 @@ function IndexPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 	player:GetAttributeChangedSignal("OwnedCrowns"):Connect(function()
 		if visible and activeTab == 1 then showTab(1) end
+	end)
+	player:GetAttributeChangedSignal("OwnedIconImages"):Connect(function()
+		if visible and activeTab == 3 then showTab(3) end
 	end)
 
 	-- Listen for InventoryUpdated remote

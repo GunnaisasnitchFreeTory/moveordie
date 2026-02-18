@@ -5,7 +5,7 @@
 
 	Style: Dark rounded card, "YOU WON!" header, medium icon,
 	       reward name, rarity line, green OK button.
-	       NO yellow border. NO confetti. Clean and minimal.
+	       Confetti burst + win sound on reveal.
 
 	API:
 	  RewardPopup.Show({...})       -- single reward
@@ -14,8 +14,14 @@
 ]]
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+
+local WIN_SFX_ID = "rbxassetid://111217342629113"
+local WIN_SFX_VOLUME = 0.5
+
+local AnimUtil = require(script.Parent:WaitForChild("AnimUtil"))
 
 local RewardPopup = {}
 
@@ -23,6 +29,18 @@ local player = Players.LocalPlayer
 local _active = false
 local _overlay: Frame? = nil
 local _onDismissCallback: (() -> ())? = nil
+
+local _UIController = nil
+local function getUIController()
+	if _UIController then return _UIController end
+	pcall(function()
+		local playerScripts = player:FindFirstChild("PlayerScripts")
+		local clientFolder = playerScripts and playerScripts:FindFirstChild("Client")
+		local mod = clientFolder and clientFolder:FindFirstChild("UIController")
+		if mod then _UIController = require(mod) end
+	end)
+	return _UIController
+end
 
 -- ═══════════════════════════════════════════
 -- LAZY-LOAD ITEMCATALOG + THUMBNAILRENDERER
@@ -173,6 +191,100 @@ local RARITY_COLORS = {
 }
 
 -- ═══════════════════════════════════════════
+-- WIN SOUND
+-- ═══════════════════════════════════════════
+local _winSound: Sound? = nil
+
+local function playWinSound()
+	if _winSound and _winSound.IsPlaying then
+		_winSound:Stop()
+	end
+	if not _winSound or not _winSound.Parent then
+		_winSound = Instance.new("Sound")
+		_winSound.Name = "CrateWinSFX"
+		_winSound.SoundId = WIN_SFX_ID
+		_winSound.Looped = false
+		_winSound.Volume = WIN_SFX_VOLUME
+		_winSound.Parent = SoundService
+	end
+	_winSound:Play()
+end
+
+-- ═══════════════════════════════════════════
+-- CONFETTI BURST (self-contained, same style as Spin Wheel)
+-- ═══════════════════════════════════════════
+local CONFETTI_COLORS = {
+	Color3.fromRGB(255, 0, 0),
+	Color3.fromRGB(0, 255, 0),
+	Color3.fromRGB(0, 0, 255),
+	Color3.fromRGB(255, 255, 0),
+	Color3.fromRGB(255, 0, 255),
+	Color3.fromRGB(0, 255, 255),
+	Color3.fromRGB(255, 128, 0),
+	Color3.fromRGB(255, 255, 255),
+}
+
+local function spawnConfettiBurst(parent: GuiObject)
+	local screenW = parent.AbsoluteSize.X
+	local screenH = parent.AbsoluteSize.Y
+	if screenW < 10 or screenH < 10 then return end
+
+	local centerX = screenW * 0.5
+	local centerY = screenH * 0.5
+	local velScale = math.min(screenW, screenH) / 1000
+
+	for _ = 1, 60 do
+		local piece = Instance.new("Frame")
+		piece.AnchorPoint = Vector2.new(0.5, 0.5)
+		piece.BorderSizePixel = 0
+		local s = math.random(4, 10)
+		piece.Size = UDim2.fromOffset(s, s * math.random(10, 30) / 10)
+		piece.Position = UDim2.fromOffset(centerX, centerY)
+		piece.BackgroundColor3 = CONFETTI_COLORS[math.random(1, #CONFETTI_COLORS)]
+		piece.Rotation = math.random(0, 360)
+		piece.ZIndex = 200
+		piece.Parent = parent
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 2)
+		corner.Parent = piece
+
+		local angle = math.random() * math.pi * 2
+		local speed = math.random(800, 1600) * velScale
+		local vx = math.cos(angle) * speed
+		local vy = math.sin(angle) * speed - math.random(600, 1000) * velScale
+		local gravity = 1800 * velScale
+		local drag = 0.98
+		local rotSpeed = math.random(200, 600) * (math.random(0, 1) == 0 and 1 or -1)
+		local t0 = tick()
+		local px, py = 0, 0
+
+		local conn
+		conn = RunService.Heartbeat:Connect(function(dt)
+			if not piece.Parent then
+				conn:Disconnect()
+				return
+			end
+			local elapsed = tick() - t0
+			if elapsed > 3.5 or py > screenH + 80 then
+				piece:Destroy()
+				conn:Disconnect()
+				return
+			end
+			vy = vy + gravity * dt
+			vx = vx * drag
+			px = px + vx * dt
+			py = py + vy * dt
+			piece.Position = UDim2.fromOffset(centerX + px, centerY + py)
+			piece.Rotation = piece.Rotation + rotSpeed * dt
+			if elapsed > 2.5 then
+				piece.BackgroundTransparency = (elapsed - 2.5) / 1.0
+			end
+		end)
+	end
+end
+
+-- ═══════════════════════════════════════════
 -- SCREEN GUI
 -- ═══════════════════════════════════════════
 local _gui: ScreenGui? = nil
@@ -203,14 +315,12 @@ local function dismiss()
 	if ov and ov.Parent then
 		local panel = ov:FindFirstChild("Card") or ov:FindFirstChild("BatchPanel")
 		if panel then
-			local sc = panel:FindFirstChildOfClass("UIScale")
-			if sc then
-				TweenService:Create(sc, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0 }):Play()
-			end
+			AnimUtil.PopupClose(panel, ov)
+		else
+			task.delay(0.25, function()
+				if ov and ov.Parent then ov:Destroy() end
+			end)
 		end
-		task.delay(0.25, function()
-			if ov and ov.Parent then ov:Destroy() end
-		end)
 	end
 	_overlay = nil
 	if _onDismissCallback then
@@ -313,6 +423,10 @@ end
 -- ═══════════════════════════════════════════
 function RewardPopup.Show(data)
 	if not data then return end
+
+	local uic = getUIController()
+	if uic and uic.CloseAllPanels then uic.CloseAllPanels() end
+
 	if _active and _overlay and _overlay.Parent then
 		_overlay:Destroy()
 		_overlay = nil
@@ -363,10 +477,14 @@ function RewardPopup.Show(data)
 	stroke.Transparency = 0.3
 	stroke.Parent = card
 
-	local sc = Instance.new("UIScale")
-	sc.Scale = 0
-	sc.Parent = card
-	TweenService:Create(sc, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	AnimUtil.PopupOpen(card)
+
+	playWinSound()
+	task.delay(0.15, function()
+		if overlay and overlay.Parent then
+			spawnConfettiBurst(overlay)
+		end
+	end)
 
 	local header = Instance.new("TextLabel")
 	header.Name = "Header"
@@ -452,6 +570,9 @@ function RewardPopup.ShowBatch(items)
 		return
 	end
 
+	local uic = getUIController()
+	if uic and uic.CloseAllPanels then uic.CloseAllPanels() end
+
 	if _active and _overlay and _overlay.Parent then
 		_overlay:Destroy()
 		_overlay = nil
@@ -508,10 +629,14 @@ function RewardPopup.ShowBatch(items)
 	panelStroke.Transparency = 0.3
 	panelStroke.Parent = panel
 
-	local sc = Instance.new("UIScale")
-	sc.Scale = 0
-	sc.Parent = panel
-	TweenService:Create(sc, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	AnimUtil.PopupOpen(panel)
+
+	playWinSound()
+	task.delay(0.15, function()
+		if overlay and overlay.Parent then
+			spawnConfettiBurst(overlay)
+		end
+	end)
 
 	-- Header
 	local header = Instance.new("TextLabel")

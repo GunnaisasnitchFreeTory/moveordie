@@ -88,7 +88,18 @@ else
 	warn("[Client] PetFollowerController FAILED:", petErr)
 end
 
--- 5. MusicController (lobby + map music with transitions)
+-- 5. IconFollowerController (spawns + animates equipped icon image models)
+local iconFollowerOk, iconFollowerErr = pcall(function()
+	local IconFollowerController = require(Client:WaitForChild("IconFollowerController"))
+	IconFollowerController.Init()
+end)
+if iconFollowerOk then
+	print("[Client] IconFollowerController loaded OK")
+else
+	warn("[Client] IconFollowerController FAILED:", iconFollowerErr)
+end
+
+-- 6. MusicController (lobby + map music with transitions)
 local musicOk, musicErr = pcall(function()
 	local MusicController = require(Client:WaitForChild("MusicController"))
 	MusicController.Init()
@@ -119,6 +130,17 @@ if brainrotOk then
 	print("[Client] BrainrotPickupController loaded OK")
 else
 	warn("[Client] BrainrotPickupController FAILED:", brainrotErr)
+end
+
+-- 8. CoinPickupController (hover + rotation for round coins)
+local coinOk, coinErr = pcall(function()
+	local CoinPickupController = require(Client:WaitForChild("CoinPickupController"))
+	CoinPickupController.Init()
+end)
+if coinOk then
+	print("[Client] CoinPickupController loaded OK")
+else
+	warn("[Client] CoinPickupController FAILED:", coinErr)
 end
 
 print(string.format("[Client] Init complete (t=%s)", ts()))

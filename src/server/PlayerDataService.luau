@@ -8,13 +8,13 @@
 
 	API:
 		Init()
-		LoadPlayer(player)        → data table
-		SavePlayer(player)        → boolean
+		LoadPlayer(player)        -> data table
+		SavePlayer(player)        -> boolean
 		UnloadPlayer(player)
-		GetData(player)           → data table | nil
-		IsLoaded(player)          → boolean
-		SetField(player, key, v)  → boolean
-		GetField(player, key)     → value
+		GetData(player)           -> data table | nil
+		IsLoaded(player)          -> boolean
+		SetField(player, key, v)  -> boolean
+		GetField(player, key)     -> value
 		SaveAll()
 ]]
 
@@ -42,9 +42,9 @@ local function log(...)
 	if DEBUG_LOG then print("[PlayerDataService]", ...) end
 end
 
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 -- ATTRIBUTE REPLICATION
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 
 local function replicateToClient(player: Player, data: { [string]: any })
 	local A = PlayerData.Attributes
@@ -64,6 +64,9 @@ local function replicateToClient(player: Player, data: { [string]: any })
 	player:SetAttribute(A.OwnedPets,   HttpService:JSONEncode(data.OwnedPets or {}))
 	player:SetAttribute(A.OwnedCrowns, HttpService:JSONEncode(data.OwnedCrowns or {}))
 	player:SetAttribute(A.OwnedIcons,  HttpService:JSONEncode(data.OwnedIcons or {}))
+
+	player:SetAttribute(A.EquippedIconImage, data.EquippedIconImage or "")
+	player:SetAttribute(A.OwnedIconImages,   HttpService:JSONEncode(data.OwnedIconImages or {}))
 
 	player:SetAttribute(A.LifetimeDeaths,    data.LifetimeDeaths or 0)
 	player:SetAttribute(A.TimePlayedSeconds, data.TimePlayedSeconds or 0)
@@ -94,6 +97,10 @@ local function replicateField(player: Player, key: string, value: any)
 		player:SetAttribute(A.OwnedCrowns, HttpService:JSONEncode(value or {}))
 	elseif key == "OwnedIcons" then
 		player:SetAttribute(A.OwnedIcons, HttpService:JSONEncode(value or {}))
+	elseif key == "EquippedIconImage" then
+		player:SetAttribute(A.EquippedIconImage, value or "")
+	elseif key == "OwnedIconImages" then
+		player:SetAttribute(A.OwnedIconImages, HttpService:JSONEncode(value or {}))
 	elseif key == "LifetimeDeaths" then
 		player:SetAttribute(A.LifetimeDeaths, value or 0)
 	elseif key == "TimePlayedSeconds" then
@@ -101,9 +108,9 @@ local function replicateField(player: Player, key: string, value: any)
 	end
 end
 
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 -- DATASTORE OPERATIONS
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 
 local function getKey(userId: number): string
 	return PlayerData.KEY_PREFIX .. tostring(userId)
@@ -143,9 +150,9 @@ local function saveToStore(userId: number, data: { [string]: any }): boolean
 	return false
 end
 
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 -- PUBLIC API
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 
 function PlayerDataService.Init()
 	if initialized then
@@ -177,7 +184,7 @@ end
 function PlayerDataService.LoadPlayer(player: Player): { [string]: any }
 	local userId = player.UserId
 	if playerCache[userId] then
-		log(player.Name, "already loaded — returning cached data")
+		log(player.Name, "already loaded -- returning cached data")
 		return playerCache[userId]
 	end
 
@@ -190,7 +197,7 @@ function PlayerDataService.LoadPlayer(player: Player): { [string]: any }
 			player.Name, data.Coins, #data.OwnedPets, #data.OwnedCrowns, data.LifetimeWins))
 	else
 		data = PlayerData.GetDefaults()
-		log(string.format("%s — new player, using defaults", player.Name))
+		log(string.format("%s -- new player, using defaults", player.Name))
 	end
 
 	playerCache[userId]  = data
@@ -204,7 +211,7 @@ function PlayerDataService.SavePlayer(player: Player): boolean
 	local userId = player.UserId
 	local data = playerCache[userId]
 	if not data then
-		log(player.Name, "— no cached data to save")
+		log(player.Name, "-- no cached data to save")
 		return false
 	end
 	local success = saveToStore(userId, data)
@@ -229,7 +236,7 @@ end
 function PlayerDataService.SetField(player: Player, key: string, value: any): boolean
 	local data = playerCache[player.UserId]
 	if not data then
-		warn("[PlayerDataService] SetField failed — data not loaded for", player.Name)
+		warn("[PlayerDataService] SetField failed -- data not loaded for", player.Name)
 		return false
 	end
 	data[key] = value

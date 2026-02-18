@@ -175,6 +175,45 @@ function AnimUtil.WireButton(btn: GuiButton, onClick: (() -> ())?)
 end
 
 -- ───────────────────────────────────────────────
+-- MODAL POPUP OPEN / CLOSE  (Brainrot-style)
+-- ───────────────────────────────────────────────
+
+--[[
+	Animate a modal popup card open via UIScale.
+	Creates a UIScale child if one doesn't already exist.
+	Returns the UIScale instance for callers that need it later.
+
+	The card's AnchorPoint + Position must already be set before calling.
+]]
+function AnimUtil.PopupOpen(card: GuiObject): UIScale
+	local sc = card:FindFirstChildOfClass("UIScale")
+	if not sc then
+		sc = Instance.new("UIScale")
+		sc.Parent = card
+	end
+	sc.Scale = cfg.PopupOpenStartScale
+	AnimUtil.Tween(sc, { Scale = 1 }, cfg.PopupOpenDuration, cfg.PopupOpenEase, Enum.EasingDirection.Out)
+	return sc
+end
+
+--[[
+	Animate a modal popup card closed, then destroy the given container
+	(usually the overlay ScreenGui/Frame that holds the card).
+	`container` – the instance to :Destroy() after the tween; pass nil to skip.
+]]
+function AnimUtil.PopupClose(card: GuiObject, container: Instance?)
+	local sc = card:FindFirstChildOfClass("UIScale")
+	if sc then
+		AnimUtil.Tween(sc, { Scale = 0 }, cfg.PopupCloseDuration, cfg.PopupCloseEase, Enum.EasingDirection.In)
+	end
+	if container then
+		task.delay(cfg.PopupDestroyDelay, function()
+			if container and container.Parent then container:Destroy() end
+		end)
+	end
+end
+
+-- ───────────────────────────────────────────────
 -- UTILITY ANIMATIONS
 -- ───────────────────────────────────────────────
 

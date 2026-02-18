@@ -30,6 +30,7 @@ local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local HazardManager = require(Server:WaitForChild("HazardManager"))
 local MapManager = require(Server:WaitForChild("MapManager"))
 local BrainrotModeService = require(Server:WaitForChild("BrainrotModeService"))
+local RoundCoinService = require(Server:WaitForChild("RoundCoinService"))
 
 --[[ PHASE CONSTANTS ]]
 local Phase = {
@@ -256,6 +257,14 @@ local function runPhase(phaseName: string, duration: number): boolean
 end
 
 --[[
+	Cleanup mode-specific spawns (brainrot pickups, coins) on any round exit.
+]]
+local function cleanupModeRound()
+	if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
+	if matchMode == "Normal" then RoundCoinService.OnRoundEnd() end
+end
+
+--[[
 	Run a single round cycle: FreeMove → Telegraph → BeamWarning → Strike → Recovery
 	Returns false if cancelled.
 	
@@ -286,10 +295,15 @@ local function runRoundCycle(): boolean
 	if matchMode == "Brainrot" then
 		BrainrotModeService.OnRoundStart(currentRound)
 	end
+
+	-- Normal mode: spawn collectible coins
+	if matchMode == "Normal" then
+		RoundCoinService.OnRoundStart(currentRound)
+	end
 	
 	-- Check caps before round starts
 	if checkMatchEnd() then
-		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
+		cleanupModeRound()
 		running = false
 		return false
 	end
@@ -297,7 +311,7 @@ local function runRoundCycle(): boolean
 	-- Phase 1: FreeMove (players can reposition)
 	if not runPhase(Phase.FreeMove, RoundConfig.FreeMoveSeconds) then
 		HazardManager.Cleanup()
-		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
+		cleanupModeRound()
 		return false
 	end
 	
@@ -312,7 +326,7 @@ local function runRoundCycle(): boolean
 		if not safeWait(graceTime) then
 			unfreezeAllPlayers()
 			HazardManager.Cleanup()
-			if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
+			cleanupModeRound()
 			return false
 		end
 	end
@@ -326,7 +340,7 @@ local function runRoundCycle(): boolean
 	if not runPhase(Phase.Telegraph, remainingTelegraph) then
 		unfreezeAllPlayers()
 		HazardManager.Cleanup()
-		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
+		cleanupModeRound()
 		return false
 	end
 	
@@ -337,7 +351,7 @@ local function runRoundCycle(): boolean
 	if not runPhase(Phase.BeamWarning, beamWarningTime) then
 		unfreezeAllPlayers()
 		HazardManager.Cleanup()
-		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
+		cleanupModeRound()
 		return false
 	end
 	
@@ -346,7 +360,7 @@ local function runRoundCycle(): boolean
 	if not runPhase(Phase.Strike, RoundConfig.StrikeSeconds) then
 		unfreezeAllPlayers()
 		HazardManager.Cleanup()
-		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
+		cleanupModeRound()
 		return false
 	end
 	unfreezeAllPlayers()
@@ -354,7 +368,7 @@ local function runRoundCycle(): boolean
 	-- Check for winner after Strike
 	if checkMatchEnd() then
 		HazardManager.Cleanup()
-		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
+		cleanupModeRound()
 		running = false  -- Stop the loop
 		return false
 	end
@@ -363,14 +377,11 @@ local function runRoundCycle(): boolean
 	HazardManager.ClearBeams()
 	if not runPhase(Phase.Recovery, RoundConfig.RecoverySeconds) then
 		HazardManager.Cleanup()
-		if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
+		cleanupModeRound()
 		return false
 	end
 
-	-- Brainrot mode: cleanup pickups at round end
-	if matchMode == "Brainrot" then
-		BrainrotModeService.OnRoundEnd()
-	end
+	cleanupModeRound()
 	
 	return true
 end

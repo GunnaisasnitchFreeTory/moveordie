@@ -13,6 +13,9 @@
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MarketplaceService = game:GetService("MarketplaceService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
 if not Shared then
@@ -55,6 +58,7 @@ local contentFrame: ScrollingFrame = nil
 local visible = false
 local closeCallback: (() -> ())? = nil
 local activeTab = 1
+local _setActiveTab: ((number) -> ())? = nil
 
 local CATEGORIES = {
 	{ label = "Coins",   filter = "Currency" },
@@ -64,6 +68,20 @@ local CATEGORIES = {
 }
 
 local ShopPanel = {}
+
+local _bundlePanelOk, _BundlePanel = false, nil
+do
+	local bpModule = Client:WaitForChild("BundlePanel", 10)
+	if bpModule then
+		_bundlePanelOk, _BundlePanel = pcall(require, bpModule)
+		if not _bundlePanelOk then
+			warn("[ShopPanel] BundlePanel failed to load:", _BundlePanel)
+			_BundlePanel = nil
+		end
+	else
+		warn("[ShopPanel] BundlePanel module not found -- bundle tab will be empty")
+	end
+end
 
 local _warnedMissing = {}
 
@@ -146,31 +164,24 @@ local function fixCoinCardLayout(card: Frame, imageId: string)
 	end
 end
 
---- Create a ViewportFrame inside the card's Icon area for 3D model rendering.
---- Components.CreateViewportItemCard falls back to CreateItemCard when models aren't
---- in ReplicatedStorage, so the card won't have a ViewportFrame. We create one ourselves.
 local function ensureViewportInCard(card: Frame, bgColor: Color3?): ViewportFrame?
-	-- Check if Components already created one (ModelPreview)
 	local existing = card:FindFirstChild("ModelPreview", true)
 	if existing and existing:IsA("ViewportFrame") then
 		return existing
 	end
 
-	-- Find the Icon frame that CreateItemCard always produces
 	local iconFrame = card:FindFirstChild("Icon")
 	if not iconFrame then
 		warn("[PremiumShop] Card has no Icon frame -- cannot create ViewportFrame")
 		return nil
 	end
 
-	-- Clear placeholder content inside Icon (emoji text, "?" label, ImageLabel)
 	for _, child in ipairs(iconFrame:GetChildren()) do
 		if child:IsA("TextLabel") or child:IsA("ImageLabel") then
 			child:Destroy()
 		end
 	end
 
-	-- Create ViewportFrame that fills the Icon area
 	local vpFrame = Instance.new("ViewportFrame")
 	vpFrame.Name = "ModelPreview"
 	vpFrame.Size = UDim2.fromScale(1, 1)
@@ -186,6 +197,13 @@ local function ensureViewportInCard(card: Frame, bgColor: Color3?): ViewportFram
 	return vpFrame
 end
 
+local function checkGamepassOwned(gamepassId: number): boolean
+	local ok, owns = pcall(function()
+		return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, gamepassId)
+	end)
+	return ok and owns == true
+end
+
 local function populateCards(filterType: string)
 	clearCards()
 
@@ -199,7 +217,20 @@ local function populateCards(filterType: string)
 	for _, item in ipairs(UIConfig.MockPremiumItems) do
 		if item.type == filterType then
 			order += 1
-			local actionText = string.format("%d ROBUX", item.robux)
+
+			local isGamepass = item.gamepassId and item.gamepassId > 0
+			local isProduct  = item.productId and item.productId > 0
+			local isOwned = isGamepass and checkGamepassOwned(item.gamepassId) or false
+
+			local actionText
+			local actionColor
+			if isOwned then
+				actionText = "OWNED"
+				actionColor = C.DisabledBtn
+			else
+				actionText = string.format("%d ROBUX", item.robux)
+				actionColor = C.RobuxButton
+			end
 
 			local catEntry = ItemCatalog.Get("Premium", item.id)
 			if not catEntry and not _warnedMissing[item.id] then
@@ -207,7 +238,6 @@ local function populateCards(filterType: string)
 				warn(string.format("[ShopPanel] No ItemCatalog.Premium entry for '%s' -- using placeholder", item.id))
 			end
 
-			-- Determine explicit image from catalog (preferred over 3D rendering)
 			local catalogImage: string
 			if filterType == "Currency" then
 				catalogImage = _fateCoinImage
@@ -218,9 +248,6 @@ local function populateCards(filterType: string)
 			local modelPath = catEntry and catEntry.modelPath or nil
 			local catalogIconText = catEntry and catEntry.iconText or nil
 
-			-- If an explicit image exists, use it directly. Only fall back to
-			-- ThumbnailRenderer when there is NO image (static screenshots
-			-- already include VFX baked in — no need for 3D rendering).
 			local hasExplicitImage = (catalogImage ~= "")
 			local wantsThumbnail = (not hasExplicitImage) and modelPath
 				and (filterType == "ExclusivePet" or filterType == "ExclusiveCrown")
@@ -235,16 +262,23 @@ local function populateCards(filterType: string)
 				modelPath = modelPath,
 				tag = item.tag,
 				actionText = actionText,
-				actionColor = C.RobuxButton,
+				actionColor = actionColor,
 				onAction = function()
-					print(string.format("[ShopPanel] Premium purchase: %s (%d ROBUX)", item.name, item.robux))
+					if isOwned then return end
+
+					if isGamepass then
+						MarketplaceService:PromptGamePassPurchase(LocalPlayer, item.gamepassId)
+					elseif isProduct then
+						MarketplaceService:PromptProductPurchase(LocalPlayer, item.productId)
+					else
+						print(string.format("[ShopPanel] No purchase ID for: %s", item.name))
+					end
 				end,
 			}
 
 			local card = Components.CreateItemCard(contentFrame, cardData)
 			card.LayoutOrder = order
 
-			-- Only use ThumbnailRenderer as fallback when no explicit image exists
 			if wantsThumbnail then
 				local vpFrame = ensureViewportInCard(card, item.iconColor)
 				if vpFrame then
@@ -272,7 +306,7 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "💎 PREMIUM SHOP", C.HeaderShop, "Shop")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "\xF0\x9F\x92\x8E PREMIUM SHOP", C.HeaderShop, "Shop")
 	contentFrame = content
 
 	closeBtn.MouseButton1Click:Connect(function()
@@ -292,6 +326,16 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		if setActiveTab then
 			setActiveTab(idx)
 		end
+		if CATEGORIES[idx].filter == "Bundle" then
+			clearCards()
+			if _BundlePanel and _BundlePanel.PopulateInto then
+				_BundlePanel.PopulateInto(contentFrame)
+			end
+			return
+		end
+		if _BundlePanel and _BundlePanel.ClearContent then
+			_BundlePanel.ClearContent()
+		end
 		populateCards(CATEGORIES[idx].filter)
 	end)
 	tabBar.AnchorPoint = Vector2.new(0.5, 0)
@@ -301,9 +345,24 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	content.Position = UDim2.new(0, 12, 0, S.PanelHeaderHeight + S.TabHeight + 18)
 	content.Size = UDim2.new(1, -24, 1, -(S.PanelHeaderHeight + S.TabHeight + 28))
 
+	_setActiveTab = setActiveTab
+
 	Components.AddGridLayout(contentFrame)
 	setActiveTab(1)
 	populateCards(CATEGORIES[1].filter)
+end
+
+function ShopPanel.ActivateBundleTab(bundleId: string?)
+	local BUNDLE_TAB = 4
+	activeTab = BUNDLE_TAB
+	if _setActiveTab then _setActiveTab(BUNDLE_TAB) end
+	clearCards()
+	if _BundlePanel and _BundlePanel.PopulateInto then
+		_BundlePanel.PopulateInto(contentFrame)
+	end
+	if bundleId and _BundlePanel and _BundlePanel.SelectBundle then
+		_BundlePanel.SelectBundle(bundleId)
+	end
 end
 
 function ShopPanel.Show()
@@ -325,6 +384,30 @@ function ShopPanel.Hide()
 	end)
 	if closeCallback then closeCallback() end
 end
+
+-- Refresh cards after a gamepass purchase completes
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(_player, _gamepassId, wasPurchased)
+	if wasPurchased and visible then
+		task.wait(0.5)
+		local verifyRF = ReplicatedStorage:FindFirstChild("Remotes")
+			and ReplicatedStorage.Remotes:FindFirstChild("VerifyGamepassPurchase")
+		if verifyRF then
+			pcall(function() verifyRF:InvokeServer(_gamepassId) end)
+		end
+		if activeTab and CATEGORIES[activeTab] and CATEGORIES[activeTab].filter ~= "Bundle" then
+			populateCards(CATEGORIES[activeTab].filter)
+		end
+	end
+end)
+
+MarketplaceService.PromptProductPurchaseFinished:Connect(function(_userId, _productId, wasPurchased)
+	if wasPurchased and visible then
+		task.wait(1)
+		if activeTab and CATEGORIES[activeTab] and CATEGORIES[activeTab].filter == "Currency" then
+			populateCards("Currency")
+		end
+	end
+end)
 
 function ShopPanel.IsVisible(): boolean
 	return visible

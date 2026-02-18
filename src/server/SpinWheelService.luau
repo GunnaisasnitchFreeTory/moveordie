@@ -99,9 +99,54 @@ local function getInventoryService()
 end
 
 local SPIN_DURATION_SECONDS = 11
+local CROWN_DUPLICATE_COINS = 100
+local CROWN_MAX_REROLL = 5
 
 local playerCache: { [number]: { lastFreeSpinTime: number, purchasedSpins: number } } = {}
 local spinInProgress: { [number]: boolean } = {}
+
+-- Build pool of Findable crowns from ItemCatalog at module load time.
+-- Rebuilt lazily on first use so ItemCatalog is definitely ready.
+local _findableCrownPool: { { id: string, name: string, rarity: string, image: string? } }? = nil
+
+local function getFindableCrownPool()
+	if _findableCrownPool then return _findableCrownPool end
+	_findableCrownPool = {}
+	if ItemCatalog and ItemCatalog.Crowns then
+		for id, entry in pairs(ItemCatalog.Crowns) do
+			if entry.source == "Findable" and entry.modelPath and entry.modelPath ~= "" then
+				table.insert(_findableCrownPool, {
+					id    = id,
+					name  = entry.name or id,
+					rarity = entry.rarity or "Common",
+					image = entry.image,
+				})
+			end
+		end
+	end
+	log(string.format("Findable crown pool: %d crowns", #_findableCrownPool))
+	return _findableCrownPool
+end
+
+local function pickRandomFindableCrown(player: Player): (string, string, string, boolean)
+	local pool = getFindableCrownPool()
+	if #pool == 0 then
+		return "crown_sparkle", "Sparkle Crown", "Common", false
+	end
+
+	local IS = getInventoryService()
+
+	for _ = 1, CROWN_MAX_REROLL do
+		local pick = pool[math.random(1, #pool)]
+		if not IS or not IS.OwnsItem(player, "Crowns", pick.id) then
+			return pick.id, pick.name, pick.rarity, false
+		end
+	end
+
+	local pick = pool[math.random(1, #pool)]
+	local isDuplicate = IS and IS.OwnsItem(player, "Crowns", pick.id) or false
+	return pick.id, pick.name, pick.rarity, isDuplicate
+end
 local pendingSpin: {
 	[number]: {
 		spinId: string,
@@ -319,12 +364,23 @@ function SpinWheelService.RequestSpin(player: Player)
 	local coinsToAward = segment.amount or 0
 	local catalogId = segment.catalogId
 	local rarity = segment.rarity or "Common"
+	local isDuplicate = false
 
 	if rewardType == "Pet" and catalogId then
 		local petInfo = ItemCatalog.GetPet(catalogId)
 		if petInfo then
 			rewardName = petInfo.name .. " (" .. petInfo.rarity .. ")"
 		end
+	elseif rewardType == "Crown" then
+		local crownId, crownName, crownRarity, crownIsDup = pickRandomFindableCrown(player)
+		catalogId = crownId
+		rewardName = crownName
+		rarity = crownRarity
+		isDuplicate = crownIsDup
+		if isDuplicate then
+			coinsToAward = CROWN_DUPLICATE_COINS
+		end
+		log(string.format("Crown roll for %s: %s (%s) dup=%s", player.Name, crownName, crownId, tostring(isDuplicate)))
 	end
 
 	local spinId = HttpService:GenerateGUID(false)
@@ -338,6 +394,7 @@ function SpinWheelService.RequestSpin(player: Player)
 		rewardType = rewardType,
 		coinsAwarded = coinsToAward,
 		catalogId = catalogId,
+		isDuplicate = isDuplicate,
 		createdAt = createdAt,
 		grantAtTime = grantAtTime,
 	}
@@ -362,12 +419,23 @@ function SpinWheelService.RequestSpin(player: Player)
 			grantPet(livePlayer, pending.catalogId)
 			log(string.format("GRANTED spinId=%s Pet %s to %s", spinId, pending.catalogId, livePlayer.Name))
 		elseif pending.rewardType == "Crown" and pending.catalogId then
-			-- Grant crown via InventoryService (same pattern as pets)
-			local IS = getInventoryService()
-			if IS and type(IS.GrantItem) == "function" then
-				IS.GrantItem(livePlayer, "Crowns", pending.catalogId)
+			if pending.isDuplicate then
+				local ES = getEconomyService()
+				if ES and type(ES.AwardCoins) == "function" then
+					ES.AwardCoins(livePlayer, pending.coinsAwarded, "SpinWheelCrownDuplicate:" .. pending.catalogId)
+				else
+					local cur = livePlayer:GetAttribute("Coins") or 0
+					livePlayer:SetAttribute("Coins", cur + pending.coinsAwarded)
+				end
+				log(string.format("GRANTED spinId=%s Crown %s DUPLICATE to %s → +%d coins",
+					spinId, pending.catalogId, livePlayer.Name, pending.coinsAwarded))
+			else
+				local IS = getInventoryService()
+				if IS and type(IS.GrantItem) == "function" then
+					IS.GrantItem(livePlayer, "Crowns", pending.catalogId)
+				end
+				log(string.format("GRANTED spinId=%s Crown %s to %s", spinId, pending.catalogId, livePlayer.Name))
 			end
-			log(string.format("GRANTED spinId=%s Crown %s to %s", spinId, pending.catalogId, livePlayer.Name))
 		else
 			-- Coins reward
 			local ES = getEconomyService()
@@ -392,6 +460,7 @@ function SpinWheelService.RequestSpin(player: Player)
 		coinsAwarded = coinsToAward,
 		catalogId = catalogId,
 		rarity = rarity,
+		isDuplicate = isDuplicate,
 		wheelImage = segment.wheelImage or "",
 		spinId = spinId,
 	}

@@ -19,19 +19,19 @@ local START_HOUR    = 9           -- start at mid-morning
 local SPEED         = 24 / CYCLE_SECONDS  -- ClockTime hours per real second
 
 -- Day (noon) lighting values — very bright and vibrant
-local DAY_AMBIENT         = Color3.fromRGB(175, 160, 140)   -- bright warm daylight
-local DAY_OUTDOOR_AMBIENT = Color3.fromRGB(210, 190, 165)   -- strong outdoor fill
-local DAY_BRIGHTNESS      = 3.5
+local DAY_AMBIENT         = Color3.fromRGB(200, 185, 165)   -- bright warm daylight
+local DAY_OUTDOOR_AMBIENT = Color3.fromRGB(230, 210, 185)   -- strong outdoor fill
+local DAY_BRIGHTNESS      = 4.0
 
 -- Night (midnight) lighting values — bright and colorful, never gloomy
-local NIGHT_AMBIENT         = Color3.fromRGB(125, 130, 180) -- bright lavender tint
-local NIGHT_OUTDOOR_AMBIENT = Color3.fromRGB(140, 148, 195)
-local NIGHT_BRIGHTNESS      = 2.6
+local NIGHT_AMBIENT         = Color3.fromRGB(150, 155, 210) -- bright lavender tint
+local NIGHT_OUTDOOR_AMBIENT = Color3.fromRGB(165, 172, 220)
+local NIGHT_BRIGHTNESS      = 3.2
 
 -- Sunrise/sunset accent colors (blended in at golden hours)
-local GOLDEN_AMBIENT         = Color3.fromRGB(195, 140, 75) -- vivid warm orange
-local GOLDEN_OUTDOOR_AMBIENT = Color3.fromRGB(225, 170, 95)
-local GOLDEN_BRIGHTNESS      = 3.0
+local GOLDEN_AMBIENT         = Color3.fromRGB(220, 160, 90) -- vivid warm orange
+local GOLDEN_OUTDOOR_AMBIENT = Color3.fromRGB(245, 190, 110)
+local GOLDEN_BRIGHTNESS      = 3.5
 
 -- ═══════════════════════════════════════════════════════════════════
 -- HELPERS

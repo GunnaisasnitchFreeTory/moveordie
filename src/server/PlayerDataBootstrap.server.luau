@@ -202,6 +202,14 @@ local function onPlayerAdded(player: Player)
 				end
 			end
 		end
+		if ItemCatalog.IconImages then
+			for iconId, _ in pairs(ItemCatalog.IconImages) do
+				if not InventoryService.OwnsItem(player, "IconImages", iconId) then
+					InventoryService.GrantItem(player, "IconImages", iconId)
+					granted += 1
+				end
+			end
+		end
 		-- Also ensure enough coins for testing crate purchases
 		if (data.Coins or 0) < 50000 then
 			data.Coins = 50000

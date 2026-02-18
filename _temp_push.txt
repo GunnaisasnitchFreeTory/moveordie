@@ -5,10 +5,10 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 
--- ═══════════════════════════════════════════
+-- -------------------------------------------
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
 if not Shared then
-	warn("[SpinWheelScript] ReplicatedStorage.Shared not found after 60s — disabled")
+	warn("[SpinWheelScript] ReplicatedStorage.Shared not found after 60s � disabled")
 	return
 end
 local CDPModule = Shared:WaitForChild("ClientDepsProvider", 60)
@@ -28,11 +28,11 @@ local ItemCatalog = Deps.ItemCatalog
 local SpinWheelConfig = Deps.SpinWheelConfig
 
 if not SpinWheelConfig then
-	warn("[SpinWheelScript] SpinWheelConfig not available — spin wheel disabled")
+	warn("[SpinWheelScript] SpinWheelConfig not available � spin wheel disabled")
 	return
 end
 
--- Shared reward popup (in PlayerScripts — safe from SharedSanity cleanup)
+-- Shared reward popup (in PlayerScripts � safe from SharedSanity cleanup)
 local RewardPopup = nil
 pcall(function()
 	local playerScripts = Players.LocalPlayer:WaitForChild("PlayerScripts", 5)
@@ -42,7 +42,7 @@ pcall(function()
 	if mod then RewardPopup = require(mod) end
 end)
 if not RewardPopup then
-	warn("[SpinWheelScript] RewardPopup not found in PlayerScripts — popup will fallback to text")
+	warn("[SpinWheelScript] RewardPopup not found in PlayerScripts � popup will fallback to text")
 end
 
 local player = Players.LocalPlayer
@@ -144,7 +144,7 @@ local RequestSpinRF = Remotes and Remotes:WaitForChild("SpinWheel_RequestSpin", 
 local GetDataRF     = Remotes and Remotes:WaitForChild("SpinWheel_GetData", 10) or nil
 local BuySpinsRF    = Remotes and Remotes:WaitForChild("SpinWheel_BuySpins", 10) or nil
 
--- (stopAngles removed — target angle computed from segment geometry in doSpin)
+-- (stopAngles removed � target angle computed from segment geometry in doSpin)
 
 local isSpinning = false
 local debounce = false
@@ -160,12 +160,12 @@ local rotationVelocity = 0
 local idleTween = nil
 local isAnimating = false
 
--- ═══════════════════════════════════════════
--- WHEEL SEGMENT ICONS — Radial SliceContainer layout
+-- -------------------------------------------
+-- WHEEL SEGMENT ICONS � Radial SliceContainer layout
 -- Uses per-wedge containers for clean rotation + positioning
--- Images: explicit wheelImage per segment — no ItemCatalog / ThumbnailRenderer lookups
+-- Images: explicit wheelImage per segment � no ItemCatalog / ThumbnailRenderer lookups
 -- No ThumbnailRenderer, no ItemCatalog lookups, no per-slice hacks
--- ═══════════════════════════════════════════
+-- -------------------------------------------
 do
 	-- 1) Clean up old Rewards children (template ImageLabels + rotation scripts)
 	local rewardsFrame = spinHandler:FindFirstChild("Rewards")
@@ -276,7 +276,7 @@ do
 			stroke.Thickness = 1.5
 			stroke.Transparency = 0.2
 			stroke.Parent = fallback
-			warn("[SpinWheel] Missing wheelImage for segment " .. i .. " (" .. seg.name .. ") — add wheelImage to SpinWheelConfig")
+			warn("[SpinWheel] Missing wheelImage for segment " .. i .. " (" .. seg.name .. ") � add wheelImage to SpinWheelConfig")
 		end
 
 		-- Coin amount text (e.g. "+500") placed just below the icon
@@ -306,11 +306,11 @@ do
 		print("[SpinWheel] Seg " .. i .. " (" .. seg.name .. ") -> " .. status)
 	end
 
-	print("[SpinWheel] Wheel icons rebuilt — radial layout (" .. numSegments .. " segments)")
+	print("[SpinWheel] Wheel icons rebuilt � radial layout (" .. numSegments .. " segments)")
 end
 
 local freeSpinReady = false
-local nextFreeSpinAt = 0        -- absolute unix timestamp (from server) — 0 = free spin available
+local nextFreeSpinAt = 0        -- absolute unix timestamp (from server) � 0 = free spin available
 local nextFreeSpinCountdown = 0 -- derived seconds remaining (display only)
 local purchasedSpinCount = 0
 local buyPanelSpinsLabel: TextLabel = nil
@@ -367,7 +367,7 @@ local function refreshSpinStatus()
 		end
 		buyPanelTimerLabel.Visible = true
 		buyPanelTimerLabel.TextTransparency = 0
-		print(string.format("[SpinWheel] refreshSpinStatus → Timer.Text=%s  Visible=%s  ZIndex=%d",
+		print(string.format("[SpinWheel] refreshSpinStatus ? Timer.Text=%s  Visible=%s  ZIndex=%d",
 			buyPanelTimerLabel.Text, tostring(buyPanelTimerLabel.Visible), buyPanelTimerLabel.ZIndex))
 	else
 		warn("[SpinWheel] refreshSpinStatus: buyPanelTimerLabel is NIL!")
@@ -558,7 +558,7 @@ do
 	coinsHdr.Parent = panel
 	local coinBtnY = 122
 	for i, pkg in ipairs(SpinWheelConfig.SpinPrices) do
-		local label = pkg.label .. "  —  " .. tostring(pkg.coins) .. " F"
+		local label = pkg.label .. "  �  " .. tostring(pkg.coins) .. " F"
 		makeBuyBtn(coinBtnY, label, Color3.fromRGB(40, 140, 60), function()
 			if not BuySpinsRF then showBuyError("Not connected"); return end
 			local ok, result = pcall(function() return BuySpinsRF:InvokeServer(i) end)
@@ -594,7 +594,7 @@ do
 	robuxHdr.Parent = panel
 	local robuxBtnY = sep2Y + 30
 	for i, pkg in ipairs(SpinWheelConfig.SpinPrices) do
-		local label = pkg.label .. "  —  " .. tostring(pkg.robux) .. " ROBUX"
+		local label = pkg.label .. "  �  " .. tostring(pkg.robux) .. " ROBUX"
 		makeBuyBtn(robuxBtnY, label, Color3.fromRGB(30, 100, 180), function()
 			local productId = pkg.productId
 			if not productId or productId == 0 then showBuyError("Product not configured"); return end
@@ -612,7 +612,7 @@ task.spawn(function()
 		if _firstTick then
 			_firstTick = false
 			if not buyPanelTimerLabel then
-				warn("[SpinWheel] buyPanelTimerLabel is NIL in timer loop — timer won't display!")
+				warn("[SpinWheel] buyPanelTimerLabel is NIL in timer loop � timer won't display!")
 			else
 				print(string.format("[SpinWheel] Timer loop started. freeReady=%s remaining=%d Visible=%s ZIndex=%d Text=%s",
 					tostring(freeSpinReady), nextFreeSpinCountdown,
@@ -977,9 +977,9 @@ local function spinToTarget(targetAngle)
 	return tween
 end
 
--- ═══════════════════════════════════════════
+-- -------------------------------------------
 -- WHEEL-ONLY ICON MAP (for reward reveal)
--- ═══════════════════════════════════════════
+-- -------------------------------------------
 local WHEEL_ICONS = {
 	pet_dog       = "rbxassetid://81462451441223",
 	pet_noob      = "rbxassetid://81702684827965",
@@ -988,11 +988,11 @@ local WHEEL_ICONS = {
 	Coins         = "rbxassetid://130002796842909",
 }
 
--- ═══════════════════════════════════════════
+-- -------------------------------------------
 -- SPIN (Request + Animate + Reveal via RewardPopup)
 -- Server is authoritative: returns winningIndex, client animates to that exact wedge.
--- Target angle computed from segment geometry — no hardcoded stopAngles.
--- ═══════════════════════════════════════════
+-- Target angle computed from segment geometry � no hardcoded stopAngles.
+-- -------------------------------------------
 local function doSpin()
 	if debounce then return end
 	debounce = true
@@ -1012,14 +1012,14 @@ local function doSpin()
 		return
 	end
 
-	-- ── Compute target angle from segment geometry (server-authoritative index) ──
+	-- -- Compute target angle from segment geometry (server-authoritative index) --
 	local segIndex = result.segmentIndex or 1
 	local numSegs = #SpinWheelConfig.Segments
 	local sliceAngle = 360 / numSegs
 	local midAngle = (segIndex - 1 + 0.5) * sliceAngle
-	local targetAngle = -midAngle + math.random(-8, 8) -- jitter stays inside 45° wedge
+	local targetAngle = -midAngle + math.random(-8, 8) -- jitter stays inside 45� wedge
 
-	-- ── Validation: confirm server segment matches config ──
+	-- -- Validation: confirm server segment matches config --
 	local configSeg = SpinWheelConfig.Segments[segIndex]
 	if configSeg then
 		print(string.format("[SpinWheel] Spin: idx=%d config=%s server=%s angle=%.1f",
@@ -1031,7 +1031,7 @@ local function doSpin()
 	task.spawn(function() task.wait(spinDuration - 1.8); animateWheelEnd() end)
 	tween.Completed:Wait()
 
-	-- ── Show reward popup via RewardPopup (PlayerScripts — safe from cleanup) ──
+	-- -- Show reward popup via RewardPopup (PlayerScripts � safe from cleanup) --
 	local popupIcon = ""
 	if result.rewardType == "Coins" then
 		popupIcon = WHEEL_ICONS.Coins

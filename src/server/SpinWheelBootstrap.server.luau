@@ -98,133 +98,299 @@ game:BindToClose(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════
--- ROBUX DEVELOPER PRODUCT RECEIPT HANDLING
---
--- Idempotent: tracks PurchaseId in-memory to prevent double-granting.
--- Maps productId → SpinWheelConfig.SpinPrices entry → spins to grant.
+-- SHARED SERVICE REFERENCES (lazy-loaded)
 -- ═══════════════════════════════════════════════════════════════════
 
--- Build reverse lookup: productId → spins count
-local productIdToSpins: { [number]: number } = {}
-for _, pkg in ipairs(SpinWheelConfig.SpinPrices) do
-	if pkg.productId and pkg.productId > 0 then
-		productIdToSpins[pkg.productId] = pkg.spins
+local _InventoryService, _EconomyService, _CrateService, _ItemCatalog
+local _BundleCatalog
+
+local function getInventoryService()
+	if not _InventoryService then
+		_InventoryService = require(Server:WaitForChild("InventoryService", 5))
+	end
+	return _InventoryService
+end
+
+local function getEconomyService()
+	if not _EconomyService then
+		_EconomyService = require(Server:WaitForChild("EconomyService", 5))
+	end
+	return _EconomyService
+end
+
+local function getCrateService()
+	if not _CrateService then
+		_CrateService = require(Server:WaitForChild("CrateService", 5))
+	end
+	return _CrateService
+end
+
+local function getItemCatalog()
+	if not _ItemCatalog then
+		local SharedMod = ReplicatedStorage:FindFirstChild("Shared")
+		if SharedMod then
+			local mod = SharedMod:FindFirstChild("ItemCatalog")
+			if mod then _ItemCatalog = require(mod) end
+		end
+	end
+	return _ItemCatalog
+end
+
+local function getBundleCatalog()
+	if not _BundleCatalog then
+		local SharedMod = ReplicatedStorage:FindFirstChild("Shared")
+		if SharedMod then
+			local mod = SharedMod:FindFirstChild("BundleCatalog")
+			if mod then _BundleCatalog = require(mod) end
+		end
+	end
+	return _BundleCatalog
+end
+
+local function notifyClient(player: Player, reason: string, data: any?)
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	local invUpdate = remotes and remotes:FindFirstChild("InventoryUpdated")
+	if invUpdate then
+		invUpdate:FireClient(player, reason, data)
 	end
 end
 
--- In-memory receipt tracking (prevents double-granting if Roblox retries)
+-- ═══════════════════════════════════════════════════════════════════
+-- CENTRAL PRODUCT_REWARD_MAP (Developer Products → rewards)
+--
+-- All Developer Product IDs and their reward logic in one table.
+-- ProcessReceipt looks up productId here before falling back.
+-- ═══════════════════════════════════════════════════════════════════
+
+local PRODUCT_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
+	-- Spins (auto-populated from SpinWheelConfig below)
+
+	-- Fate Coins
+	[3539712298] = { type = "Coins", amount = 500,  label = "500 Fate Coins" },
+	[3539713007] = { type = "Coins", amount = 2000, label = "2,000 Fate Coins" },
+	[3539713203] = { type = "Coins", amount = 5000, label = "5,000 Fate Coins" },
+
+	-- Crate Bundles (6x each, uses CrateService.RollCrateFree)
+	[3539706736] = { type = "Crate", crateId = "crate_crown",      quantity = 6, label = "6 Crown Crates" },
+	[3539709447] = { type = "Crate", crateId = "crate_pet_common", quantity = 6, label = "6 Common Pet Crates" },
+	[3539710049] = { type = "Crate", crateId = "crate_pet_rare",   quantity = 6, label = "6 Rare Pet Crates" },
+	[3539710471] = { type = "Crate", crateId = "crate_pet_epic",   quantity = 6, label = "6 Epic Pet Crates" },
+}
+
+-- Auto-populate spin products from config
+for _, pkg in ipairs(SpinWheelConfig.SpinPrices) do
+	if pkg.productId and pkg.productId > 0 then
+		PRODUCT_REWARD_MAP[pkg.productId] = { type = "Spins", amount = pkg.spins, label = pkg.label }
+	end
+end
+
+print(string.format("[PurchaseSystem] PRODUCT_REWARD_MAP built: %d entries", (function()
+	local n = 0; for _ in pairs(PRODUCT_REWARD_MAP) do n += 1 end; return n
+end)()))
+
+-- ═══════════════════════════════════════════════════════════════════
+-- GAMEPASS_REWARD_MAP (Gamepasses → permanent unlocks)
+--
+-- Maps gamepassId → item category + id for granting via InventoryService.
+-- Bundles map to a list of items to grant.
+-- ═══════════════════════════════════════════════════════════════════
+
+local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
+	-- Exclusive Pets
+	[1716313058] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_falcon",        label = "Dark Falcon" },
+	[1717772785] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_winged_dragon",  label = "Dark Winged Dragon" },
+	[1716864887] = { type = "Pet",   category = "Pets",   itemId = "pet_pink_butterfly",      label = "Pink Butterfly" },
+	[1718832641] = { type = "Pet",   category = "Pets",   itemId = "pet_glitched_dragon",     label = "Glitched Dragon" },
+
+	-- Exclusive Crowns
+	[1717864767] = { type = "Crown", category = "Crowns", itemId = "crown_ultra",             label = "Ultra Crown" },
+	[1717992747] = { type = "Crown", category = "Crowns", itemId = "crown_electric",          label = "Electric Crown" },
+	[1716918881] = { type = "Crown", category = "Crowns", itemId = "crown_rengoku",           label = "Rengoku Crown" },
+	[1717662811] = { type = "Crown", category = "Crowns", itemId = "crown_infinite_void",     label = "Infinite Void Crown" },
+
+	-- Brainrot Bundle (grants multiple items)
+	[1714491142] = {
+		type = "Bundle",
+		bundleId = "brainrot_bundle",
+		label = "Brainrot Bundle",
+		items = {
+			{ category = "Pets",       itemId = "pet_67" },
+			{ category = "Pets",       itemId = "pet_dragon_cannelloni" },
+			{ category = "Pets",       itemId = "pet_frigo_camelo" },
+			{ category = "Pets",       itemId = "pet_tigroligre_frutonni" },
+			{ category = "Pets",       itemId = "pet_trenostruzzo_turbo_3000" },
+			{ category = "Crowns",     itemId = "crown_67" },
+			{ category = "IconImages", itemId = "icon_67_kid" },
+			{ category = "IconImages", itemId = "icon_steve_harrington" },
+		},
+	},
+}
+
+-- ═══════════════════════════════════════════════════════════════════
+-- GAMEPASS GRANT LOGIC
+-- ═══════════════════════════════════════════════════════════════════
+
+local function grantGamepassReward(player: Player, gamepassId: number): boolean
+	local reward = GAMEPASS_REWARD_MAP[gamepassId]
+	if not reward then return false end
+
+	local inv = getInventoryService()
+	if not inv then
+		warn("[PurchaseSystem] InventoryService unavailable for gamepass grant")
+		return false
+	end
+
+	if reward.type == "Bundle" then
+		for _, item in ipairs(reward.items) do
+			if not inv.OwnsItem(player, item.category, item.itemId) then
+				inv.GrantItem(player, item.category, item.itemId)
+			end
+		end
+	else
+		if not inv.OwnsItem(player, reward.category, reward.itemId) then
+			inv.GrantItem(player, reward.category, reward.itemId)
+		end
+	end
+
+	notifyClient(player, "GamepassPurchase", { gamepassId = gamepassId })
+	print(string.format("[PurchaseSystem] Gamepass %d (%s) granted to %s", gamepassId, reward.label, player.Name))
+	return true
+end
+
+-- Check all gamepasses on player join and grant any owned items
+local function checkGamepassOwnership(player: Player)
+	for gamepassId, reward in pairs(GAMEPASS_REWARD_MAP) do
+		local ok, owns = pcall(function()
+			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
+		end)
+		if ok and owns then
+			grantGamepassReward(player, gamepassId)
+		elseif not ok then
+			warn(string.format("[PurchaseSystem] UserOwnsGamePassAsync failed for %s gamepass %d: %s",
+				player.Name, gamepassId, tostring(owns)))
+		end
+	end
+end
+
+-- Create remote for client to request gamepass verification after purchase
+local gamepassVerifyRF = remotesFolder:FindFirstChild("VerifyGamepassPurchase")
+if not gamepassVerifyRF then
+	gamepassVerifyRF = Instance.new("RemoteFunction")
+	gamepassVerifyRF.Name = "VerifyGamepassPurchase"
+	gamepassVerifyRF.Parent = remotesFolder
+end
+
+gamepassVerifyRF.OnServerInvoke = function(player: Player, gamepassId: number)
+	if type(gamepassId) ~= "number" then return { success = false } end
+
+	local reward = GAMEPASS_REWARD_MAP[gamepassId]
+	if not reward then return { success = false, reason = "Unknown gamepass" } end
+
+	local ok, owns = pcall(function()
+		return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
+	end)
+
+	if ok and owns then
+		grantGamepassReward(player, gamepassId)
+		return { success = true }
+	end
+
+	return { success = false, reason = "Not owned" }
+end
+
+-- Hook into PlayerAdded for gamepass ownership checks
+Players.PlayerAdded:Connect(function(player)
+	task.defer(function()
+		checkGamepassOwnership(player)
+	end)
+end)
+
+-- Check existing players (Studio)
+for _, player in ipairs(Players:GetPlayers()) do
+	task.spawn(function()
+		checkGamepassOwnership(player)
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- DEVELOPER PRODUCT RECEIPT HANDLING (ProcessReceipt)
+--
+-- Idempotent: tracks PurchaseId in-memory to prevent double-granting.
+-- Uses PRODUCT_REWARD_MAP for centralized reward lookup.
+-- ═══════════════════════════════════════════════════════════════════
+
 local processedReceipts: { [string]: boolean } = {}
 
 MarketplaceService.ProcessReceipt = function(receiptInfo)
 	local receiptKey = tostring(receiptInfo.PurchaseId)
 
-	-- Already processed this exact receipt → acknowledge
 	if processedReceipts[receiptKey] then
-		print("[SpinWheelBootstrap] Receipt already processed:", receiptKey)
+		print("[PurchaseSystem] Receipt already processed:", receiptKey)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 
 	local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
 	if not player then
-		-- Player left; Roblox will retry later when they rejoin
-		print("[SpinWheelBootstrap] Player not in game for receipt:", receiptKey, "userId:", receiptInfo.PlayerId)
+		print("[PurchaseSystem] Player not in game for receipt:", receiptKey, "userId:", receiptInfo.PlayerId)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
 	local productId = receiptInfo.ProductId
-	local spinsToGrant = productIdToSpins[productId]
+	local reward = PRODUCT_REWARD_MAP[productId]
 
-	if spinsToGrant then
-		-- This is a spin wheel product
-		local success = SpinWheelService.GrantRobuxSpins(player, spinsToGrant)
-		if success then
-			processedReceipts[receiptKey] = true
-			print(string.format(
-				"[SpinWheelBootstrap] Robux purchase granted: productId=%d, spins=+%d, newPurchased=?, player=%s, receipt=%s",
-				productId, spinsToGrant, player.Name, receiptKey
-			))
-			return Enum.ProductPurchaseDecision.PurchaseGranted
-		else
-			warn("[SpinWheelBootstrap] GrantRobuxSpins failed for", player.Name, "receipt:", receiptKey)
-			return Enum.ProductPurchaseDecision.NotProcessedYet
-		end
+	if not reward then
+		warn("[PurchaseSystem] Unknown productId:", productId, "receipt:", receiptKey)
+		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
-	-- ── SHOP PRODUCT: Check if this is a premium shop item ──
-	-- Shop products are handled by granting the corresponding item
-	-- via InventoryService. Product IDs need to be configured in
-	-- ItemCatalog.Premium entries (add a `productId` field when you
-	-- create the Developer Products in Roblox).
-	local shopHandled = false
-	local okShop, errShop = pcall(function()
-		local SharedMod = ReplicatedStorage:FindFirstChild("Shared")
-		if not SharedMod then return end
-		local ItemCatalogMod = SharedMod:FindFirstChild("ItemCatalog")
-		if not ItemCatalogMod then return end
-		local ItemCatalog = require(ItemCatalogMod)
+	local granted = false
+	local ok, err = pcall(function()
+		if reward.type == "Spins" then
+			granted = SpinWheelService.GrantRobuxSpins(player, reward.amount)
 
-		-- Check Premium items for matching productId
-		for premiumId, item in pairs(ItemCatalog.Premium) do
-			if item.productId and item.productId == productId then
-				-- Determine what to grant
-				if item.type == "ExclusivePet" then
-					local InvService = require(Server:WaitForChild("InventoryService", 5))
-					if InvService then
-						InvService.GrantItem(player, "Pets", premiumId)
-						shopHandled = true
-					end
-				elseif item.type == "ExclusiveCrown" then
-					local InvService = require(Server:WaitForChild("InventoryService", 5))
-					if InvService then
-						InvService.GrantItem(player, "Crowns", premiumId)
-						shopHandled = true
-					end
-				elseif item.type == "Currency" then
-					-- Coin packs
-					local coinAmount = tonumber(string.match(item.name, "(%d[%d,]+)")) or 0
-					coinAmount = tonumber(string.gsub(tostring(coinAmount), ",", "")) or 0
-					if coinAmount > 0 then
-						local EconService = require(Server:WaitForChild("EconomyService", 5))
-						if EconService then
-							EconService.AwardCoins(player, coinAmount, "ShopPurchase:" .. premiumId)
-							shopHandled = true
-						end
-					end
-				elseif item.type == "Bundle" then
-					-- Bundles: grant contents (customize per bundle)
-					shopHandled = true -- Mark as handled to acknowledge receipt
-				end
+		elseif reward.type == "Coins" then
+			local econ = getEconomyService()
+			if econ then
+				econ.AwardCoins(player, reward.amount, "DevProduct:" .. tostring(productId))
+				notifyClient(player, "ShopPurchase", { "coins" })
+				granted = true
+			end
 
-				if shopHandled then
-					-- Notify client of inventory change
-					local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-					local invUpdate = remotes and remotes:FindFirstChild("InventoryUpdated")
-					if invUpdate then
-						invUpdate:FireClient(player, "ShopPurchase", { premiumId })
-					end
-					print(string.format("[SpinWheelBootstrap] Shop purchase granted: %s to %s, receipt=%s",
-						premiumId, player.Name, receiptKey))
+		elseif reward.type == "Crate" then
+			local crate = getCrateService()
+			if crate then
+				local result = crate.RollCrateFree(player, reward.crateId, reward.quantity)
+				if result and result.success then
+					notifyClient(player, "CratePurchase", {
+						crateId = reward.crateId,
+						quantity = reward.quantity,
+						results = result.results,
+					})
+					granted = true
+				else
+					warn("[PurchaseSystem] RollCrateFree failed:", result and result.error or "unknown")
 				end
-				break
 			end
 		end
 	end)
 
-	if not okShop then
-		warn("[SpinWheelBootstrap] Shop receipt check error:", errShop)
+	if not ok then
+		warn("[PurchaseSystem] Error granting reward for productId", productId, ":", err)
+		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
-	if shopHandled then
+	if granted then
 		processedReceipts[receiptKey] = true
+		print(string.format("[PurchaseSystem] Granted: %s (%s) to %s, receipt=%s",
+			reward.label, reward.type, player.Name, receiptKey))
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 
-	-- Not a recognized product — acknowledge to avoid infinite retries.
-	warn("[SpinWheelBootstrap] Unknown productId in receipt:", productId, "receipt:", receiptKey)
+	warn("[PurchaseSystem] Failed to grant reward for productId:", productId, "receipt:", receiptKey)
 	return Enum.ProductPurchaseDecision.NotProcessedYet
 end
 
-print("[SpinWheelBootstrap] ProcessReceipt handler installed for Robux spin + shop purchases")
+print("[PurchaseSystem] ProcessReceipt + Gamepass handlers installed")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- SPIN THE WHEEL: CLEANUP + PROXIMITY PROMPT SETUP

@@ -17,9 +17,10 @@
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+
+local AnimUtil = require(script.Parent:WaitForChild("UI"):WaitForChild("AnimUtil"))
 
 local BrainrotPickupController = {}
 
@@ -157,13 +158,7 @@ local function dismissPopup()
 	local popup = _activePopup
 	_activePopup = nil
 
-	local sc = popup:FindFirstChildOfClass("UIScale")
-	if sc then
-		TweenService:Create(sc, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0 }):Play()
-	end
-	task.delay(0.25, function()
-		if popup and popup.Parent then popup:Destroy() end
-	end)
+	AnimUtil.PopupClose(popup, popup)
 end
 
 local function showPickupPopup(data)
@@ -216,10 +211,7 @@ local function showPickupPopup(data)
 	stroke.Transparency = 0.2
 	stroke.Parent = card
 
-	local sc = Instance.new("UIScale")
-	sc.Scale = 0.6
-	sc.Parent = card
-	TweenService:Create(sc, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	AnimUtil.PopupOpen(card)
 
 	local title = Instance.new("TextLabel")
 	title.Name = "Title"

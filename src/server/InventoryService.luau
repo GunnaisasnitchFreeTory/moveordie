@@ -80,9 +80,10 @@ local function reportStats(userId: number, username: string, updates: { [string]
 end
 
 local CATEGORY_MAP = {
-	Pets   = { ownedKey = "OwnedPets",   equippedKey = "EquippedPet",   catalogCategory = "Pets"   },
-	Crowns = { ownedKey = "OwnedCrowns", equippedKey = "EquippedCrown", catalogCategory = "Crowns" },
-	Icons  = { ownedKey = "OwnedIcons",  equippedKey = "EquippedIcon",  catalogCategory = "Icons"  },
+	Pets       = { ownedKey = "OwnedPets",       equippedKey = "EquippedPet",       catalogCategory = "Pets"       },
+	Crowns     = { ownedKey = "OwnedCrowns",     equippedKey = "EquippedCrown",     catalogCategory = "Crowns"     },
+	Icons      = { ownedKey = "OwnedIcons",      equippedKey = "EquippedIcon",      catalogCategory = "Icons"      },
+	IconImages = { ownedKey = "OwnedIconImages", equippedKey = "EquippedIconImage", catalogCategory = "IconImages" },
 }
 
 function InventoryService.Init()

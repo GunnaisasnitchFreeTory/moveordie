@@ -1,15 +1,18 @@
 --[[
 	IconImagesPanel
-	Icon/image collection grid (coming soon — all locked placeholders).
+	Icon Image collection / equip grid — shows all icon images (owned + locked).
 
-	* Grid layout matching other panels
-	* Placeholder cards with "Coming Soon" styling
-	* Same glossy/vibrant theme
-	* Icon data from ItemCatalog (single source of truth)
+	Icon Images are 3D follower companions (like pets) that follow the player
+	and can be equipped simultaneously with a pet (on the opposite side).
+
+	Equip category: "IconImages"
+	Attribute: "EquippedIconImage"
+	Catalog: ItemCatalog.IconImages
 
 	Used by: UIController (sidebar "Icons" button)
 ]]
 
+local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
@@ -45,12 +48,17 @@ local Components = require(Client:WaitForChild("Components"))
 local C = UIConfig.Colors
 local S = UIConfig.Sizes
 
+local player = Players.LocalPlayer
+
 local canvas: CanvasGroup = nil
 local uiScale: UIScale = nil
 local overlay: Frame = nil
 local contentFrame: ScrollingFrame = nil
 local visible = false
 local closeCallback: (() -> ())? = nil
+
+local equippedId: string? = nil
+local _equipDebounce = false
 
 local IconImagesPanel = {}
 
@@ -62,47 +70,113 @@ local RARITY_COLORS = {
 	Legendary = C.Legendary,
 }
 
-local FALLBACK_ICONS = {
-	{ name = "???", iconText = "🖼", rarity = "Common" },
-	{ name = "???", iconText = "🖼", rarity = "Uncommon" },
-	{ name = "???", iconText = "🖼", rarity = "Rare" },
-	{ name = "???", iconText = "🖼", rarity = "Epic" },
-	{ name = "???", iconText = "🖼", rarity = "Legendary" },
-	{ name = "???", iconText = "🖼", rarity = "Common" },
-	{ name = "???", iconText = "🖼", rarity = "Uncommon" },
-	{ name = "???", iconText = "🖼", rarity = "Rare" },
-	{ name = "???", iconText = "🖼", rarity = "Epic" },
-	{ name = "???", iconText = "🖼", rarity = "Legendary" },
-	{ name = "???", iconText = "🖼", rarity = "Common" },
-	{ name = "???", iconText = "🖼", rarity = "Rare" },
-}
+local function getOwnedIconImageSet(): { [string]: boolean }
+	local json = player:GetAttribute("OwnedIconImages") or "[]"
+	local success, list = pcall(game.HttpService.JSONDecode, game.HttpService, json)
+	if not success or type(list) ~= "table" then return {} end
+	local set = {}
+	for _, id in ipairs(list) do
+		set[id] = true
+	end
+	return set
+end
 
-local function populateGrid()
+local function getEquipRemote(): RemoteEvent?
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then return nil end
+	return remotes:FindFirstChild("EquipItem")
+end
+
+local function getUnequipRemote(): RemoteEvent?
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then return nil end
+	return remotes:FindFirstChild("UnequipItem")
+end
+
+local function clearContent()
 	for _, child in ipairs(contentFrame:GetChildren()) do
 		if child:IsA("Frame") then child:Destroy() end
 	end
+end
 
-	local icons = {}
-	if ItemCatalog.GetAllIconsSorted then
-		icons = ItemCatalog.GetAllIconsSorted()
-	end
-	if #icons == 0 then
-		icons = FALLBACK_ICONS
+local function refresh()
+	clearContent()
+
+	local ownedSet = getOwnedIconImageSet()
+	if not _equipDebounce then
+		equippedId = player:GetAttribute("EquippedIconImage") or nil
+		if equippedId == "" then equippedId = nil end
 	end
 
-	for i, item in ipairs(icons) do
-		local rarityStr = item.rarity or "Common"
-		local iconColor = RARITY_COLORS[rarityStr] or C.Common
+	local allIcons = {}
+	if ItemCatalog.GetAllIconImagesSorted then
+		allIcons = ItemCatalog.GetAllIconImagesSorted()
+	end
+
+	for i, item in ipairs(allIcons) do
+		local isOwned = ownedSet[item.id] == true
+		local isEquipped = isOwned and (item.id == equippedId)
+		local actionText = nil
+		local actionColor = nil
+		local subLabel = nil
+
+		if isOwned then
+			if isEquipped then
+				actionText = "EQUIPPED"
+				actionColor = C.Equipped or Color3.fromRGB(80, 200, 80)
+				subLabel = "Tap to unequip"
+			else
+				actionText = "EQUIP"
+				actionColor = C.Equip or Color3.fromRGB(80, 160, 255)
+			end
+		else
+			subLabel = "Locked"
+		end
+
+		local rarityStr = item.rarity or "Legendary"
+		local iconColor = RARITY_COLORS[rarityStr] or C.Legendary
 		local catalogImage = ItemCatalog.GetImage(item)
 
-		Components.CreateItemCard(contentFrame, {
+		Components.CreateViewportItemCard(contentFrame, {
 			name = item.name or "???",
 			rarity = rarityStr,
 			iconColor = iconColor,
-			iconText = item.iconText or "🖼",
+			iconText = item.iconText or "\240\159\150\188",
 			image = catalogImage,
-			locked = true,
-			owned = false,
+			modelPath = item.modelPath,
+			locked = not isOwned,
+			equipped = isEquipped,
+			owned = isOwned,
+			subLabel = subLabel,
+			actionText = actionText,
+			actionColor = actionColor,
+			onAction = function()
+				if not isOwned then return end
+				if _equipDebounce then return end
+				_equipDebounce = true
+
+				if isEquipped then
+					local unequipRemote = getUnequipRemote()
+					if unequipRemote then
+						unequipRemote:FireServer("IconImages")
+					end
+					equippedId = nil
+				else
+					local equipRemote = getEquipRemote()
+					if equipRemote then
+						equipRemote:FireServer("IconImages", item.id)
+					end
+					equippedId = item.id
+				end
+
+				SoundUtil.Equip()
+				refresh()
+
+				task.delay(0.5, function()
+					_equipDebounce = false
+					if visible then refresh() end
+				end)
+			end,
 		}).LayoutOrder = i
 	end
 end
@@ -115,7 +189,7 @@ function IconImagesPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "🖼 ICON IMAGES", C.HeaderIcons, "Icons")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "\240\159\150\188 ICON IMAGES", C.HeaderIcons, "Icons")
 	contentFrame = content
 
 	Components.AddGridLayout(content)
@@ -125,13 +199,21 @@ function IconImagesPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		IconImagesPanel.Hide()
 	end)
 
-	populateGrid()
+	refresh()
+
+	player:GetAttributeChangedSignal("EquippedIconImage"):Connect(function()
+		if visible and not _equipDebounce then refresh() end
+	end)
+	player:GetAttributeChangedSignal("OwnedIconImages"):Connect(function()
+		if visible then refresh() end
+	end)
 end
 
 function IconImagesPanel.Show()
 	if visible then return end
 	visible = true
 	overlay.Visible = true
+	refresh()
 	SoundUtil.Open()
 	AnimUtil.OpenPanel(canvas, uiScale)
 end

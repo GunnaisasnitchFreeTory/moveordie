@@ -682,19 +682,52 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 
 	if data.locked then
 		iconFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		local q = Instance.new("TextLabel")
-		q.Size = UDim2.fromScale(1, 1)
-		q.BackgroundTransparency = 1
-		q.Font = Enum.Font.GothamBold
-		q.Text = "?"
-		q.TextColor3 = Color3.fromRGB(55, 58, 80)
-		q.TextSize = 42
-		q.Parent = iconFrame
-		local qs = Instance.new("UIStroke")
-		qs.Color = Color3.fromRGB(0, 0, 0)
-		qs.Thickness = 1.5
-		qs.Transparency = 0.35
-		qs.Parent = q
+
+		if data.image and data.image ~= "" then
+			-- Locked item with a static asset-id image: show it dimmed
+			local img = Instance.new("ImageLabel")
+			img.Name = "ItemImage"
+			img.Size = UDim2.fromScale(1, 1)
+			img.Position = UDim2.fromScale(0, 0)
+			img.BackgroundTransparency = 1
+			img.Image = data.image
+			img.ScaleType = Enum.ScaleType.Crop
+			img.ImageColor3 = Color3.fromRGB(80, 80, 80)
+			img.ImageTransparency = 0.15
+			img.ZIndex = 2
+			img.Parent = iconFrame
+			local imgCorner = Instance.new("UICorner")
+			imgCorner.CornerRadius = UDim.new(0, 6)
+			imgCorner.Parent = img
+
+			-- Lock icon overlay
+			local lockLabel = Instance.new("TextLabel")
+			lockLabel.Name = "LockIcon"
+			lockLabel.Size = UDim2.fromOffset(32, 32)
+			lockLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+			lockLabel.Position = UDim2.fromScale(0.5, 0.5)
+			lockLabel.BackgroundTransparency = 1
+			lockLabel.Font = Enum.Font.GothamBold
+			lockLabel.Text = "\240\159\148\146"
+			lockLabel.TextColor3 = Color3.fromRGB(160, 165, 190)
+			lockLabel.TextSize = 28
+			lockLabel.ZIndex = 3
+			lockLabel.Parent = iconFrame
+		else
+			local q = Instance.new("TextLabel")
+			q.Size = UDim2.fromScale(1, 1)
+			q.BackgroundTransparency = 1
+			q.Font = Enum.Font.GothamBold
+			q.Text = "?"
+			q.TextColor3 = Color3.fromRGB(55, 58, 80)
+			q.TextSize = 42
+			q.Parent = iconFrame
+			local qs = Instance.new("UIStroke")
+			qs.Color = Color3.fromRGB(0, 0, 0)
+			qs.Thickness = 1.5
+			qs.Transparency = 0.35
+			qs.Parent = q
+		end
 	else
 		-- Fully black icon area — rarity only shown via card border stroke
 		iconFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -789,15 +822,18 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	nameLabel.Position = UDim2.new(0, 5, 0, 100)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.TextColor3 = data.locked and Color3.fromRGB(55, 58, 80) or C.TextWhite
+	-- Show real name/rarity for locked items that have a static image
+	local hasStaticImage = data.image and data.image ~= ""
+	local hideName = data.locked and not hasStaticImage
+	nameLabel.TextColor3 = hideName and Color3.fromRGB(55, 58, 80) or (data.locked and Color3.fromRGB(130, 135, 155) or C.TextWhite)
 	nameLabel.TextSize = 12
 	nameLabel.TextScaled = false
 	nameLabel.TextWrapped = false
 	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
-	nameLabel.Text = data.locked and "???" or data.name
+	nameLabel.Text = hideName and "???" or data.name
 	nameLabel.Parent = card
-	if not data.locked then
+	if not hideName then
 		local ns = Instance.new("UIStroke")
 		ns.Color = Color3.fromRGB(0, 0, 0)
 		ns.Thickness = 1.5
@@ -811,10 +847,10 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	rarLabel.Position = UDim2.new(0, 5, 0, 119)
 	rarLabel.BackgroundTransparency = 1
 	rarLabel.Font = Enum.Font.GothamBold
-	rarLabel.TextColor3 = data.locked and Color3.fromRGB(42, 45, 65) or rarityColor
+	rarLabel.TextColor3 = hideName and Color3.fromRGB(42, 45, 65) or (data.locked and Color3.fromRGB(100, 105, 125) or rarityColor)
 	rarLabel.TextSize = 12
 	rarLabel.TextXAlignment = Enum.TextXAlignment.Center
-	rarLabel.Text = data.locked and "" or rarityInfo.label
+	rarLabel.Text = hideName and "" or rarityInfo.label
 	rarLabel.Parent = card
 
 	if data.actionText and not data.locked then
@@ -823,7 +859,7 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		btn.Name = "ActionBtn"
 		btn.AnchorPoint = Vector2.new(0.5, 1)
 		btn.Position = UDim2.new(0.5, 0, 1, -8)
-		btn.Size = UDim2.new(1, -16, 0, 34)
+		btn.Size = UDim2.new(1, -16, 0, 42)
 		btn.BackgroundColor3 = btnColor
 		btn.Font = Enum.Font.GothamBold
 		btn.TextColor3 = C.TextWhite
@@ -1025,7 +1061,7 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 
 		local pBtn = Instance.new("TextButton")
 		pBtn.Name = "Price" .. pi
-		pBtn.Size = UDim2.fromOffset(105, 50)
+		pBtn.Size = UDim2.fromOffset(110, 54)
 		pBtn.BackgroundColor3 = btnColor
 		pBtn.Font = Enum.Font.GothamBold
 		pBtn.TextColor3 = C.TextWhite
@@ -1383,6 +1419,7 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 	-- eliminates the need for VFX proxy hacks.
 	local hasExplicitImage = data.image and data.image ~= ""
 	if hasExplicitImage then
+		print(string.format("[Components] STATIC image for %s: %s", data.name or data.id or "?", tostring(data.image)))
 		return Components.CreateItemCard(parent, data)
 	end
 
@@ -1590,7 +1627,7 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 		btn.Name = "ActionBtn"
 		btn.AnchorPoint = Vector2.new(0.5, 1)
 		btn.Position = UDim2.new(0.5, 0, 1, -8)
-		btn.Size = UDim2.new(1, -16, 0, 34)
+		btn.Size = UDim2.new(1, -16, 0, 42)
 		btn.BackgroundColor3 = btnColor
 		btn.Font = Enum.Font.GothamBold
 		btn.TextColor3 = C.TextWhite
@@ -1674,6 +1711,44 @@ function Components.CreateViewportThumbnail(parent: Instance, modelPath: string,
 	end
 
 	return vpFrame
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- RESPONSIVE SCALE  (viewport-adaptive UIScale on ScreenGuis)
+-- Width-only baseline so PC (1920) stays at scale 1.0.
+-- Mobile touch devices get a slight boost so tap targets remain large.
+-- ═══════════════════════════════════════════════════════════════════
+
+local Camera = workspace.CurrentCamera
+local UserInputService = game:GetService("UserInputService")
+local _scaleDebugPrinted = false
+
+function Components.SetupResponsiveScale(screenGui: ScreenGui)
+	local uiScale = Instance.new("UIScale")
+	uiScale.Name = "ResponsiveScale"
+	uiScale.Parent = screenGui
+
+	local isTouch = UserInputService.TouchEnabled
+
+	local function update()
+		local vp = Camera.ViewportSize
+		local scale = math.clamp(vp.X / 1920, 0.95, 1.15)
+
+		if isTouch then
+			scale = math.clamp(scale * 1.12, 1.00, 1.25)
+		end
+
+		uiScale.Scale = scale
+
+		if not _scaleDebugPrinted then
+			_scaleDebugPrinted = true
+			print(string.format("[UI SCALE DEBUG] viewport=%dx%d scale=%.3f touch=%s",
+				math.floor(vp.X), math.floor(vp.Y), scale, tostring(isTouch)))
+		end
+	end
+
+	update()
+	Camera:GetPropertyChangedSignal("ViewportSize"):Connect(update)
 end
 
 return Components

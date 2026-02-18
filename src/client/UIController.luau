@@ -121,6 +121,8 @@ local MATCH_LOCKED_PANELS = { Crowns = true, Pets = true, Daily = true, Stats = 
 
 local UIController = {}
 
+UIController.CloseAllPanels = nil -- set after closeCurrentPanel is defined
+
 local function log(...)
 	if UIConfig.DebugLog then
 		print("[UIController]", ...)
@@ -155,6 +157,8 @@ local function closeCurrentPanel()
 
 	HUDPanel.SetBannerOverrideHidden(false)
 end
+
+UIController.CloseAllPanels = closeCurrentPanel
 
 local function openPanel(name: string)
 	if matchLocked and MATCH_LOCKED_PANELS[name] then
@@ -247,6 +251,11 @@ function UIController.Init()
 	if initialized then return end
 	initialized = true
 
+	pcall(function()
+		local StarterGui = game:GetService("StarterGui")
+		StarterGui.ScreenOrientation = Enum.ScreenOrientation.LandscapeSensor
+	end)
+
 	SoundUtil.Init()
 
 	local hudOk, hudGui = pcall(Components.CreateScreenGui, "HUDGui", 1)
@@ -255,6 +264,9 @@ function UIController.Init()
 		return
 	end
 	local panelGui = Components.CreateScreenGui("PanelGui", 10)
+
+	Components.SetupResponsiveScale(hudGui)
+	Components.SetupResponsiveScale(panelGui)
 
 	local function onPanelClosed()
 		currentPanel = nil
@@ -622,6 +634,95 @@ function UIController.Init()
 		end)
 	end)
 
+	-- ═══════════════════════════════════════════════════════════════════
+	-- WALK-UP: Brainrot Bundle Display
+	-- ═══════════════════════════════════════════════════════════════════
+	task.spawn(function()
+		local BUNDLE_OPEN_DISTANCE = 15
+		local BUNDLE_CLOSE_DISTANCE = 30
+		local bundleOpenTime = 0
+
+		local brainrotFolder = nil
+		for attempt = 1, 12 do
+			brainrotFolder = workspace:FindFirstChild("Brainrot Game Bun")
+			if brainrotFolder then break end
+			task.wait(2)
+		end
+
+		if not brainrotFolder then
+			log("[BrainrotBundle] Folder not found -- walk-up disabled")
+			return
+		end
+
+		local posterPart = nil
+		for attempt = 1, 6 do
+			local posterModel = brainrotFolder:FindFirstChild("Poster")
+			if posterModel then
+				posterPart = posterModel:FindFirstChildWhichIsA("BasePart")
+			end
+			if posterPart then break end
+			task.wait(2)
+		end
+		if not posterPart then
+			posterPart = brainrotFolder:FindFirstChildWhichIsA("BasePart", true)
+		end
+
+		if not posterPart then
+			log("[BrainrotBundle] No poster BasePart -- walk-up disabled")
+			return
+		end
+		log("[BrainrotBundle] Poster part found: " .. posterPart:GetFullName() .. " at " .. tostring(posterPart.Position))
+
+		local prompt: ProximityPrompt? = nil
+		for _, desc in ipairs(brainrotFolder:GetDescendants()) do
+			if desc:IsA("ProximityPrompt") then
+				prompt = desc
+				break
+			end
+		end
+
+		if not prompt then
+			prompt = Instance.new("ProximityPrompt")
+			prompt.Name = "BrainrotBundlePrompt"
+			prompt.ActionText = "Buy"
+			prompt.ObjectText = "Brainrot Bundle"
+			prompt.KeyboardKeyCode = Enum.KeyCode.E
+			prompt.HoldDuration = 0
+			prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE
+			prompt.RequiresLineOfSight = false
+			prompt.Parent = posterPart
+
+			log("[BrainrotBundle] Prompt parented directly to poster at " .. tostring(posterPart.Position))
+		end
+
+		prompt.Triggered:Connect(function(playerWhoTriggered)
+			if playerWhoTriggered ~= LocalPlayer then return end
+			bundleOpenTime = tick()
+			openPanel("Shop")
+			if ShopPanel.ActivateBundleTab then
+				ShopPanel.ActivateBundleTab("brainrot_bundle")
+			end
+		end)
+
+		local GRACE_PERIOD = 3
+		RunService.Heartbeat:Connect(function()
+			if currentPanel ~= "Shop" then return end
+			if (tick() - bundleOpenTime) < GRACE_PERIOD then return end
+			if bundleOpenTime == 0 then return end
+
+			local char = LocalPlayer.Character
+			if not char then return end
+			local root = char:FindFirstChild("HumanoidRootPart")
+			if not root then return end
+
+			local dist = (root.Position - posterPart.Position).Magnitude
+			if dist > BUNDLE_CLOSE_DISTANCE then
+				bundleOpenTime = 0
+				closeCurrentPanel()
+			end
+		end)
+	end)
+
 	if #_failedPanels > 0 then
 		warn("[UIController] DEGRADED: panels failed: " .. table.concat(_failedPanels, ", "))
 	else
@@ -637,6 +738,7 @@ function UIController.Init()
 	task.spawn(function()
 		local ContentProvider = game:GetService("ContentProvider")
 		local PRELOAD_ASSETS = {
+			UIConfig.StudTexture.AssetId,
 			"rbxassetid://71121412594159",
 			"rbxassetid://125632977173073",
 			"rbxassetid://74957106349993",

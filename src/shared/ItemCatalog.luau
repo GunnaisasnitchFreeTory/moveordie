@@ -472,6 +472,78 @@ ItemCatalog.Pets = {
 		obtainable = false,
 		source    = "brainrot_mode",
 	},
+
+	-- ── Brainrot Bundle Pets (5) — obtainable via Brainrot Bundle ──
+	pet_67 = {
+		id        = "pet_67",
+		name      = "67",
+		modelName = "67",
+		type      = "Pet",
+		rarity    = "Legendary",
+		modelPath = "Pets/Legendary/Brainrot Bundle/67",
+		image     = "rbxassetid://107878258401993",
+		iconText  = "\240\159\148\165",
+		iconColor = Color3.fromRGB(255, 58, 58),
+		stats     = { CoinMultiplier = 1.15, WalkSpeed = 3 },
+		obtainable = false,
+		source    = "brainrot_bundle",
+	},
+	pet_dragon_cannelloni = {
+		id        = "pet_dragon_cannelloni",
+		name      = "Dragon Cannelloni",
+		modelName = "Dragon Cannelloni",
+		type      = "Pet",
+		rarity    = "Legendary",
+		modelPath = "Pets/Legendary/Brainrot Bundle/Dragon Cannelloni",
+		image     = "rbxassetid://135119007461808",
+		iconText  = "\240\159\144\137",
+		iconColor = Color3.fromRGB(255, 128, 28),
+		stats     = { CoinMultiplier = 1.15, WalkSpeed = 3 },
+		obtainable = false,
+		source    = "brainrot_bundle",
+	},
+	pet_frigo_camelo = {
+		id        = "pet_frigo_camelo",
+		name      = "Frigo Camelo",
+		modelName = "Frigo Camelo",
+		type      = "Pet",
+		rarity    = "Legendary",
+		modelPath = "Pets/Legendary/Brainrot Bundle/Frigo Camelo",
+		image     = "rbxassetid://129072141105154",
+		iconText  = "\240\159\144\171",
+		iconColor = Color3.fromRGB(78, 198, 255),
+		stats     = { CoinMultiplier = 1.15, WalkSpeed = 3 },
+		obtainable = false,
+		source    = "brainrot_bundle",
+	},
+	pet_tigroligre_frutonni = {
+		id        = "pet_tigroligre_frutonni",
+		name      = "Tigroligre Frutonni",
+		modelName = "Tigroligre Frutonni",
+		type      = "Pet",
+		rarity    = "Legendary",
+		modelPath = "Pets/Legendary/Brainrot Bundle/Tigroligre Frutonni",
+		image     = "rbxassetid://78097046812121",
+		iconText  = "\240\159\144\133",
+		iconColor = Color3.fromRGB(255, 168, 48),
+		stats     = { CoinMultiplier = 1.15, WalkSpeed = 3 },
+		obtainable = false,
+		source    = "brainrot_bundle",
+	},
+	pet_trenostruzzo_turbo_3000 = {
+		id        = "pet_trenostruzzo_turbo_3000",
+		name      = "Trenostruzzo Turbo 3000",
+		modelName = "Trenostruzzo Turbo 3000",
+		type      = "Pet",
+		rarity    = "Legendary",
+		modelPath = "Pets/Legendary/Brainrot Bundle/Trenostruzzo_Turbo_3000",
+		image     = "rbxassetid://137345287825523",
+		iconText  = "\240\159\154\130",
+		iconColor = Color3.fromRGB(48, 218, 128),
+		stats     = { CoinMultiplier = 1.15, WalkSpeed = 3 },
+		obtainable = false,
+		source    = "brainrot_bundle",
+	},
 }
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -842,6 +914,22 @@ ItemCatalog.Crowns = {
 		stats     = { CoinMultiplier = 1.15, WalkSpeed = 2, JumpPower = 4 },
 		shopOnly  = true,
 	},
+
+	-- ── Brainrot Bundle Crown ──
+	crown_67 = {
+		id        = "crown_67",
+		name      = "67 Crown",
+		modelName = "67 Crown",
+		type      = "Crown",
+		rarity    = "Legendary",
+		source    = "brainrot_bundle",
+		modelPath = "Crowns/Exclusive/Brainrot Bundle/67 Crown",
+		image     = "rbxassetid://131101922850312",
+		iconText  = "\240\159\145\145",
+		iconColor = Color3.fromRGB(255, 58, 58),
+		stats     = { CoinMultiplier = 1.15, WalkSpeed = 2 },
+		obtainable = false,
+	},
 }
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -940,26 +1028,26 @@ ItemCatalog.Currency = {
 -- ═══════════════════════════════════════════════════════════════════
 
 ItemCatalog.Premium = {
-	-- Coin packs
-	coins_500  = { id = "coins_500",  name = "500 Fate Coins",   type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 218, 48),  robux = 99,  tag = "POPULAR" },
-	coins_2000 = { id = "coins_2000", name = "2,000 Fate Coins", type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 198, 28),  robux = 299, tag = "BEST VALUE" },
-	coins_5000 = { id = "coins_5000", name = "5,000 Fate Coins", type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 178, 18),  robux = 599, tag = "" },
+	-- Coin packs (Developer Products)
+	coins_500  = { id = "coins_500",  name = "500 Fate Coins",   type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 218, 48),  robux = 100, productId = 3539712298, tag = "POPULAR" },
+	coins_2000 = { id = "coins_2000", name = "2,000 Fate Coins", type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 198, 28),  robux = 300, productId = 3539713007, tag = "BEST VALUE" },
+	coins_5000 = { id = "coins_5000", name = "5,000 Fate Coins", type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 178, 18),  robux = 600, productId = 3539713203, tag = "" },
 
-	-- Legendary Pets (Shop-only)
-	pet_glitched_dragon    = { id = "pet_glitched_dragon",    name = "Glitched Dragon",    type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://105972642773708", iconText = "\240\159\144\137", iconColor = Color3.fromRGB(58, 255, 128),  thumbnailBgColor = Color3.fromRGB(12, 32, 22), robux = 249, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Glitched Dragon" },
-	pet_dark_winged_dragon = { id = "pet_dark_winged_dragon", name = "D.W.D", type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://72226943594824",  iconText = "\240\159\144\178", iconColor = Color3.fromRGB(48, 28, 68),    thumbnailBgColor = Color3.fromRGB(15, 10, 25), robux = 299, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Dark Winged Dragon" },
-	pet_pink_butterfly     = { id = "pet_pink_butterfly",     name = "Pink Butterfly",     type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://82261955048760",  iconText = "\240\159\166\139", iconColor = Color3.fromRGB(255, 148, 208), thumbnailBgColor = Color3.fromRGB(35, 15, 28), robux = 199, tag = "NEW",       modelPath = "ItemModels.Pets.Legendary.Pink Butterfly" },
-	pet_dark_falcon        = { id = "pet_dark_falcon",        name = "Dark Falcon",        type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://138265402881761", iconText = "\240\159\166\133", iconColor = Color3.fromRGB(38, 28, 48),    thumbnailBgColor = Color3.fromRGB(12, 10, 18), robux = 249, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Dark Falcon" },
+	-- Legendary Pets (Gamepasses)
+	pet_glitched_dragon    = { id = "pet_glitched_dragon",    name = "Glitched Dragon",    type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://105972642773708", iconText = "\240\159\144\137", iconColor = Color3.fromRGB(58, 255, 128),  thumbnailBgColor = Color3.fromRGB(12, 32, 22), robux = 250, gamepassId = 1718832641, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Glitched Dragon" },
+	pet_dark_winged_dragon = { id = "pet_dark_winged_dragon", name = "D.W.D", type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://72226943594824",  iconText = "\240\159\144\178", iconColor = Color3.fromRGB(48, 28, 68),    thumbnailBgColor = Color3.fromRGB(15, 10, 25), robux = 300, gamepassId = 1717772785, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Dark Winged Dragon" },
+	pet_pink_butterfly     = { id = "pet_pink_butterfly",     name = "Pink Butterfly",     type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://82261955048760",  iconText = "\240\159\166\139", iconColor = Color3.fromRGB(255, 148, 208), thumbnailBgColor = Color3.fromRGB(35, 15, 28), robux = 200, gamepassId = 1716864887, tag = "NEW",       modelPath = "ItemModels.Pets.Legendary.Pink Butterfly" },
+	pet_dark_falcon        = { id = "pet_dark_falcon",        name = "Dark Falcon",        type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://138265402881761", iconText = "\240\159\166\133", iconColor = Color3.fromRGB(38, 28, 48),    thumbnailBgColor = Color3.fromRGB(12, 10, 18), robux = 250, gamepassId = 1716313058, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Dark Falcon" },
 
-	-- Exclusive Crowns (Shop-only)
-	crown_electric      = { id = "crown_electric",      name = "Electric Crown",      type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://76259359648400",  iconText = "\240\159\145\145", iconColor = Color3.fromRGB(48, 198, 255),  thumbnailBgColor = Color3.fromRGB(18, 25, 42), robux = 149, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Electric Crown" },
-	crown_infinite_void = { id = "crown_infinite_void", name = "Infinite Void Crown", type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://86806758712291",  iconText = "\240\159\145\145", iconColor = Color3.fromRGB(18, 8, 38),    thumbnailBgColor = Color3.fromRGB(8, 5, 18),   robux = 249, tag = "LIMITED",   modelPath = "ItemModels.Crowns.Exclusive.Infinite Void Crown" },
-	crown_rengoku       = { id = "crown_rengoku",       name = "Rengoku Crown",       type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://129928434935830", iconText = "\240\159\145\145", iconColor = Color3.fromRGB(255, 128, 28),  thumbnailBgColor = Color3.fromRGB(35, 18, 10), robux = 199, tag = "NEW",       modelPath = "ItemModels.Crowns.Exclusive.Rengoku Crown" },
-	crown_ultra         = { id = "crown_ultra",         name = "Ultra Crown",         type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://113224946425402", iconText = "\240\159\145\145", iconColor = Color3.fromRGB(218, 48, 255),  thumbnailBgColor = Color3.fromRGB(28, 15, 42), robux = 299, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Ultra Crown" },
+	-- Exclusive Crowns (Gamepasses)
+	crown_electric      = { id = "crown_electric",      name = "Electric Crown",      type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://76259359648400",  iconText = "\240\159\145\145", iconColor = Color3.fromRGB(48, 198, 255),  thumbnailBgColor = Color3.fromRGB(18, 25, 42), robux = 150, gamepassId = 1717992747, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Electric Crown" },
+	crown_infinite_void = { id = "crown_infinite_void", name = "Infinite Void Crown", type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://86806758712291",  iconText = "\240\159\145\145", iconColor = Color3.fromRGB(18, 8, 38),    thumbnailBgColor = Color3.fromRGB(8, 5, 18),   robux = 250, gamepassId = 1717662811, tag = "LIMITED",   modelPath = "ItemModels.Crowns.Exclusive.Infinite Void Crown" },
+	crown_rengoku       = { id = "crown_rengoku",       name = "Rengoku Crown",       type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://129928434935830", iconText = "\240\159\145\145", iconColor = Color3.fromRGB(255, 128, 28),  thumbnailBgColor = Color3.fromRGB(35, 18, 10), robux = 200, gamepassId = 1716918881, tag = "NEW",       modelPath = "ItemModels.Crowns.Exclusive.Rengoku Crown" },
+	crown_ultra         = { id = "crown_ultra",         name = "Ultra Crown",         type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://113224946425402", iconText = "\240\159\145\145", iconColor = Color3.fromRGB(218, 48, 255),  thumbnailBgColor = Color3.fromRGB(28, 15, 42), robux = 300, gamepassId = 1717864767, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Ultra Crown" },
 
 	-- Bundles
-	bundle_vip     = { id = "bundle_vip",     name = "VIP Bundle",  type = "Bundle", image = "", iconText = "\240\159\142\129", iconColor = Color3.fromRGB(255, 215, 78),  robux = 499, tag = "VIP",  rarity = "Legendary" },
-	bundle_starter = { id = "bundle_starter", name = "Starter Pack", type = "Bundle", image = "", iconText = "\240\159\142\129", iconColor = Color3.fromRGB(78, 208, 255),  robux = 99,  tag = "DEAL", rarity = "Rare" },
+	bundle_vip     = { id = "bundle_vip",     name = "VIP Bundle",  type = "Bundle", image = "", iconText = "\240\159\142\129", iconColor = Color3.fromRGB(255, 215, 78),  robux = 500, tag = "VIP",  rarity = "Legendary" },
+	bundle_starter = { id = "bundle_starter", name = "Starter Pack", type = "Bundle", image = "", iconText = "\240\159\142\129", iconColor = Color3.fromRGB(78, 208, 255),  robux = 100, tag = "DEAL", rarity = "Rare" },
 }
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -967,6 +1055,10 @@ ItemCatalog.Premium = {
 -- ═══════════════════════════════════════════════════════════════════
 
 ItemCatalog.Icons = {
+	-- Brainrot Bundle Icons (real images)
+	icon_67_kid            = { id = "icon_67_kid",            name = "67 Kid",            image = "rbxassetid://108813228966097", iconText = "\240\159\150\188", rarity = "Legendary", source = "brainrot_bundle" },
+	icon_steve_harrington  = { id = "icon_steve_harrington",  name = "Steve Harrington",  image = "rbxassetid://135833855438688", iconText = "\240\159\150\188", rarity = "Legendary", source = "brainrot_bundle" },
+	-- Placeholders
 	icon_placeholder_1  = { id = "icon_placeholder_1",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Common" },
 	icon_placeholder_2  = { id = "icon_placeholder_2",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Uncommon" },
 	icon_placeholder_3  = { id = "icon_placeholder_3",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Rare" },
@@ -982,6 +1074,7 @@ ItemCatalog.Icons = {
 }
 
 ItemCatalog._iconOrder = {
+	"icon_67_kid", "icon_steve_harrington",
 	"icon_placeholder_1", "icon_placeholder_2", "icon_placeholder_3",
 	"icon_placeholder_4", "icon_placeholder_5", "icon_placeholder_6",
 	"icon_placeholder_7", "icon_placeholder_8", "icon_placeholder_9",
@@ -989,17 +1082,59 @@ ItemCatalog._iconOrder = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════
+-- ICON IMAGES  (3D follower companions — equippable like pets)
+-- ═══════════════════════════════════════════════════════════════════
+
+ItemCatalog.IconImages = {
+	icon_67_kid = {
+		id        = "icon_67_kid",
+		name      = "67 Kid Icon Image",
+		modelName = "67 Kid Icon Image",
+		type      = "IconImage",
+		rarity    = "Legendary",
+		source    = "brainrot_bundle",
+		modelPath = "IconImages/Brainrot Bundle/67 Kid Icon Image",
+		image     = "rbxassetid://108813228966097",
+		iconText  = "\240\159\150\188",
+		iconColor = Color3.fromRGB(255, 58, 58),
+		stats     = {},
+		obtainable = false,
+	},
+	icon_steve_harrington = {
+		id        = "icon_steve_harrington",
+		name      = "Steve Harrington Icon Image",
+		modelName = "Steve Harrington Icon Image",
+		type      = "IconImage",
+		rarity    = "Legendary",
+		source    = "brainrot_bundle",
+		modelPath = "IconImages/Brainrot Bundle/Steve Harrington Icon Image",
+		image     = "rbxassetid://135833855438688",
+		iconText  = "\240\159\150\188",
+		iconColor = Color3.fromRGB(128, 78, 255),
+		stats     = {},
+		obtainable = false,
+	},
+}
+
+ItemCatalog._iconImageOrder = {
+	"icon_67_kid", "icon_steve_harrington",
+}
+
+-- ═══════════════════════════════════════════════════════════════════
 -- NAME -> ID MAPPING  (for SpinWheel compatibility)
 -- ═══════════════════════════════════════════════════════════════════
 
 ItemCatalog.NameToId = {}
--- Build automatically from Pets + Crowns
+-- Build automatically from Pets + Crowns + IconImages
 do
 	for id, pet in pairs(ItemCatalog.Pets) do
 		ItemCatalog.NameToId[pet.name] = { category = "Pets", id = id }
 	end
 	for id, crown in pairs(ItemCatalog.Crowns) do
 		ItemCatalog.NameToId[crown.name] = { category = "Crowns", id = id }
+	end
+	for id, iconImg in pairs(ItemCatalog.IconImages) do
+		ItemCatalog.NameToId[iconImg.name] = { category = "IconImages", id = id }
 	end
 end
 
@@ -1008,12 +1143,13 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 local TABLES = {
-	Pets     = ItemCatalog.Pets,
-	Crowns   = ItemCatalog.Crowns,
-	Premium  = ItemCatalog.Premium,
-	Crates   = ItemCatalog.Crates,
-	Icons    = ItemCatalog.Icons,
-	Currency = ItemCatalog.Currency,
+	Pets       = ItemCatalog.Pets,
+	Crowns     = ItemCatalog.Crowns,
+	Premium    = ItemCatalog.Premium,
+	Crates     = ItemCatalog.Crates,
+	Icons      = ItemCatalog.Icons,
+	IconImages = ItemCatalog.IconImages,
+	Currency   = ItemCatalog.Currency,
 }
 
 function ItemCatalog.Get(category: string, id: string)
@@ -1031,6 +1167,8 @@ end
 function ItemCatalog.GetItem(itemType: string, id: string)
 	if itemType == "Pet" then
 		return ItemCatalog.Pets[id]
+	elseif itemType == "IconImage" then
+		return ItemCatalog.IconImages[id]
 	end
 	return ItemCatalog.Get(itemType, id)
 end
@@ -1109,6 +1247,17 @@ function ItemCatalog.GetAllIconsSorted(): { any }
 	local list = {}
 	for _, iconId in ipairs(ItemCatalog._iconOrder) do
 		local entry = ItemCatalog.Icons[iconId]
+		if entry then
+			table.insert(list, entry)
+		end
+	end
+	return list
+end
+
+function ItemCatalog.GetAllIconImagesSorted(): { any }
+	local list = {}
+	for _, iconId in ipairs(ItemCatalog._iconImageOrder) do
+		local entry = ItemCatalog.IconImages[iconId]
 		if entry then
 			table.insert(list, entry)
 		end

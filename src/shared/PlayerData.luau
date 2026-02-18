@@ -5,9 +5,9 @@
 	Used by: PlayerDataService (server), client UI (via attributes)
 
 	VERSION HISTORY:
-	  1 — Initial: Coins, Owned/Equipped pets/crowns/icons, LifetimeWins
-	  2 — Added: LifetimeCoinsAchieved, WeeklyWins, WeeklyCoinsAchieved, WeeklyResetId
-	  3 — Added: LifetimeDeaths, TimePlayedSeconds
+	  1 -- Initial: Coins, Owned/Equipped pets/crowns/icons, LifetimeWins
+	  2 -- Added: LifetimeCoinsAchieved, WeeklyWins, WeeklyCoinsAchieved, WeeklyResetId
+	  3 -- Added: LifetimeDeaths, TimePlayedSeconds
 ]]
 
 local PlayerData = {}
@@ -27,6 +27,8 @@ PlayerData.Attributes = {
 	EquippedCrown         = "EquippedCrown",
 	OwnedIcons            = "OwnedIcons",
 	EquippedIcon          = "EquippedIcon",
+	OwnedIconImages       = "OwnedIconImages",
+	EquippedIconImage     = "EquippedIconImage",
 	LifetimeWins          = "LifetimeWins",
 	CoinMultiplier        = "CoinMultiplier",
 	LifetimeCoinsAchieved = "LifetimeCoinsAchieved",
@@ -54,6 +56,8 @@ function PlayerData.GetDefaults(): { [string]: any }
 		EquippedCrown         = nil,
 		OwnedIcons            = {},
 		EquippedIcon          = nil,
+		OwnedIconImages       = {},
+		EquippedIconImage     = nil,
 		LifetimeWins          = 0,
 		LifetimeCoinsAchieved = 0,
 		WeeklyWins            = 0,
@@ -81,6 +85,7 @@ function PlayerData.Validate(data: { [string]: any }): { [string]: any }
 	if type(data.OwnedPets) ~= "table" then data.OwnedPets = defaults.OwnedPets end
 	if type(data.OwnedCrowns) ~= "table" then data.OwnedCrowns = defaults.OwnedCrowns end
 	if type(data.OwnedIcons) ~= "table" then data.OwnedIcons = defaults.OwnedIcons end
+	if type(data.OwnedIconImages) ~= "table" then data.OwnedIconImages = defaults.OwnedIconImages end
 	if type(data.LifetimeWins) ~= "number" then data.LifetimeWins = 0 end
 	if type(data.LifetimeCoinsAchieved) ~= "number" then data.LifetimeCoinsAchieved = 0 end
 	if type(data.WeeklyWins) ~= "number" then data.WeeklyWins = 0 end
@@ -99,6 +104,9 @@ function PlayerData.Validate(data: { [string]: any }): { [string]: any }
 	end
 	if data.EquippedIcon ~= nil and type(data.EquippedIcon) ~= "string" then
 		data.EquippedIcon = nil
+	end
+	if data.EquippedIconImage ~= nil and type(data.EquippedIconImage) ~= "string" then
+		data.EquippedIconImage = nil
 	end
 
 	-- Weekly reset: if stored week doesn't match current week, zero weekly stats

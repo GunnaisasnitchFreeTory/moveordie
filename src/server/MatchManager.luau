@@ -29,6 +29,7 @@ local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
 local EconomyService = require(Server:WaitForChild("EconomyService"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 local BrainrotModeService = require(Server:WaitForChild("BrainrotModeService"))
+local RoundCoinService = require(Server:WaitForChild("RoundCoinService"))
 
 --[[ CONFIGURATION ]]
 local Config = {
@@ -434,23 +435,29 @@ local function runIntermission()
 
 	log(string.format("Intermission started (%ds)", Config.IntermissionSeconds))
 	
-	local lastWaitingCount = 0
+	local seenInWaiting: { [Player]: boolean } = {}
 	local voteStarted = false
 	
 	while tick() < phaseEndTime do
 		setEligibleToWaiting()
 		
-		-- Floor extension: if new player(s) enter Waiting with low remaining time, extend
+		-- Floor extension: only for genuinely NEW players entering Waiting
+		-- (AFK toggle does NOT count as a new player)
 		local waiting = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
-		local currentCount = #waiting
-		if currentCount > lastWaitingCount then
+		local hasNewPlayer = false
+		for _, p in ipairs(waiting) do
+			if not seenInWaiting[p] then
+				seenInWaiting[p] = true
+				hasNewPlayer = true
+			end
+		end
+		if hasNewPlayer then
 			local remaining = phaseEndTime - tick()
 			if remaining < Config.MinIntermissionFloor then
 				phaseEndTime = tick() + Config.MinIntermissionFloor
 				replicatePhaseEnd(Config.MinIntermissionFloor)
 				log(string.format("Extended intermission for new player(s) — %.0fs remaining now", Config.MinIntermissionFloor))
 			end
-			lastWaitingCount = currentCount
 		end
 
 		-- Start vote when <= VoteShowAtRemaining seconds left
@@ -759,6 +766,7 @@ function MatchManager.Init()
 	log("ModeVote remote created")
 
 	BrainrotModeService.Init()
+	RoundCoinService.Init()
 
 	MapManager.Init()
 	RoundManager.Init()

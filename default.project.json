@@ -37,7 +37,8 @@
 
     "StarterGui": {
       "$properties": {
-        "ResetPlayerGuiOnSpawn": false
+        "ResetPlayerGuiOnSpawn": false,
+        "ScreenOrientation": "LandscapeSensor"
       }
     },
 

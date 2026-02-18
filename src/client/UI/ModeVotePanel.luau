@@ -31,6 +31,8 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local AnimUtil = require(script.Parent:WaitForChild("AnimUtil"))
+
 local ModeVotePanel = {}
 
 local player = Players.LocalPlayer
@@ -118,10 +120,6 @@ local function createGui()
 	studTex.Parent = panelFrame
 	Instance.new("UICorner", studTex).CornerRadius = UDim.new(0, 16)
 
-	local uiScale = Instance.new("UIScale")
-	uiScale.Scale = 0.9
-	uiScale.Parent = panelFrame
-
 	local closeBtn = Instance.new("TextButton")
 	closeBtn.Name = "CloseBtn"
 	closeBtn.AnchorPoint = Vector2.new(1, 0)
@@ -147,10 +145,7 @@ local function createGui()
 
 	closeBtn.MouseButton1Click:Connect(function()
 		if panelFrame then
-			local sc = panelFrame:FindFirstChildOfClass("UIScale")
-			if sc then
-				TweenService:Create(sc, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.9 }):Play()
-			end
+			AnimUtil.PopupClose(panelFrame)
 		end
 		task.delay(0.25, function()
 			if panelFrame then panelFrame.Visible = false end
@@ -347,11 +342,7 @@ local function createGui()
 		if panelFrame and voteWindowOpen then
 			panelFrame.Visible = true
 			reopenBtn.Visible = false
-			local sc = panelFrame:FindFirstChildOfClass("UIScale")
-			if sc then
-				sc.Scale = 0.9
-				TweenService:Create(sc, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-			end
+			AnimUtil.PopupOpen(panelFrame)
 			print("[ModeVote] Reopened by player")
 		end
 	end)
@@ -396,11 +387,7 @@ local function showPanel()
 	if reopenBtn then reopenBtn.Visible = false end
 
 	if panelFrame then
-		local sc = panelFrame:FindFirstChildOfClass("UIScale")
-		if sc then
-			sc.Scale = 0.9
-			TweenService:Create(sc, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-		end
+		AnimUtil.PopupOpen(panelFrame)
 	end
 
 	print(string.format("[ModeVote] Showing UI displayOrder=%d enabled=%s visible=%s",
@@ -412,10 +399,7 @@ local function hidePanel()
 	if not gui then return end
 
 	if panelFrame then
-		local sc = panelFrame:FindFirstChildOfClass("UIScale")
-		if sc then
-			TweenService:Create(sc, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.9 }):Play()
-		end
+		AnimUtil.PopupClose(panelFrame)
 	end
 
 	task.delay(0.25, function()

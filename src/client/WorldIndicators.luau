@@ -34,6 +34,12 @@ local INDICATORS = {
 		icon         = "\xF0\x9F\x93\xA6",
 		extraPadding = 3,
 	},
+	{
+		targetName   = "JJK Game Bun",
+		text         = "COMING SOON",
+		icon         = "\xE2\x8F\xB3",
+		extraPadding = 4,
+	},
 }
 
 local BILLBOARD_SIZE      = UDim2.fromOffset(150, 34)

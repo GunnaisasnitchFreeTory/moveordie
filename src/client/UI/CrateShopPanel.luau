@@ -18,6 +18,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
 if not Shared then
@@ -422,7 +423,11 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 			SoundUtil.Click()
 
 			if isRobux then
-				print(string.format("[CrateShop] Robux purchase: %s — %s", crateData.name, price.label))
+				if price.productId and price.productId > 0 then
+					MarketplaceService:PromptProductPurchase(Players.LocalPlayer, price.productId)
+				else
+					print(string.format("[CrateShop] Robux purchase: %s — %s (no productId)", crateData.name, price.label))
+				end
 				return
 			end
 

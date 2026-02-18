@@ -28,7 +28,32 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 
+local Client = script.Parent
+local AnimUtil = require(Client:WaitForChild("AnimUtil"))
+
 local MatchResultsPanel = {}
+
+local _UIController = nil
+local function getUIController()
+	if _UIController then return _UIController end
+	pcall(function()
+		local playerScripts = LocalPlayer:FindFirstChild("PlayerScripts")
+		local clientFolder = playerScripts and playerScripts:FindFirstChild("Client")
+		local mod = clientFolder and clientFolder:FindFirstChild("UIController")
+		if mod then _UIController = require(mod) end
+	end)
+	return _UIController
+end
+
+local _RewardPopup = nil
+local function getRewardPopup()
+	if _RewardPopup then return _RewardPopup end
+	pcall(function()
+		local mod = script.Parent:FindFirstChild("RewardPopup")
+		if mod then _RewardPopup = require(mod) end
+	end)
+	return _RewardPopup
+end
 
 local _gui: ScreenGui? = nil
 local _overlay: Frame? = nil
@@ -98,14 +123,12 @@ function MatchResultsPanel.Hide()
 	if ov and ov.Parent then
 		local panel = ov:FindFirstChild("ResultsCard")
 		if panel then
-			local sc = panel:FindFirstChildOfClass("UIScale")
-			if sc then
-				TweenService:Create(sc, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0 }):Play()
-			end
+			AnimUtil.PopupClose(panel, ov)
+		else
+			task.delay(0.25, function()
+				if ov and ov.Parent then ov:Destroy() end
+			end)
 		end
-		task.delay(0.25, function()
-			if ov and ov.Parent then ov:Destroy() end
-		end)
 	end
 	_overlay = nil
 end
@@ -115,6 +138,12 @@ end
 -- ═══════════════════════════════════════════
 function MatchResultsPanel.Show(data)
 	if not data then return end
+
+	local uic = getUIController()
+	if uic and uic.CloseAllPanels then uic.CloseAllPanels() end
+
+	local rp = getRewardPopup()
+	if rp and rp.IsActive and rp.IsActive() then rp.Dismiss() end
 
 	-- Clean up existing
 	if _active then
@@ -188,11 +217,6 @@ function MatchResultsPanel.Show(data)
 	cardStroke.Thickness = 2
 	cardStroke.Transparency = 0.2
 	cardStroke.Parent = card
-
-	-- UIScale for pop animation — created now, tween starts AFTER final card size
-	local sc = Instance.new("UIScale")
-	sc.Scale = 0.7
-	sc.Parent = card
 
 	-- ── Close "X" button (top-right, high ZIndex) ──
 	local closeBtn = Instance.new("TextButton")
@@ -508,10 +532,9 @@ function MatchResultsPanel.Show(data)
 		yOffset += 28
 	end
 
-	-- ── Finalize card size THEN start the scale-in animation ──
-	-- Setting final size before tweening prevents any mid-animation shift.
+	-- Finalize card size THEN start the scale-in animation
 	card.Size = UDim2.fromOffset(CARD_W, yOffset + 14)
-	TweenService:Create(sc, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	AnimUtil.PopupOpen(card)
 
 	-- ── Auto-dismiss timer (hard failsafe) ──
 	_hideTimer = task.delay(DISPLAY_SECONDS + 0.2, function()
