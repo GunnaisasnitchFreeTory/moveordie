@@ -1719,36 +1719,13 @@ end
 -- Mobile touch devices get a slight boost so tap targets remain large.
 -- ═══════════════════════════════════════════════════════════════════
 
-local Camera = workspace.CurrentCamera
-local UserInputService = game:GetService("UserInputService")
-local _scaleDebugPrinted = false
-
 function Components.SetupResponsiveScale(screenGui: ScreenGui)
+	local existing = screenGui:FindFirstChild("ResponsiveScale")
+	if existing then return end
 	local uiScale = Instance.new("UIScale")
 	uiScale.Name = "ResponsiveScale"
+	uiScale.Scale = 1
 	uiScale.Parent = screenGui
-
-	local isTouch = UserInputService.TouchEnabled
-
-	local function update()
-		local vp = Camera.ViewportSize
-		local scale = math.clamp(vp.X / 1920, 0.95, 1.15)
-
-		if isTouch then
-			scale = math.clamp(scale * 1.12, 1.00, 1.25)
-		end
-
-		uiScale.Scale = scale
-
-		if not _scaleDebugPrinted then
-			_scaleDebugPrinted = true
-			print(string.format("[UI SCALE DEBUG] viewport=%dx%d scale=%.3f touch=%s",
-				math.floor(vp.X), math.floor(vp.Y), scale, tostring(isTouch)))
-		end
-	end
-
-	update()
-	Camera:GetPropertyChangedSignal("ViewportSize"):Connect(update)
 end
 
 return Components

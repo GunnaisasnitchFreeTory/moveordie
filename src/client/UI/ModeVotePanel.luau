@@ -433,9 +433,7 @@ local function handleVoteEvent(action, data)
 		updateCounts(data)
 	elseif action == "End" then
 		updateCounts(data)
-		task.delay(1.5, function()
-			hidePanel()
-		end)
+		hidePanel()
 	end
 end
 

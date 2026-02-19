@@ -200,13 +200,21 @@ end
 	Animate a modal popup card closed, then destroy the given container
 	(usually the overlay ScreenGui/Frame that holds the card).
 	`container` – the instance to :Destroy() after the tween; pass nil to skip.
+
+	Scales down subtly (0.9) instead of shrinking to zero, avoiding jank.
+	Position is never touched — stays locked at AnchorPoint center.
 ]]
 function AnimUtil.PopupClose(card: GuiObject, container: Instance?)
 	local sc = card:FindFirstChildOfClass("UIScale")
 	if sc then
-		AnimUtil.Tween(sc, { Scale = 0 }, cfg.PopupCloseDuration, cfg.PopupCloseEase, Enum.EasingDirection.In)
-	end
-	if container then
+		local tween = AnimUtil.Tween(sc, { Scale = cfg.PopupCloseTargetScale }, cfg.PopupCloseDuration, cfg.PopupCloseEase, Enum.EasingDirection.In)
+		AnimUtil.Tween(card, { BackgroundTransparency = 1 }, cfg.PopupCloseDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		task.spawn(function()
+			tween.Completed:Wait()
+			card.Visible = false
+			if container and container.Parent then container:Destroy() end
+		end)
+	elseif container then
 		task.delay(cfg.PopupDestroyDelay, function()
 			if container and container.Parent then container:Destroy() end
 		end)

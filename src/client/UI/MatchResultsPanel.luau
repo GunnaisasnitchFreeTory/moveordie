@@ -122,6 +122,7 @@ function MatchResultsPanel.Hide()
 	local ov = _overlay
 	if ov and ov.Parent then
 		local panel = ov:FindFirstChild("ResultsCard")
+		print("[Modal] Hide MatchResults -> tween out -> hidden")
 		if panel then
 			AnimUtil.PopupClose(panel, ov)
 		else
@@ -155,21 +156,26 @@ function MatchResultsPanel.Show(data)
 
 	_active = true
 
-	-- ── Clickable overlay (click outside to close, fully invisible) ──
-	local overlay = Instance.new("TextButton")
-	overlay.Name = "MatchResultsOverlay"
-	overlay.Size = UDim2.fromScale(1, 1)
-	overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	overlay.BackgroundTransparency = 1 -- fully invisible overlay
-	overlay.BorderSizePixel = 0
-	overlay.Text = ""
-	overlay.AutoButtonColor = false
-	overlay.ZIndex = 40
-	overlay.Parent = _gui
-	_overlay = overlay
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "ModalWrapper"
+	wrapper.Size = UDim2.fromScale(1, 1)
+	wrapper.BackgroundTransparency = 1
+	wrapper.BorderSizePixel = 0
+	wrapper.ZIndex = 40
+	wrapper.Parent = _gui
+	_overlay = wrapper
 
-	-- Click outside to close (overlay itself)
-	overlay.MouseButton1Click:Connect(function()
+	local clickCatcher = Instance.new("TextButton")
+	clickCatcher.Name = "ClickCatcher"
+	clickCatcher.Size = UDim2.fromScale(1, 1)
+	clickCatcher.BackgroundTransparency = 1
+	clickCatcher.BorderSizePixel = 0
+	clickCatcher.Text = ""
+	clickCatcher.AutoButtonColor = false
+	clickCatcher.Active = true
+	clickCatcher.ZIndex = 40
+	clickCatcher.Parent = wrapper
+	clickCatcher.MouseButton1Click:Connect(function()
 		MatchResultsPanel.Hide()
 	end)
 
@@ -181,7 +187,6 @@ function MatchResultsPanel.Show(data)
 		end
 	end)
 
-	-- Auto-close when match state leaves "Ending" (server transitions to Intermission)
 	if _matchStateVal then
 		_stateConn = _matchStateVal.Changed:Connect(function(newVal)
 			if _active and newVal ~= "Ending" then
@@ -191,7 +196,6 @@ function MatchResultsPanel.Show(data)
 		end)
 	end
 
-	-- ── Main card (TextButton to absorb clicks — prevents click-through to overlay) ──
 	local CARD_W, CARD_H = 420, 480
 	local card = Instance.new("TextButton")
 	card.Name = "ResultsCard"
@@ -204,9 +208,8 @@ function MatchResultsPanel.Show(data)
 	card.Text = ""
 	card.AutoButtonColor = false
 	card.ZIndex = 41
-	card.Parent = overlay
+	card.Parent = wrapper
 
-	-- Clicking anywhere on the card body also closes the panel
 	card.MouseButton1Click:Connect(function()
 		MatchResultsPanel.Hide()
 	end)
@@ -536,6 +539,17 @@ function MatchResultsPanel.Show(data)
 	card.Size = UDim2.fromOffset(CARD_W, yOffset + 14)
 	AnimUtil.PopupOpen(card)
 
+	task.defer(function()
+		if card and card.Parent then
+			print(string.format("[Modal] Show MatchResults parent=%s anchor=(%.1f,%.1f) pos=(%.2f,%.2f) absPos=(%.0f,%.0f) absSize=(%.0f,%.0f)",
+				_gui.Name,
+				card.AnchorPoint.X, card.AnchorPoint.Y,
+				card.Position.X.Scale, card.Position.Y.Scale,
+				card.AbsolutePosition.X, card.AbsolutePosition.Y,
+				card.AbsoluteSize.X, card.AbsoluteSize.Y))
+		end
+	end)
+
 	-- ── Auto-dismiss timer (hard failsafe) ──
 	_hideTimer = task.delay(DISPLAY_SECONDS + 0.2, function()
 		if _active then
@@ -555,10 +569,11 @@ function MatchResultsPanel.Init(screenGui: ScreenGui)
 	local resultsGui = Instance.new("ScreenGui")
 	resultsGui.Name = "MatchResultsGui"
 	resultsGui.DisplayOrder = 100
-	resultsGui.IgnoreGuiInset = false
+	resultsGui.IgnoreGuiInset = true
 	resultsGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	resultsGui.ResetOnSpawn = false
 	resultsGui.Parent = pg
+	print("[Modal] MatchResultsGui ready (DisplayOrder=100, Global ZIndex)")
 	_gui = resultsGui
 
 	-- Cache MatchStatus.State (replicated StringValue) for auto-close

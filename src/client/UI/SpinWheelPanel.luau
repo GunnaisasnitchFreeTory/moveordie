@@ -41,15 +41,15 @@ end
 local function createCloseButton(parent)
 	local btn = Instance.new("TextButton")
 	btn.Name = "SpinWheelCloseBtn"
-	btn.Text = "✕"
+	btn.Text = "X"
 	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 22
+	btn.TextSize = 26
 	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	btn.TextStrokeTransparency = 0.6
+	btn.TextStrokeTransparency = 0.2
 	btn.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	btn.BackgroundColor3 = Color3.fromRGB(200, 50, 60)
-	btn.BackgroundTransparency = 0.15
-	btn.Size = UDim2.fromOffset(40, 40)
+	btn.BackgroundTransparency = 0.05
+	btn.Size = UDim2.fromOffset(44, 44)
 	btn.Position = UDim2.new(1, -56, 0, 16)
 	btn.AnchorPoint = Vector2.new(0.5, 0.5)
 	btn.ZIndex = 100
@@ -57,17 +57,16 @@ local function createCloseButton(parent)
 	btn.Parent = parent
 
 	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(1, 0) -- fully circular
+	corner.CornerRadius = UDim.new(1, 0)
 	corner.Parent = btn
 
 	local stroke = Instance.new("UIStroke")
 	stroke.Color = Color3.fromRGB(255, 255, 255)
-	stroke.Thickness = 1.5
-	stroke.Transparency = 0.5
+	stroke.Thickness = 2
+	stroke.Transparency = 0.35
 	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	stroke.Parent = btn
 
-	-- Hover / press feedback
 	local baseColor = btn.BackgroundColor3
 	local hoverColor = Color3.fromRGB(240, 70, 80)
 	local pressColor = Color3.fromRGB(160, 35, 45)
@@ -75,29 +74,50 @@ local function createCloseButton(parent)
 	btn.MouseEnter:Connect(function()
 		TweenService:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {
 			BackgroundColor3 = hoverColor,
-			Size = UDim2.fromOffset(44, 44),
+			Size = UDim2.fromOffset(48, 48),
 		}):Play()
 	end)
 	btn.MouseLeave:Connect(function()
 		TweenService:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {
 			BackgroundColor3 = baseColor,
-			Size = UDim2.fromOffset(40, 40),
+			Size = UDim2.fromOffset(44, 44),
 		}):Play()
 	end)
 	btn.MouseButton1Down:Connect(function()
 		TweenService:Create(btn, TweenInfo.new(0.08, Enum.EasingStyle.Quad), {
 			BackgroundColor3 = pressColor,
-			Size = UDim2.fromOffset(36, 36),
+			Size = UDim2.fromOffset(40, 40),
 		}):Play()
 	end)
 	btn.MouseButton1Up:Connect(function()
 		TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {
 			BackgroundColor3 = hoverColor,
-			Size = UDim2.fromOffset(44, 44),
+			Size = UDim2.fromOffset(48, 48),
 		}):Play()
 	end)
 
 	return btn
+end
+
+----------------------------------------------------------------------------
+-- HIDE/SHOW OVERLAPPING HUD ELEMENTS (Stats, Daily, Vote)
+----------------------------------------------------------------------------
+local function setOverlayUIVisible(show: boolean)
+	local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
+	if not playerGui then return end
+
+	local hudGui = playerGui:FindFirstChild("HUDGui")
+	if hudGui then
+		local statsBtn = hudGui:FindFirstChild("StatsBtn")
+		if statsBtn then statsBtn.Visible = show end
+		local dailyBtn = hudGui:FindFirstChild("DailyBtn")
+		if dailyBtn then dailyBtn.Visible = show end
+	end
+
+	local modeVoteGui = playerGui:FindFirstChild("ModeVoteGui")
+	if modeVoteGui then
+		modeVoteGui.Enabled = show
+	end
 end
 
 ----------------------------------------------------------------------------
@@ -300,6 +320,7 @@ function SpinWheelPanel.Show()
 	-- FOV
 	TweenService:Create(workspace.Camera, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {FieldOfView = 92}):Play()
 
+	setOverlayUIVisible(false)
 	log("Opened")
 end
 
@@ -334,6 +355,7 @@ function SpinWheelPanel.Hide()
 		end
 	end)
 
+	setOverlayUIVisible(true)
 	log("Closed")
 	if closeCallback then closeCallback() end
 end

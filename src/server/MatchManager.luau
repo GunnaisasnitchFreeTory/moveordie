@@ -434,31 +434,55 @@ local function runIntermission()
 	end
 
 	log(string.format("Intermission started (%ds)", Config.IntermissionSeconds))
-	
-	local seenInWaiting: { [Player]: boolean } = {}
+
+	-- Track ALL players present in the server at intermission start.
+	-- Returning from AFK is NOT a "new player" — only a fresh server join is.
+	local knownPlayers: { [Player]: boolean } = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		knownPlayers[p] = true
+	end
+	local lastActiveCount = 0
 	local voteStarted = false
-	
+
 	while tick() < phaseEndTime do
 		setEligibleToWaiting()
-		
-		-- Floor extension: only for genuinely NEW players entering Waiting
-		-- (AFK toggle does NOT count as a new player)
+
 		local waiting = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
-		local hasNewPlayer = false
+		local activeCount = 0
+		local hasGenuinelyNewPlayer = false
 		for _, p in ipairs(waiting) do
-			if not seenInWaiting[p] then
-				seenInWaiting[p] = true
-				hasNewPlayer = true
+			if not PlayerStateService.IsAFK(p) then
+				activeCount = activeCount + 1
+				if not knownPlayers[p] then
+					knownPlayers[p] = true
+					hasGenuinelyNewPlayer = true
+				end
 			end
 		end
-		if hasNewPlayer then
-			local remaining = phaseEndTime - tick()
-			if remaining < Config.MinIntermissionFloor then
-				phaseEndTime = tick() + Config.MinIntermissionFloor
-				replicatePhaseEnd(Config.MinIntermissionFloor)
-				log(string.format("Extended intermission for new player(s) — %.0fs remaining now", Config.MinIntermissionFloor))
+
+		-- Also register any newly connected players so they're known next tick
+		for _, p in ipairs(Players:GetPlayers()) do
+			if not knownPlayers[p] then
+				knownPlayers[p] = true
 			end
 		end
+
+		local remaining = phaseEndTime - tick()
+		local extended = false
+		if hasGenuinelyNewPlayer and remaining < Config.MinIntermissionFloor then
+			phaseEndTime = tick() + Config.MinIntermissionFloor
+			replicatePhaseEnd(Config.MinIntermissionFloor)
+			extended = true
+		end
+
+		if activeCount ~= lastActiveCount or extended then
+			log(string.format(
+				"Intermission tick: activeWaiting %d→%d  remaining=%.1fs  extended=%s  genuineNew=%s",
+				lastActiveCount, activeCount, phaseEndTime - tick(),
+				tostring(extended), tostring(hasGenuinelyNewPlayer)
+			))
+		end
+		lastActiveCount = activeCount
 
 		-- Start vote when <= VoteShowAtRemaining seconds left
 		local timeLeft = phaseEndTime - tick()
@@ -631,6 +655,17 @@ local function resolveRankingsAndReward()
 			end
 		end
 		log("Fired MatchResultsEvent to all match participants")
+
+		-- Trigger fireworks for every Results phase (no winner gate)
+		log("[MatchManager] Results -> triggering fireworks (always)")
+		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+		local fwRemote = remotes and remotes:FindFirstChild("PlayFireworks")
+		if fwRemote then
+			fwRemote:FireAllClients()
+			log("[MatchManager] PlayFireworks fired to: AllClients")
+		else
+			warn("[MatchManager] PlayFireworks remote not found in Remotes folder")
+		end
 	end
 	
 	return rankings
@@ -660,7 +695,7 @@ local function runEnding()
 			sfxRemote:FireClient(winner, "Win")
 		end
 	end
-	
+
 	resolveRankingsAndReward()
 	setMatchPlayersToLobby()
 	
@@ -732,6 +767,15 @@ function MatchManager.Init()
 		matchResultsEvent = existing
 	end
 	log("MatchResultsEvent remote created")
+
+	-- Create PlayFireworks remote
+	local existingFW = remotesFolder:FindFirstChild("PlayFireworks")
+	if not existingFW then
+		local fwRemote = Instance.new("RemoteEvent")
+		fwRemote.Name = "PlayFireworks"
+		fwRemote.Parent = remotesFolder
+	end
+	log("PlayFireworks remote created")
 
 	-- Create ModeVote remote
 	local existingVote = remotesFolder:FindFirstChild("ModeVote")

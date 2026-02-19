@@ -17,6 +17,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
+local TweenService = game:GetService("TweenService")
 
 local WIN_SFX_ID = "rbxassetid://111217342629113"
 local WIN_SFX_VOLUME = 0.5
@@ -29,18 +30,6 @@ local player = Players.LocalPlayer
 local _active = false
 local _overlay: Frame? = nil
 local _onDismissCallback: (() -> ())? = nil
-
-local _UIController = nil
-local function getUIController()
-	if _UIController then return _UIController end
-	pcall(function()
-		local playerScripts = player:FindFirstChild("PlayerScripts")
-		local clientFolder = playerScripts and playerScripts:FindFirstChild("Client")
-		local mod = clientFolder and clientFolder:FindFirstChild("UIController")
-		if mod then _UIController = require(mod) end
-	end)
-	return _UIController
-end
 
 -- ═══════════════════════════════════════════
 -- LAZY-LOAD ITEMCATALOG + THUMBNAILRENDERER
@@ -301,6 +290,7 @@ local function getGui(): ScreenGui?
 	sg.IgnoreGuiInset = true
 	sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	sg.Parent = pg
+	print("[Modal] RewardPopupGui ready (DisplayOrder=120)")
 	_gui = sg
 	return sg
 end
@@ -314,6 +304,8 @@ local function dismiss()
 	local ov = _overlay
 	if ov and ov.Parent then
 		local panel = ov:FindFirstChild("Card") or ov:FindFirstChild("BatchPanel")
+		local modalName = panel and panel.Name or "RewardPopup"
+		print(string.format("[Modal] Hide %s -> tween out -> hidden", modalName))
 		if panel then
 			AnimUtil.PopupClose(panel, ov)
 		else
@@ -424,9 +416,6 @@ end
 function RewardPopup.Show(data)
 	if not data then return end
 
-	local uic = getUIController()
-	if uic and uic.CloseAllPanels then uic.CloseAllPanels() end
-
 	if _active and _overlay and _overlay.Parent then
 		_overlay:Destroy()
 		_overlay = nil
@@ -445,19 +434,26 @@ function RewardPopup.Show(data)
 	local rarityColor = RARITY_COLORS[rarityStr] or RARITY_COLORS.Common
 	local resolvedImage, fallbackEmoji, fallbackColor, catalogEntry = resolveIcon(data)
 
-	local overlay = Instance.new("TextButton")
-	overlay.Name = "PopupOverlay"
-	overlay.Size = UDim2.fromScale(1, 1)
-	overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	overlay.BackgroundTransparency = 1 -- no dark overlay
-	overlay.BorderSizePixel = 0
-	overlay.Text = ""
-	overlay.AutoButtonColor = false
-	overlay.ZIndex = 50
-	overlay.Parent = gui
-	_overlay = overlay
-	-- No tween — stays fully transparent
-	overlay.MouseButton1Click:Connect(dismiss)
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "ModalWrapper"
+	wrapper.Size = UDim2.fromScale(1, 1)
+	wrapper.BackgroundTransparency = 1
+	wrapper.BorderSizePixel = 0
+	wrapper.ZIndex = 50
+	wrapper.Parent = gui
+	_overlay = wrapper
+
+	local clickCatcher = Instance.new("TextButton")
+	clickCatcher.Name = "ClickCatcher"
+	clickCatcher.Size = UDim2.fromScale(1, 1)
+	clickCatcher.BackgroundTransparency = 1
+	clickCatcher.BorderSizePixel = 0
+	clickCatcher.Text = ""
+	clickCatcher.AutoButtonColor = false
+	clickCatcher.Active = true
+	clickCatcher.ZIndex = 50
+	clickCatcher.Parent = wrapper
+	clickCatcher.MouseButton1Click:Connect(dismiss)
 
 	local card = Instance.new("Frame")
 	card.Name = "Card"
@@ -468,7 +464,7 @@ function RewardPopup.Show(data)
 	card.BackgroundTransparency = 0.02
 	card.BorderSizePixel = 0
 	card.ZIndex = 51
-	card.Parent = overlay
+	card.Parent = wrapper
 
 	Instance.new("UICorner", card).CornerRadius = UDim.new(0, 16)
 	local stroke = Instance.new("UIStroke")
@@ -478,6 +474,17 @@ function RewardPopup.Show(data)
 	stroke.Parent = card
 
 	AnimUtil.PopupOpen(card)
+
+	task.defer(function()
+		if card and card.Parent then
+			print(string.format("[Modal] Show %s parent=%s anchor=(%.1f,%.1f) pos=(%.2f,%.2f) absPos=(%.0f,%.0f) absSize=(%.0f,%.0f)",
+				titleText, gui.Name,
+				card.AnchorPoint.X, card.AnchorPoint.Y,
+				card.Position.X.Scale, card.Position.Y.Scale,
+				card.AbsolutePosition.X, card.AbsolutePosition.Y,
+				card.AbsoluteSize.X, card.AbsoluteSize.Y))
+		end
+	end)
 
 	playWinSound()
 	task.delay(0.15, function()
@@ -570,9 +577,6 @@ function RewardPopup.ShowBatch(items)
 		return
 	end
 
-	local uic = getUIController()
-	if uic and uic.CloseAllPanels then uic.CloseAllPanels() end
-
 	if _active and _overlay and _overlay.Parent then
 		_overlay:Destroy()
 		_overlay = nil
@@ -593,24 +597,30 @@ function RewardPopup.ShowBatch(items)
 	local containerW = COLS * CARD_W + (COLS - 1) * GAP
 	local containerH = ROWS * CARD_H + (ROWS - 1) * GAP
 
-	-- Overlay (click-catcher only, no dim)
-	local overlay = Instance.new("TextButton")
-	overlay.Name = "PopupOverlay"
-	overlay.Size = UDim2.fromScale(1, 1)
-	overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	overlay.BackgroundTransparency = 1 -- no dark overlay
-	overlay.BorderSizePixel = 0
-	overlay.Text = ""
-	overlay.AutoButtonColor = false
-	overlay.ZIndex = 50
-	overlay.Parent = gui
-	_overlay = overlay
-	-- No tween — stays fully transparent
-	overlay.MouseButton1Click:Connect(dismiss)
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "ModalWrapper"
+	wrapper.Size = UDim2.fromScale(1, 1)
+	wrapper.BackgroundTransparency = 1
+	wrapper.BorderSizePixel = 0
+	wrapper.ZIndex = 50
+	wrapper.Parent = gui
+	_overlay = wrapper
+
+	local clickCatcher = Instance.new("TextButton")
+	clickCatcher.Name = "ClickCatcher"
+	clickCatcher.Size = UDim2.fromScale(1, 1)
+	clickCatcher.BackgroundTransparency = 1
+	clickCatcher.BorderSizePixel = 0
+	clickCatcher.Text = ""
+	clickCatcher.AutoButtonColor = false
+	clickCatcher.Active = true
+	clickCatcher.ZIndex = 50
+	clickCatcher.Parent = wrapper
+	clickCatcher.MouseButton1Click:Connect(dismiss)
 
 	-- Main panel
 	local panelW = containerW + 40
-	local panelH = containerH + 100 -- header + button + padding
+	local panelH = containerH + 100
 	local panel = Instance.new("Frame")
 	panel.Name = "BatchPanel"
 	panel.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -620,7 +630,7 @@ function RewardPopup.ShowBatch(items)
 	panel.BackgroundTransparency = 0.05
 	panel.BorderSizePixel = 0
 	panel.ZIndex = 51
-	panel.Parent = overlay
+	panel.Parent = wrapper
 
 	Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 16)
 	local panelStroke = Instance.new("UIStroke")
@@ -630,6 +640,17 @@ function RewardPopup.ShowBatch(items)
 	panelStroke.Parent = panel
 
 	AnimUtil.PopupOpen(panel)
+
+	task.defer(function()
+		if panel and panel.Parent then
+			print(string.format("[Modal] ShowBatch parent=%s anchor=(%.1f,%.1f) pos=(%.2f,%.2f) absPos=(%.0f,%.0f) absSize=(%.0f,%.0f)",
+				gui.Name,
+				panel.AnchorPoint.X, panel.AnchorPoint.Y,
+				panel.Position.X.Scale, panel.Position.Y.Scale,
+				panel.AbsolutePosition.X, panel.AbsolutePosition.Y,
+				panel.AbsoluteSize.X, panel.AbsoluteSize.Y))
+		end
+	end)
 
 	playWinSound()
 	task.delay(0.15, function()
@@ -757,10 +778,9 @@ function RewardPopup.ShowBatch(items)
 	Instance.new("UICorner", claimBtn).CornerRadius = UDim.new(0, 10)
 	claimBtn.MouseButton1Click:Connect(dismiss)
 
-	-- Auto-dismiss after 12 seconds
-	local thisOverlay = overlay
+	local thisWrapper = wrapper
 	task.delay(12, function()
-		if _overlay == thisOverlay and _active then dismiss() end
+		if _overlay == thisWrapper and _active then dismiss() end
 	end)
 end
 

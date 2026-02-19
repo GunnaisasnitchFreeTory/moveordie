@@ -30,7 +30,7 @@ UIConfig.Colors = {
 	CardBgDark      = Color3.fromRGB(30, 34, 55),
 	CardStroke      = Color3.fromRGB(72, 80, 115),
 	Overlay         = Color3.fromRGB(0, 0, 0),
-	OverlayTransparency = 1, -- fully invisible; overlay only intercepts clicks, no dim
+	OverlayTransparency = 0.4, -- semi-transparent dark backdrop behind modals
 
 	-- Per-panel accent (header gradient base) — BRIGHTER
 	HeaderShop    = Color3.fromRGB(245, 48, 72),
@@ -192,12 +192,13 @@ UIConfig.Anim = {
 
 	SunburstSpeed = 8,
 
-	PopupOpenStartScale = 0.6,
-	PopupOpenDuration   = 0.30,
-	PopupOpenEase       = Enum.EasingStyle.Back,
-	PopupCloseDuration  = 0.20,
-	PopupCloseEase      = Enum.EasingStyle.Quad,
-	PopupDestroyDelay   = 0.25,
+	PopupOpenStartScale = 0.92,
+	PopupOpenDuration   = 0.18,
+	PopupOpenEase       = Enum.EasingStyle.Quad,
+	PopupCloseDuration    = 0.18,
+	PopupCloseEase        = Enum.EasingStyle.Quad,
+	PopupCloseTargetScale = 0.9,
+	PopupDestroyDelay     = 0.25,
 }
 
 -- ═══════════════════════════════════════════════════════════════════

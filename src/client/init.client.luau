@@ -77,6 +77,17 @@ else
 	warn(string.format("[UIBoot] t=%s UIController FAILED: %s", ts(), tostring(uiErr)))
 end
 
+-- 3b. UIScalingController (device-class responsive scaling)
+local scalingOk, scalingErr = pcall(function()
+	local UIScalingController = require(Client:WaitForChild("UIScalingController"))
+	UIScalingController.Init()
+end)
+if scalingOk then
+	print("[Client] UIScalingController loaded OK")
+else
+	warn("[Client] UIScalingController FAILED:", scalingErr)
+end
+
 -- 4. PetFollowerController (spawns + animates equipped pet models)
 local petOk, petErr = pcall(function()
 	local PetFollowerController = require(Client:WaitForChild("PetFollowerController"))
@@ -141,6 +152,28 @@ if coinOk then
 	print("[Client] CoinPickupController loaded OK")
 else
 	warn("[Client] CoinPickupController FAILED:", coinErr)
+end
+
+-- 9. FireworksController (auto-play fireworks on match win + button click)
+local fwOk, fwErr = pcall(function()
+	local FireworksController = require(Client:WaitForChild("FireworksController"))
+	FireworksController.Init()
+end)
+if fwOk then
+	print("[Client] FireworksController loaded OK")
+else
+	warn("[Client] FireworksController FAILED:", fwErr)
+end
+
+-- 10. GroupSignController (walk-up group join prompt)
+local gsOk, gsErr = pcall(function()
+	local GroupSignController = require(Client:WaitForChild("GroupSignController"))
+	GroupSignController.Init()
+end)
+if gsOk then
+	print("[Client] GroupSignController loaded OK")
+else
+	warn("[Client] GroupSignController FAILED:", gsErr)
 end
 
 print(string.format("[Client] Init complete (t=%s)", ts()))
