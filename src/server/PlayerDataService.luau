@@ -18,10 +18,13 @@
 		SaveAll()
 ]]
 
-local DataStoreService = game:GetService("DataStoreService")
-local Players          = game:GetService("Players")
-local HttpService      = game:GetService("HttpService")
+local DataStoreService  = game:GetService("DataStoreService")
+local Players           = game:GetService("Players")
+local HttpService       = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService        = game:GetService("RunService")
+
+local IS_STUDIO = RunService:IsStudio()
 
 local Shared     = ReplicatedStorage:WaitForChild("Shared")
 local PlayerData = require(Shared:WaitForChild("PlayerData"))

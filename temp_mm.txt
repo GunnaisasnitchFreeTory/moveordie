@@ -436,6 +436,8 @@ local function runIntermission()
 
 	log(string.format("Intermission started (%ds)", Config.IntermissionSeconds))
 
+	-- Track ALL players present in the server at intermission start.
+	-- Returning from AFK is NOT a "new player" — only a fresh server join is.
 	local knownPlayers: { [Player]: boolean } = {}
 	for _, p in ipairs(Players:GetPlayers()) do
 		knownPlayers[p] = true
@@ -459,6 +461,7 @@ local function runIntermission()
 			end
 		end
 
+		-- Also register any newly connected players so they're known next tick
 		for _, p in ipairs(Players:GetPlayers()) do
 			if not knownPlayers[p] then
 				knownPlayers[p] = true
@@ -482,6 +485,7 @@ local function runIntermission()
 		end
 		lastActiveCount = activeCount
 
+		-- Start vote when <= VoteShowAtRemaining seconds left
 		local timeLeft = phaseEndTime - tick()
 		if not voteStarted and timeLeft <= Config.VoteShowAtRemaining then
 			voteStarted = true
@@ -491,6 +495,7 @@ local function runIntermission()
 		task.wait(1)
 	end
 
+	-- End vote and determine mode
 	if voteStarted then
 		endVote()
 	end
@@ -515,6 +520,7 @@ local function runPlaying()
 	MapManager.OnMatchStart()
 	setWaitingToInMatch()
 
+	-- Start brainrot mode if voted
 	if currentMode == "Brainrot" then
 		BrainrotModeService.OnMatchStart()
 	end
@@ -532,6 +538,7 @@ local function runPlaying()
 	local endReason = RoundManager.GetMatchEndReason()
 	log(string.format("Round loop completed — reason: %s", endReason or "unknown"))
 
+	-- End brainrot mode cleanup
 	if currentMode == "Brainrot" then
 		BrainrotModeService.OnMatchEnd()
 	end
@@ -563,6 +570,7 @@ local function resolveRankingsAndReward()
 		if ok and mod then PDS = mod end
 	end
 	
+	-- Track which players got crown grants this match (playerId → crownId)
 	local crownGrants: { [number]: string } = {}
 	
 	for _, group in ipairs(rankings) do
@@ -577,6 +585,7 @@ local function resolveRankingsAndReward()
 					totalAwarded = totalAwarded + group.coins
 				end
 				
+				-- Track wins for first place
 				if group.placement == 1 and PDS then
 					local lifetimeWins = (PDS.GetField(entry.player, "LifetimeWins") or 0) + 1
 					PDS.SetField(entry.player, "LifetimeWins", lifetimeWins)
@@ -587,12 +596,15 @@ local function resolveRankingsAndReward()
 					log(string.format("%s won! LifetimeWins=%d WeeklyWins=%d",
 						entry.player.Name, lifetimeWins, weeklyWins))
 
+					-- Direct module call to GLBS
 					reportStats(entry.player.UserId, entry.player.Name, {
 						LifetimeWins = lifetimeWins,
 						WeeklyWins   = weeklyWins,
 					})
 					
-					local _, nextM = getMilestoneContext(lifetimeWins - 1)
+					-- Check if a crown was granted (LevelCrownService handles this
+					-- via attribute change, but we peek at the milestone to inform the UI)
+					local _, nextM = getMilestoneContext(lifetimeWins - 1) -- before this win
 					if nextM and lifetimeWins >= nextM.wins then
 						crownGrants[entry.playerId] = nextM.crownId
 					end
@@ -603,7 +615,9 @@ local function resolveRankingsAndReward()
 	
 	log(string.format("Awarded %d total coins across %d placement groups", totalAwarded, #rankings))
 	
+	-- Fire match results to each player
 	if matchResultsEvent then
+		-- Build flat rankings list for client display
 		local flatRankings = {}
 		for _, group in ipairs(rankings) do
 			for _, entry in ipairs(group.players) do
@@ -628,13 +642,13 @@ local function resolveRankingsAndReward()
 					local payload = {
 						yourPlacement = group.placement,
 						yourCoins = group.coins,
-						yourXP = 0,
+						yourXP = 0, -- placeholder for future XP system
 						matchCoinsCollected = EconomyService.GetMatchCoins(entry.player),
 						rankings = flatRankings,
 						lifetimeWins = lifetimeWins,
 						crownGranted = crownGrants[entry.playerId] or nil,
-						nextMilestone = nextM,
-						prevMilestone = prevM,
+						nextMilestone = nextM, -- { wins, crownId } or nil
+						prevMilestone = prevM, -- { wins, crownId }
 					}
 					
 					local fireOk, fireErr = pcall(function()
@@ -648,6 +662,7 @@ local function resolveRankingsAndReward()
 		end
 		log("Fired MatchResultsEvent to all match participants")
 
+		-- Trigger fireworks for every Results phase (no winner gate)
 		log("[MatchManager] Results -> triggering fireworks (always)")
 		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 		local fwRemote = remotes and remotes:FindFirstChild("PlayFireworks")
@@ -678,6 +693,7 @@ local function runEnding()
 		log(string.format("Ending started (%ds)", Config.EndingSeconds))
 	end
 	
+	-- Fire win SFX to the winning player
 	if matchEndReason == "Winner" and winner and winner.Parent then
 		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 		local sfxRemote = remotes and remotes:FindFirstChild("PlaySFX")
@@ -702,6 +718,8 @@ function MatchManager.Init()
 		return
 	end
 
+	-- Create MatchStatus folder + children BEFORE parenting to RS.
+	-- This ensures the client sees all children atomically when the folder replicates.
 	local matchStatusFolder = Instance.new("Folder")
 	matchStatusFolder.Name = "MatchStatus"
 
@@ -735,9 +753,11 @@ function MatchManager.Init()
 	replicatedVoteEndTime.Value = 0
 	replicatedVoteEndTime.Parent = matchStatusFolder
 
+	-- Parent folder to RS AFTER all children are attached (atomic replication)
 	matchStatusFolder.Parent = ReplicatedStorage
 	log("MatchStatus folder + replicated values created")
 
+	-- Create MatchResultsEvent for sending end-of-match data to clients
 	local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
 	if not remotesFolder then
 		remotesFolder = Instance.new("Folder")
@@ -754,6 +774,7 @@ function MatchManager.Init()
 	end
 	log("MatchResultsEvent remote created")
 
+	-- Create PlayFireworks remote
 	local existingFW = remotesFolder:FindFirstChild("PlayFireworks")
 	if not existingFW then
 		local fwRemote = Instance.new("RemoteEvent")
@@ -762,6 +783,7 @@ function MatchManager.Init()
 	end
 	log("PlayFireworks remote created")
 
+	-- Create ModeVote remote
 	local existingVote = remotesFolder:FindFirstChild("ModeVote")
 	if not existingVote then
 		voteRemote = Instance.new("RemoteEvent")
@@ -773,6 +795,7 @@ function MatchManager.Init()
 
 	voteRemote.OnServerEvent:Connect(function(player, action, data)
 		if action == "Cast" and voteActive and data and typeof(data) == "string" then
+			-- Reject votes from AFK players
 			if PlayerStateService.IsAFK(player) then return end
 			if data == "Normal" or data == "Brainrot" then
 				votes[player] = data
@@ -807,6 +830,7 @@ function MatchManager.Init()
 		end
 	end)
 	
+	-- Pre-warm GLBS reference (non-blocking)
 	task.spawn(function()
 		getGLBS()
 	end)
@@ -833,6 +857,8 @@ function MatchManager.StartLoop()
 	log("Loop started — waiting for first eligible player before intermission")
 	
 	task.spawn(function()
+		-- ISSUE A FIX: Do NOT start intermission until at least 1 player is in Lobby/Waiting.
+		-- This prevents the 15s timer from ticking down before anyone can see it.
 		while loopRunning do
 			local eligible = MatchManager.GetEligiblePlayers()
 			if #eligible > 0 then
@@ -842,6 +868,7 @@ function MatchManager.StartLoop()
 			task.wait(0.5)
 		end
 		
+		-- Main match loop
 		while loopRunning do
 			runIntermission()
 			local playedMatch = runPlaying()

@@ -14,8 +14,9 @@ local PlayerData = {}
 
 PlayerData.VERSION = 3
 
--- DataStore key
-PlayerData.STORE_NAME = "PlayerData_v1"
+-- DataStore key — Studio uses a separate namespace to prevent leaking test data into production
+local RunService = game:GetService("RunService")
+PlayerData.STORE_NAME = RunService:IsStudio() and "PlayerData_v1_STUDIO" or "PlayerData_v1"
 PlayerData.KEY_PREFIX = "Player_"
 
 -- Attribute names (replicated to client via player attributes)

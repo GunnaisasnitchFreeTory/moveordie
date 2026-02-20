@@ -130,7 +130,8 @@ local function refresh()
 				actionColor = C.Equip or Color3.fromRGB(80, 160, 255)
 			end
 		else
-			subLabel = "Locked"
+			local acqLabel = ItemCatalog.GetIconImageAcquisitionLabel and ItemCatalog.GetIconImageAcquisitionLabel(item.id)
+			subLabel = acqLabel or "Locked"
 		end
 
 		local rarityStr = item.rarity or "Legendary"
@@ -138,7 +139,7 @@ local function refresh()
 		local catalogImage = ItemCatalog.GetImage(item)
 
 		Components.CreateViewportItemCard(contentFrame, {
-			name = item.name or "???",
+			name = item.name or "MISSING ITEM",
 			rarity = rarityStr,
 			iconColor = iconColor,
 			iconText = item.iconText or "\240\159\150\188",

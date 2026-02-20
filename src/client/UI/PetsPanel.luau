@@ -121,12 +121,7 @@ local function refresh()
 			actionText = isEquipped and "Equipped" or "Equip"
 			actionColor = isEquipped and C.Green or C.EquipButton
 		else
-			-- Show how to obtain
-			if pet.shopOnly then
-				subLabel = "Shop Only"
-			else
-				subLabel = "Pet Crate"
-			end
+			subLabel = ItemCatalog.GetPetAcquisitionLabel(pet.id)
 		end
 
 		Components.CreateViewportItemCard(contentFrame, {

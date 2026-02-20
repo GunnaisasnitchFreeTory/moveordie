@@ -16,7 +16,7 @@
 	  TryAutoShow()
 ]]
 
-local FORCE_OPEN_DAILY_ON_JOIN = true -- set false for production
+local FORCE_OPEN_DAILY_ON_JOIN = false
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -295,7 +295,7 @@ local function onClaim()
 					tostring(roll.isDuplicate), tostring(roll.coinsInstead)))
 				table.insert(batchItems, {
 					title = "DAILY REWARD!",
-					name = roll.displayName or roll.itemId or "???",
+					name = roll.displayName or roll.itemId or "MISSING ITEM",
 					itemId = roll.itemId or "",
 					itemType = roll.category == "Crowns" and "Crown" or (roll.category == "Pets" and "Pet" or ""),
 					category = roll.category or "",
@@ -327,7 +327,19 @@ local function onClaim()
 			startTimerLoop()
 		end
 	else
-		warn("[DailyRewardsPanel] Claim failed:", result and result.reason or "unknown")
+		local reason = result and result.reason or "unknown"
+		warn("[DailyRewardsPanel] Claim rejected:", reason)
+		if _claimButton then
+			if reason == "AlreadyClaimed" or reason == "On cooldown" then
+				_claimButton.Text = "ALREADY CLAIMED"
+				_claimButton.BackgroundColor3 = CLAIM_DISABLED
+				_claimButton.TextColor3 = Color3.fromRGB(100, 100, 120)
+				_claimButton.Active = false
+				_claimButton.AutoButtonColor = false
+			end
+		end
+		_status = fetchStatus()
+		if _status then updateDayCards(_status) end
 	end
 	_claiming = false
 end

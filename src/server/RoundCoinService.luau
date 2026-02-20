@@ -226,6 +226,7 @@ local function spawnCoin(coinName: string)
 
 			local coinValue = clone:GetAttribute("CoinValue") or def.value
 			EconomyService.AwardCoins(player, coinValue, "RoundCoin:" .. coinName)
+			EconomyService.TrackMatchCoins(player, coinValue)
 			log(string.format("%s collected %s → +%d coins", player.Name, coinName, coinValue))
 
 			local hrp = character:FindFirstChild("HumanoidRootPart")

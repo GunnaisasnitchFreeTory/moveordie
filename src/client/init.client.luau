@@ -154,6 +154,17 @@ else
 	warn("[Client] CoinPickupController FAILED:", coinErr)
 end
 
+-- 8b. SwordPickupController (hover animation + announcement for sword spawns)
+local swordOk, swordErr = pcall(function()
+	local SwordPickupController = require(Client:WaitForChild("SwordPickupController"))
+	SwordPickupController.Init()
+end)
+if swordOk then
+	print("[Client] SwordPickupController loaded OK")
+else
+	warn("[Client] SwordPickupController FAILED:", swordErr)
+end
+
 -- 9. FireworksController (auto-play fireworks on match win + button click)
 local fwOk, fwErr = pcall(function()
 	local FireworksController = require(Client:WaitForChild("FireworksController"))
@@ -175,5 +186,38 @@ if gsOk then
 else
 	warn("[Client] GroupSignController FAILED:", gsErr)
 end
+
+-- BUILD_ID label (bottom-left corner, subtle version stamp)
+pcall(function()
+	local buildVal = ReplicatedStorage:WaitForChild("BUILD_ID", 10)
+	if not buildVal then return end
+
+	local Players = game:GetService("Players")
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "BuildLabel"
+	screenGui.ResetOnSpawn = false
+	screenGui.DisplayOrder = 999
+	screenGui.IgnoreGuiInset = true
+	screenGui.Parent = playerGui
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0, 300, 0, 20)
+	label.Position = UDim2.new(0, 6, 1, -22)
+	label.AnchorPoint = Vector2.new(0, 1)
+	label.BackgroundTransparency = 1
+	label.Text = buildVal.Value
+	label.TextColor3 = Color3.fromRGB(180, 180, 180)
+	label.TextTransparency = 0.5
+	label.TextSize = 11
+	label.Font = Enum.Font.RobotoMono
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = screenGui
+
+	buildVal.Changed:Connect(function(newVal)
+		label.Text = newVal
+	end)
+end)
 
 print(string.format("[Client] Init complete (t=%s)", ts()))

@@ -5,7 +5,9 @@
 	Coins are persisted via PlayerDataService (DataStore).
 	Falls back to player attributes if PlayerDataService is unavailable.
 
-	CoinMultiplier from StatService is automatically applied to AwardCoins.
+	CoinMultiplier from StatService is automatically applied to AwardCoins
+	UNLESS skipMultiplier is true (used by fixed-reward systems like DailyReward, SpinWheel).
+
 	Tracks LifetimeCoinsAchieved and WeeklyCoinsAchieved for leaderboards.
 
 	Leaderboard updates are sent via DIRECT MODULE CALL to
@@ -13,15 +15,21 @@
 
 	API:
 		Init()
-		GetCoins(player)                      → number
-		AwardCoins(player, amount, reason)    → boolean
-		DeductCoins(player, amount, reason)   → boolean
-		SetCoins(player, amount)              → boolean
+		GetCoins(player)                                  → number
+		AwardCoins(player, amount, reason, skipMultiplier) → (boolean, finalAmount)
+		DeductCoins(player, amount, reason)                → boolean
+		SetCoins(player, amount)                           → boolean
+		ResetMatchCoins()
+		TrackMatchCoins(player, amount)
+		GetMatchCoins(player)                              → number
 ]]
 
 local Players             = game:GetService("Players")
 local ReplicatedStorage   = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+local RunService          = game:GetService("RunService")
+
+local IS_STUDIO = RunService:IsStudio()
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local CoinConfig = require(Shared:WaitForChild("CoinConfig"))
@@ -30,13 +38,12 @@ local ATTRIBUTE_NAME = "Coins"
 
 local EconomyService = {}
 local initialized = false
+local matchCoinsEarned: { [number]: number } = {}
 
--- Lazy-loaded references
 local _PlayerDataService = nil
 local _StatService = nil
 local _GLBS = nil
 
--- Debug flag
 local ACHIEVED_DEBUG = true
 
 local function log(...)
@@ -50,10 +57,6 @@ local function achievedLog(...)
 		warn("[EconomyService:Achieved]", ...)
 	end
 end
-
--- ═══════════════════════════════════════════════════════════════════
--- LAZY LOADERS
--- ═══════════════════════════════════════════════════════════════════
 
 local function getPDS()
 	if _PlayerDataService ~= nil then return _PlayerDataService end
@@ -104,10 +107,6 @@ local function getGLBS()
 	return _GLBS
 end
 
--- ═══════════════════════════════════════════════════════════════════
--- REPORT STATS — direct module call (no BindableEvent)
--- ═══════════════════════════════════════════════════════════════════
-
 local function reportStats(userId: number, username: string, updates: { [string]: number })
 	local GLBS = getGLBS()
 	if not GLBS or GLBS == false then
@@ -128,10 +127,6 @@ local function reportStats(userId: number, username: string, updates: { [string]
 	end
 end
 
--- ═══════════════════════════════════════════════════════════════════
--- PUBLIC API
--- ═══════════════════════════════════════════════════════════════════
-
 local function registerPlayer(player: Player)
 	if player:GetAttribute(ATTRIBUTE_NAME) == nil then
 		player:SetAttribute(ATTRIBUTE_NAME, 0)
@@ -145,9 +140,14 @@ function EconomyService.Init()
 	end
 	initialized = true
 
-	-- Pre-warm GLBS reference (non-blocking)
 	task.spawn(function()
 		getGLBS()
+	end)
+
+	task.spawn(function()
+		local PDS = getPDS()
+		local mode = (PDS and PDS ~= false) and "DATASTORE_MODE" or "ATTRIBUTE_FALLBACK"
+		warn(string.format("[EconomyService] Data authority: IS_STUDIO=%s, mode=%s", tostring(IS_STUDIO), mode))
 	end)
 
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -158,7 +158,8 @@ function EconomyService.Init()
 		registerPlayer(player)
 	end)
 
-	log("Initialized (leaderboard updates via direct GLBS calls)")
+	warn(string.format("[EconomyService] Initialized — IS_STUDIO=%s, leaderboard updates via direct GLBS calls",
+		tostring(IS_STUDIO)))
 end
 
 function EconomyService.GetCoins(player: Player): number
@@ -172,15 +173,7 @@ function EconomyService.GetCoins(player: Player): number
 	return player:GetAttribute(ATTRIBUTE_NAME) or 0
 end
 
-function EconomyService.AwardCoins(player: Player, amount: number, reason: string?): boolean
-	if amount <= 0 then return true end
-
-	if not player.Parent then
-		log(string.format("Skipped award for %s (left game) — %d coins (%s)",
-			player.Name, amount, reason or "unknown"))
-		return false
-	end
-
+function EconomyService.GetMultipliedAmount(player: Player, baseAmount: number): number
 	local SS = getStatService()
 	local multiplier = 1
 	if SS and type(SS.GetCoinMultiplier) == "function" then
@@ -188,14 +181,36 @@ function EconomyService.AwardCoins(player: Player, amount: number, reason: strin
 	else
 		multiplier = player:GetAttribute("CoinMultiplier") or 1
 	end
+	return math.floor(baseAmount * multiplier)
+end
+
+function EconomyService.AwardCoins(player: Player, amount: number, reason: string?, skipMultiplier: boolean?): (boolean, number)
+	if amount <= 0 then return true, 0 end
+
+	if not player.Parent then
+		log(string.format("Skipped award for %s (left game) — %d coins (%s)",
+			player.Name, amount, reason or "unknown"))
+		return false, 0
+	end
+
+	local multiplier = 1
+	if not skipMultiplier then
+		local SS = getStatService()
+		if SS and type(SS.GetCoinMultiplier) == "function" then
+			multiplier = SS.GetCoinMultiplier(player)
+		else
+			multiplier = player:GetAttribute("CoinMultiplier") or 1
+		end
+	end
 	local finalAmount = math.floor(amount * multiplier)
-	if finalAmount <= 0 then return true end
+	if finalAmount <= 0 then return true, 0 end
 
 	local PDS = getPDS()
 	if PDS then
 		local data = PDS.GetData(player)
 		if data then
-			local newTotal = (data.Coins or 0) + finalAmount
+			local oldCoins = data.Coins or 0
+			local newTotal = oldCoins + finalAmount
 			PDS.SetField(player, "Coins", newTotal)
 
 			local oldLifetime = data.LifetimeCoinsAchieved or 0
@@ -207,21 +222,19 @@ function EconomyService.AwardCoins(player: Player, amount: number, reason: strin
 			local weeklyEarned = oldWeekly + finalAmount
 			PDS.SetField(player, "WeeklyCoinsAchieved", weeklyEarned)
 
-			achievedLog(string.format(
-				"%s AchievedCoins updated: weekly=%d (was %d) lifetime=%d (was %d) (reason=%s, +%d coins)",
-				player.Name, weeklyEarned, oldWeekly, lifetimeEarned, oldLifetime,
-				reason or "unknown", finalAmount
+			warn(string.format(
+				"[COIN_AUDIT] player=%s userId=%d | +%d (base=%d mult=%.2fx skip=%s) reason=%s | %d -> %d | t=%d",
+				player.Name, player.UserId, finalAmount, amount, multiplier,
+				tostring(skipMultiplier or false), reason or "?",
+				oldCoins, newTotal, os.time()
 			))
 
-			-- ── Direct module call to GLBS — no BindableEvent ──
 			reportStats(player.UserId, player.Name, {
 				WeeklyCoins  = weeklyEarned,
 				LifetimeCoins = lifetimeEarned,
 			})
 
-			log(string.format("%s +%d coins (base %d × %.2f) (%s) → %d total",
-				player.Name, finalAmount, amount, multiplier, reason or "unknown", newTotal))
-			return true
+			return true, finalAmount
 		else
 			achievedLog(string.format(
 				"%s PDS.GetData returned nil — using attribute fallback (achieved stats SKIPPED)",
@@ -238,9 +251,13 @@ function EconomyService.AwardCoins(player: Player, amount: number, reason: strin
 	local current = player:GetAttribute(ATTRIBUTE_NAME) or 0
 	local newTotal = current + finalAmount
 	player:SetAttribute(ATTRIBUTE_NAME, newTotal)
-	log(string.format("%s +%d coins (base %d × %.2f) (%s) → %d total [attr fallback]",
-		player.Name, finalAmount, amount, multiplier, reason or "unknown", newTotal))
-	return true
+	warn(string.format(
+		"[COIN_AUDIT] player=%s userId=%d | +%d (base=%d mult=%.2fx skip=%s) reason=%s | %d -> %d [attr] | t=%d",
+		player.Name, player.UserId, finalAmount, amount, multiplier,
+		tostring(skipMultiplier or false), reason or "?",
+		current, newTotal, os.time()
+	))
+	return true, finalAmount
 end
 
 function EconomyService.DeductCoins(player: Player, amount: number, reason: string?): boolean
@@ -260,15 +277,21 @@ function EconomyService.DeductCoins(player: Player, amount: number, reason: stri
 		local data = PDS.GetData(player)
 		if data then
 			PDS.SetField(player, "Coins", newTotal)
-			log(string.format("%s -%d coins (%s) → %d total",
-				player.Name, amount, reason or "unknown", newTotal))
+			warn(string.format(
+				"[COIN_AUDIT] player=%s userId=%d | -%d reason=%s | %d -> %d | t=%d",
+				player.Name, player.UserId, amount, reason or "?",
+				current, newTotal, os.time()
+			))
 			return true
 		end
 	end
 
 	player:SetAttribute(ATTRIBUTE_NAME, newTotal)
-	log(string.format("%s -%d coins (%s) → %d total [attr fallback]",
-		player.Name, amount, reason or "unknown", newTotal))
+	warn(string.format(
+		"[COIN_AUDIT] player=%s userId=%d | -%d reason=%s | %d -> %d [attr] | t=%d",
+		player.Name, player.UserId, amount, reason or "?",
+		current, newTotal, os.time()
+	))
 	return true
 end
 
@@ -289,6 +312,19 @@ function EconomyService.SetCoins(player: Player, amount: number): boolean
 
 	player:SetAttribute(ATTRIBUTE_NAME, amount)
 	return true
+end
+
+function EconomyService.ResetMatchCoins()
+	matchCoinsEarned = {}
+end
+
+function EconomyService.TrackMatchCoins(player: Player, amount: number)
+	local key = player.UserId
+	matchCoinsEarned[key] = (matchCoinsEarned[key] or 0) + amount
+end
+
+function EconomyService.GetMatchCoins(player: Player): number
+	return matchCoinsEarned[player.UserId] or 0
 end
 
 return EconomyService

@@ -320,7 +320,7 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 		nameLbl.Font = Enum.Font.GothamBold
 		nameLbl.TextColor3 = C.TextWhite
 		nameLbl.TextSize = 9
-		nameLbl.Text = item.name or "???"
+		nameLbl.Text = item.name or "MISSING ITEM"
 		nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
 		nameLbl.TextXAlignment = Enum.TextXAlignment.Center
 		nameLbl.Parent = thumbContainer

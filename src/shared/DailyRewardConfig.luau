@@ -7,9 +7,8 @@
 
 local DailyRewardConfig = {}
 
--- !! TESTING: set to 0 to allow instant re-claim for testing. Revert to 86400 for production.
-DailyRewardConfig.CooldownSeconds = 0 -- TESTING (normally 86400 = 24 hours)
-DailyRewardConfig.StreakResetSeconds = 999999 -- TESTING (normally 172800 = 48 hours)
+DailyRewardConfig.CooldownSeconds = 86400    -- 24 hours
+DailyRewardConfig.StreakResetSeconds = 172800 -- 48 hours (miss a day = streak resets)
 DailyRewardConfig.MaxStreak = 7
 
 -- iconText is the emoji/text fallback when icon asset is empty

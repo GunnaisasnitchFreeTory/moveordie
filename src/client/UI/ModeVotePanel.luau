@@ -340,6 +340,7 @@ local function createGui()
 
 	reopenBtn.MouseButton1Click:Connect(function()
 		if panelFrame and voteWindowOpen then
+			panelFrame.BackgroundTransparency = 0.04
 			panelFrame.Visible = true
 			reopenBtn.Visible = false
 			AnimUtil.PopupOpen(panelFrame)
@@ -383,7 +384,10 @@ local function showPanel()
 	if brainrotCountLbl then brainrotCountLbl.Text = "0 votes" end
 
 	gui.Enabled = true
-	if panelFrame then panelFrame.Visible = true end
+	if panelFrame then
+		panelFrame.BackgroundTransparency = 0.04
+		panelFrame.Visible = true
+	end
 	if reopenBtn then reopenBtn.Visible = false end
 
 	if panelFrame then
@@ -485,28 +489,22 @@ function ModeVotePanel.Init()
 		print("[ModeVote] Panel ready")
 
 		-- ── Replicated state catch-up ──
-		-- If the server vote is already active (e.g. we loaded late, or
-		-- the remote "Start" event was lost), read the replicated BoolValue
-		-- and show the panel immediately.
 		local matchStatus = ReplicatedStorage:WaitForChild("MatchStatus", 10)
 		if matchStatus then
 			local voteActiveVal = matchStatus:WaitForChild("ModeVoteActive", 5)
 
 			if voteActiveVal then
-				-- Check current value right now
 				if voteActiveVal.Value == true and not voteWindowOpen then
 					print("[ModeVote] Replicated active detected on init — showing UI")
 					showPanel()
 				end
 
-				-- Also listen for future changes as a backup trigger
 				voteActiveVal.Changed:Connect(function(newVal)
 					print("[ModeVote] ModeVoteActive changed to:", tostring(newVal))
 					if newVal == true and not voteWindowOpen then
 						print("[ModeVote] Replicated active detected — showing UI")
 						showPanel()
 					elseif newVal == false and voteWindowOpen then
-						-- Vote ended via replicated state (safety net)
 						task.delay(1.5, function()
 							if not voteWindowOpen then return end
 							hidePanel()

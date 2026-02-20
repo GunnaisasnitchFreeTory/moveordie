@@ -822,18 +822,15 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	nameLabel.Position = UDim2.new(0, 5, 0, 100)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Font = Enum.Font.GothamBold
-	-- Show real name/rarity for locked items that have a static image
-	local hasStaticImage = data.image and data.image ~= ""
-	local hideName = data.locked and not hasStaticImage
-	nameLabel.TextColor3 = hideName and Color3.fromRGB(55, 58, 80) or (data.locked and Color3.fromRGB(130, 135, 155) or C.TextWhite)
+	nameLabel.TextColor3 = data.locked and Color3.fromRGB(130, 135, 155) or C.TextWhite
 	nameLabel.TextSize = 12
 	nameLabel.TextScaled = false
 	nameLabel.TextWrapped = false
 	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
-	nameLabel.Text = hideName and "???" or data.name
+	nameLabel.Text = data.name or "MISSING ITEM"
 	nameLabel.Parent = card
-	if not hideName then
+	do
 		local ns = Instance.new("UIStroke")
 		ns.Color = Color3.fromRGB(0, 0, 0)
 		ns.Thickness = 1.5
@@ -847,11 +844,25 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	rarLabel.Position = UDim2.new(0, 5, 0, 119)
 	rarLabel.BackgroundTransparency = 1
 	rarLabel.Font = Enum.Font.GothamBold
-	rarLabel.TextColor3 = hideName and Color3.fromRGB(42, 45, 65) or (data.locked and Color3.fromRGB(100, 105, 125) or rarityColor)
+	rarLabel.TextColor3 = data.locked and Color3.fromRGB(100, 105, 125) or rarityColor
 	rarLabel.TextSize = 12
 	rarLabel.TextXAlignment = Enum.TextXAlignment.Center
-	rarLabel.Text = hideName and "" or rarityInfo.label
+	rarLabel.Text = rarityInfo.label
 	rarLabel.Parent = card
+
+	if data.subLabel and data.subLabel ~= "" then
+		local subLbl = Instance.new("TextLabel")
+		subLbl.Name = "SubLabel"
+		subLbl.Size = UDim2.new(1, -10, 0, 14)
+		subLbl.Position = UDim2.new(0, 5, 0, 135)
+		subLbl.BackgroundTransparency = 1
+		subLbl.Font = Enum.Font.GothamBold
+		subLbl.TextColor3 = data.locked and Color3.fromRGB(100, 105, 135) or C.TextMuted
+		subLbl.TextSize = 11
+		subLbl.TextXAlignment = Enum.TextXAlignment.Center
+		subLbl.Text = data.subLabel
+		subLbl.Parent = card
+	end
 
 	if data.actionText and not data.locked then
 		local btnColor = data.actionColor or C.BuyButton
@@ -1576,15 +1587,15 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 	nameLabel.Position = UDim2.new(0, 5, 0, 100)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.TextColor3 = data.locked and Color3.fromRGB(55, 58, 80) or C.TextWhite
+	nameLabel.TextColor3 = data.locked and Color3.fromRGB(130, 135, 155) or C.TextWhite
 	nameLabel.TextSize = 12
 	nameLabel.TextScaled = false
 	nameLabel.TextWrapped = false
 	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
-	nameLabel.Text = data.locked and "???" or (data.name or "???")
+	nameLabel.Text = data.name or "MISSING ITEM"
 	nameLabel.Parent = card
-	if not data.locked then
+	do
 		local ns = Instance.new("UIStroke")
 		ns.Color = Color3.fromRGB(0, 0, 0)
 		ns.Thickness = 1.5
@@ -1599,10 +1610,10 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 	rarLabel.Position = UDim2.new(0, 5, 0, 119)
 	rarLabel.BackgroundTransparency = 1
 	rarLabel.Font = Enum.Font.GothamBold
-	rarLabel.TextColor3 = data.locked and Color3.fromRGB(42, 45, 65) or rarityColor
+	rarLabel.TextColor3 = data.locked and Color3.fromRGB(100, 105, 125) or rarityColor
 	rarLabel.TextSize = 12
 	rarLabel.TextXAlignment = Enum.TextXAlignment.Center
-	rarLabel.Text = data.locked and "" or rarityInfo.label
+	rarLabel.Text = rarityInfo.label
 	rarLabel.Parent = card
 
 	-- Sub-label (e.g. "20 Wins", "Crown Crate", "Shop Only")

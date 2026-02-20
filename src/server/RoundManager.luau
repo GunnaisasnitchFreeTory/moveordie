@@ -31,6 +31,7 @@ local HazardManager = require(Server:WaitForChild("HazardManager"))
 local MapManager = require(Server:WaitForChild("MapManager"))
 local BrainrotModeService = require(Server:WaitForChild("BrainrotModeService"))
 local RoundCoinService = require(Server:WaitForChild("RoundCoinService"))
+local SwordSpawnService = require(Server:WaitForChild("SwordSpawnService"))
 
 --[[ PHASE CONSTANTS ]]
 local Phase = {
@@ -257,11 +258,12 @@ local function runPhase(phaseName: string, duration: number): boolean
 end
 
 --[[
-	Cleanup mode-specific spawns (brainrot pickups, coins) on any round exit.
+	Cleanup mode-specific spawns (brainrot pickups, coins, swords) on any round exit.
 ]]
 local function cleanupModeRound()
 	if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
 	if matchMode == "Normal" then RoundCoinService.OnRoundEnd() end
+	SwordSpawnService.OnRoundEnd()
 end
 
 --[[
@@ -300,6 +302,9 @@ local function runRoundCycle(): boolean
 	if matchMode == "Normal" then
 		RoundCoinService.OnRoundStart(currentRound)
 	end
+
+	-- Sword spawns (both modes, rounds 1-7 only)
+	SwordSpawnService.OnRoundStart(currentRound)
 	
 	-- Check caps before round starts
 	if checkMatchEnd() then

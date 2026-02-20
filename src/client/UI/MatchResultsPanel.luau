@@ -284,7 +284,6 @@ function MatchResultsPanel.Show(data)
 	ps.Parent = placeLbl
 	yOffset += 36
 
-	-- Coins earned
 	local coinLbl = Instance.new("TextLabel")
 	coinLbl.AnchorPoint = Vector2.new(0.5, 0)
 	coinLbl.Position = UDim2.new(0.5, 0, 0, yOffset)
@@ -293,10 +292,45 @@ function MatchResultsPanel.Show(data)
 	coinLbl.Font = Enum.Font.GothamSemibold
 	coinLbl.TextColor3 = Color3.fromRGB(255, 220, 60)
 	coinLbl.TextSize = 16
-	coinLbl.Text = string.format("+%d Coins", data.yourCoins or 0)
+	coinLbl.Text = string.format("+%d Win Bonus", data.yourCoins or 0)
 	coinLbl.ZIndex = 42
 	coinLbl.Parent = card
-	yOffset += 26
+	yOffset += 22
+
+	local matchCoins = data.matchCoinsCollected or 0
+	if matchCoins > 0 then
+		local matchCoinLbl = Instance.new("TextLabel")
+		matchCoinLbl.AnchorPoint = Vector2.new(0.5, 0)
+		matchCoinLbl.Position = UDim2.new(0.5, 0, 0, yOffset)
+		matchCoinLbl.Size = UDim2.new(1, -20, 0, 18)
+		matchCoinLbl.BackgroundTransparency = 1
+		matchCoinLbl.Font = Enum.Font.GothamSemibold
+		matchCoinLbl.TextColor3 = Color3.fromRGB(100, 220, 255)
+		matchCoinLbl.TextSize = 14
+		matchCoinLbl.Text = string.format("Coins Collected: %d", matchCoins)
+		matchCoinLbl.ZIndex = 42
+		matchCoinLbl.Parent = card
+		yOffset += 20
+
+		local totalEarned = (data.yourCoins or 0) + matchCoins
+		local totalLbl = Instance.new("TextLabel")
+		totalLbl.AnchorPoint = Vector2.new(0.5, 0)
+		totalLbl.Position = UDim2.new(0.5, 0, 0, yOffset)
+		totalLbl.Size = UDim2.new(1, -20, 0, 18)
+		totalLbl.BackgroundTransparency = 1
+		totalLbl.Font = Enum.Font.GothamBold
+		totalLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+		totalLbl.TextSize = 14
+		totalLbl.Text = string.format("Total Earned: %d", totalEarned)
+		totalLbl.ZIndex = 42
+		totalLbl.Parent = card
+		local ts = Instance.new("UIStroke")
+		ts.Color = Color3.fromRGB(0, 0, 0)
+		ts.Thickness = 1
+		ts.Parent = totalLbl
+		yOffset += 20
+	end
+	yOffset += 4
 
 	-- Separator
 	local sep1 = Instance.new("Frame")
@@ -371,6 +405,22 @@ function MatchResultsPanel.Show(data)
 		nameTxt.TextTruncate = Enum.TextTruncate.AtEnd
 		nameTxt.ZIndex = 43
 		nameTxt.Parent = row
+
+		local rMatchCoins = r.matchCoinsCollected or 0
+		if rMatchCoins > 0 then
+			local collectedTxt = Instance.new("TextLabel")
+			collectedTxt.Size = UDim2.new(0, 46, 1, 0)
+			collectedTxt.AnchorPoint = Vector2.new(1, 0)
+			collectedTxt.Position = UDim2.new(1, -56, 0, 0)
+			collectedTxt.BackgroundTransparency = 1
+			collectedTxt.Font = Enum.Font.Gotham
+			collectedTxt.TextColor3 = Color3.fromRGB(100, 220, 255)
+			collectedTxt.TextSize = 11
+			collectedTxt.Text = string.format("[%d]", rMatchCoins)
+			collectedTxt.TextXAlignment = Enum.TextXAlignment.Right
+			collectedTxt.ZIndex = 43
+			collectedTxt.Parent = row
+		end
 
 		local coinsTxt = Instance.new("TextLabel")
 		coinsTxt.Size = UDim2.new(0, 50, 1, 0)

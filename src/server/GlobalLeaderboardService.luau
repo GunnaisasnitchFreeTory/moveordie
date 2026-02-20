@@ -3,23 +3,23 @@
 	Manages global Top-N leaderboards via OrderedDataStore.
 	Renders SurfaceGuis on lobby boards in Workspace.LobbyStuff.
 
-	Boards (storeKey → part):
-	  "WeeklyWins"    → "Weekly Wins"
-	  "LifetimeWins"  → "Lifetime Wins"
-	  "WeeklyCoins"   → "Weekly Coins Achieved"
-	  "LifetimeCoins" → "Lifetime Coins Achieved"
-	  "CrownsFound"   → "Lifetime Crowns Found"
+	Boards (storeKey -> part):
+	  "WeeklyWins"    -> "Weekly Wins"
+	  "LifetimeWins"  -> "Lifetime Wins"
+	  "WeeklyCoins"   -> "Weekly Coins Achieved"
+	  "LifetimeCoins" -> "Lifetime Coins Achieved"
+	  "CrownsFound"   -> "Lifetime Crowns Found"
 
 	Stat updates arrive via DIRECT MODULE CALLS from producer services
 	(EconomyService, MatchManager, InventoryService).
-	No BindableEvent pipeline — just require() + function call.
+	No BindableEvent pipeline -- just require() + function call.
 
 	STUDIO MODE:
 	  When RunService:IsStudio(), all leaderboard data is kept IN-MEMORY only.
 	  No OrderedDataStore reads or writes happen. This ensures:
-	    • No stale entries from previous test runs
-	    • No ODS throttling in rapid test iterations
-	    • Boards reflect ONLY the current server session
+	    - No stale entries from previous test runs
+	    - No ODS throttling in rapid test iterations
+	    - Boards reflect ONLY the current server session
 	  Production (non-studio) behavior is completely unchanged.
 
 	API:
@@ -29,7 +29,12 @@
 		SeedPlayerBoardsFromSavedData(userId, savedData)
 		RefreshAll()
 		RefreshBoard(storeKey)
-		GetWeekId() → string
+		GetWeekId() -> string
+		RemovePlayerEntries(userId)
+		ClearSeedFlag(userId)
+		ClearAllBoards()
+		DumpBoardState()
+		PurgeTestEntries()
 ]]
 
 local DataStoreService    = game:GetService("DataStoreService")
@@ -41,16 +46,17 @@ local IS_STUDIO = RunService:IsStudio()
 
 local GlobalLeaderboardService = {}
 
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 -- CONFIGURATION
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
+
+local LEADERBOARD_SEASON = "S2"
 
 local TOP_N            = 10
 local REFRESH_INTERVAL = 45
 local DEBOUNCE_TIME    = 3
 local PIXELS_PER_STUD  = 20
 
--- Visual constants
 local BG_COLOR           = Color3.fromRGB(12, 12, 22)
 local ROW_ALT_COLOR      = Color3.fromRGB(30, 30, 45)
 local HEADER_TEXT_COLOR  = Color3.fromRGB(140, 140, 160)
@@ -63,7 +69,6 @@ local RANK_COLORS = {
 }
 local DEFAULT_RANK_COLOR = Color3.fromRGB(180, 180, 195)
 
--- Board definitions
 local BOARDS = {
 	{
 		partName = "Weekly Wins",
@@ -102,15 +107,14 @@ local BOARDS = {
 	},
 }
 
--- Lookups
 local boardDefsByKey = {}
 for _, bd in ipairs(BOARDS) do
 	boardDefsByKey[bd.storeKey] = bd
 end
 
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 -- STATE
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 
 local orderedStores = {}
 local cachedEntries = {}
@@ -120,37 +124,28 @@ local initialized   = false
 local lastWriteTime  = {}
 local pendingWrites  = {}
 local pendingTimers  = {}
-local seededPlayers  = {}   -- per-session guard: seededPlayers[userId] = true
+local seededPlayers  = {}
 
--- Studio in-memory boards (replaces ODS in Studio mode).
--- Structure: studioMemoryBoards[storeKey][tostring(userId)] = intValue
--- Fresh every server session — no stale data from previous test runs.
 local studioMemoryBoards = {}
 
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 -- HELPERS
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 
--- Returns true if userId is valid for writing/reading.
--- In Studio, negative userIds (-1 to -4) are the local test players.
 local function isValidUserId(userId): boolean
 	if type(userId) ~= "number" then return false end
 	if math.floor(userId) ~= userId then return false end
 	if userId == 0 then return false end
 	if userId > 0 then return true end
-	-- userId < 0: only valid in Studio
 	return IS_STUDIO
 end
 
--- Resolve a display name for a userId.
--- Positive ids: GetNameFromUserIdAsync. Negative ids (Studio): check in-game players.
 local function resolveUsername(userId: number): string
 	if userId > 0 then
 		local ok, name = pcall(function()
 			return Players:GetNameFromUserIdAsync(userId)
 		end)
 		if ok and name then return name end
-		-- Retry once
 		task.wait(0.5)
 		local ok2, name2 = pcall(function()
 			return Players:GetNameFromUserIdAsync(userId)
@@ -160,25 +155,35 @@ local function resolveUsername(userId: number): string
 		return "UserId:" .. tostring(userId)
 	end
 
-	-- Negative userId (Studio test players)
 	local player = Players:GetPlayerByUserId(userId)
 	if player then return player.Name end
 	return "Player" .. tostring(math.abs(userId))
 end
 
--- ═══════════════════════════════════════════════════════════════════
+local function cancelPendingWritesForUser(userId: number)
+	local uidStr = tostring(userId)
+	for debounceKey, pending in pairs(pendingWrites) do
+		if pending.userId == userId then
+			pendingWrites[debounceKey] = nil
+			warn(string.format("[GLBS] Cancelled pending write: %s for userId=%d", debounceKey, userId))
+		end
+	end
+end
+
+-- =====================================================================
 -- WEEK ID
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 
 function GlobalLeaderboardService.GetWeekId(): string
 	return os.date("!%Y_W%W")
 end
 
 local function getFullStoreKey(boardDef): string
+	local base = boardDef.storeKey
 	if boardDef.weekly then
-		return boardDef.storeKey .. "_" .. GlobalLeaderboardService.GetWeekId()
+		base = base .. "_" .. GlobalLeaderboardService.GetWeekId()
 	end
-	return boardDef.storeKey
+	return LEADERBOARD_SEASON .. "_" .. base
 end
 
 local function getOrderedStore(boardDef)
@@ -196,12 +201,11 @@ local function getOrderedStore(boardDef)
 	return nil
 end
 
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 -- FETCH
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 
 local function fetchTopN(boardDef)
-	-- ── STUDIO: read from in-memory table (no ODS, no stale data) ──
 	if IS_STUDIO then
 		local memBoard = studioMemoryBoards[boardDef.storeKey] or {}
 		local results = {}
@@ -225,7 +229,6 @@ local function fetchTopN(boardDef)
 		return results
 	end
 
-	-- ── PRODUCTION: read from OrderedDataStore ──
 	local fullKey = getFullStoreKey(boardDef)
 	local store = getOrderedStore(boardDef)
 	if not store then
@@ -257,14 +260,12 @@ local function fetchTopN(boardDef)
 		warn(string.format("[GLBS] Entry %d: rawKey=%s userId=%s value=%s",
 			i, tostring(rawKey), tostring(userId), tostring(value)))
 
-		-- Validate userId
 		if not isValidUserId(userId) then
 			warn(string.format("[GLBS] Skipping entry %d: invalid userId=%s (studio=%s)",
 				i, tostring(rawKey), tostring(IS_STUDIO)))
 			continue
 		end
 
-		-- Skip entries with invalid value
 		if type(value) ~= "number" or value <= 0 then
 			warn(string.format("[GLBS] Skipping entry %d: invalid value=%s", i, tostring(value)))
 			continue
@@ -284,9 +285,9 @@ local function fetchTopN(boardDef)
 	return results
 end
 
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 -- WRITE
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 
 local function writeAndRefresh(boardDef, userId: number, intValue: number)
 	task.spawn(function()
@@ -301,7 +302,6 @@ local function writeAndRefresh(boardDef, userId: number, intValue: number)
 			return
 		end
 
-		-- ── STUDIO: write to in-memory table only (no ODS) ──
 		if IS_STUDIO then
 			if not studioMemoryBoards[boardDef.storeKey] then
 				studioMemoryBoards[boardDef.storeKey] = {}
@@ -314,11 +314,10 @@ local function writeAndRefresh(boardDef, userId: number, intValue: number)
 			return
 		end
 
-		-- ── PRODUCTION: write to OrderedDataStore ──
 		local fullKey = getFullStoreKey(boardDef)
 		local store = getOrderedStore(boardDef)
 		if not store then
-			warn("[GLBS] ODS WRITE ABORTED — no store for key=" .. fullKey)
+			warn("[GLBS] ODS WRITE ABORTED -- no store for key=" .. fullKey)
 			return
 		end
 
@@ -342,9 +341,9 @@ local function writeAndRefresh(boardDef, userId: number, intValue: number)
 	end)
 end
 
--- ═══════════════════════════════════════════════════════════════════
--- REPORT STAT (PUBLIC API — called directly by other modules)
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
+-- REPORT STAT (PUBLIC API)
+-- =====================================================================
 
 function GlobalLeaderboardService.ReportStatById(userId: number, statKey: string, newValue: number)
 	warn(string.format("[GLBS] ReportStatById CALLED: statKey=%s value=%s userId=%s",
@@ -417,9 +416,9 @@ function GlobalLeaderboardService.ReportStat(player: Player, statKey: string, ne
 	GlobalLeaderboardService.ReportStatById(player.UserId, statKey, newValue)
 end
 
--- ═══════════════════════════════════════════════════════════════════
--- SEED PLAYER BOARDS FROM SAVED DATA (called once per player on join)
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
+-- SEED PLAYER BOARDS FROM SAVED DATA
+-- =====================================================================
 
 function GlobalLeaderboardService.SeedPlayerBoardsFromSavedData(userId: number, savedData: {[string]: any})
 	if not isValidUserId(userId) then
@@ -437,8 +436,6 @@ function GlobalLeaderboardService.SeedPlayerBoardsFromSavedData(userId: number, 
 		return
 	end
 
-	-- Count only EARNED crowns (exclude starter "crown_basic" which everyone has by default).
-	-- This prevents every new player from showing CrownsFound=1 on the leaderboard.
 	local crownsEarned = 0
 	do
 		local ownedCrowns = savedData.OwnedCrowns
@@ -452,7 +449,6 @@ function GlobalLeaderboardService.SeedPlayerBoardsFromSavedData(userId: number, 
 		end
 	end
 
-	-- Map saved data fields to GLBS stat keys
 	local statsToSeed = {
 		{ key = "LifetimeWins",  value = savedData.LifetimeWins or 0 },
 		{ key = "WeeklyWins",    value = savedData.WeeklyWins or 0 },
@@ -468,14 +464,13 @@ function GlobalLeaderboardService.SeedPlayerBoardsFromSavedData(userId: number, 
 			warn(string.format("[GLBS:Seed]   %s = %d (userId=%d)", stat.key, stat.value, userId))
 			GlobalLeaderboardService.ReportStatById(userId, stat.key, stat.value)
 			seededCount += 1
-			task.wait(0.3)  -- stagger to avoid ODS throttling
+			task.wait(0.3)
 		else
 			warn(string.format("[GLBS:Seed]   %s = 0 (SKIP) (userId=%d)", stat.key, userId))
 		end
 	end
 
 	if seededCount > 0 then
-		-- Wait for the writes to settle, then do a full board refresh
 		task.delay(2, function()
 			warn("[GLBS:Seed] Post-seed RefreshAll for userId=" .. tostring(userId))
 			GlobalLeaderboardService.RefreshAll()
@@ -486,14 +481,13 @@ function GlobalLeaderboardService.SeedPlayerBoardsFromSavedData(userId: number, 
 	end
 end
 
--- Clear seed guard when player leaves (so re-join within same server re-seeds)
 Players.PlayerRemoving:Connect(function(player)
 	seededPlayers[player.UserId] = nil
 end)
 
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 -- RENDER HELPERS
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 
 local function formatNumber(n: number): string
 	local s = tostring(math.floor(n))
@@ -534,9 +528,9 @@ local function makeLabel(parent, props)
 	return label
 end
 
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 -- RENDER BOARD
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 
 local function renderBoard(boardDef, entries)
 	local part = boardParts[boardDef.partName]
@@ -682,9 +676,9 @@ local function renderBoard(boardDef, entries)
 	warn(string.format("[GLBS] Rendered '%s' with %d entries", boardDef.title, #entries))
 end
 
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 -- PUBLIC API
--- ═══════════════════════════════════════════════════════════════════
+-- =====================================================================
 
 function GlobalLeaderboardService.RefreshBoard(storeKey: string)
 	local boardDef = boardDefsByKey[storeKey]
@@ -711,6 +705,211 @@ function GlobalLeaderboardService.RefreshAll()
 	warn("[GLBS] RefreshAll complete")
 end
 
+function GlobalLeaderboardService.RemovePlayerEntries(userId: number)
+	if type(userId) ~= "number" or userId == 0 then return end
+
+	warn(string.format("[GLBS] RemovePlayerEntries userId=%d (studio=%s)", userId, tostring(IS_STUDIO)))
+
+	seededPlayers[userId] = nil
+	cancelPendingWritesForUser(userId)
+
+	if IS_STUDIO then
+		local removedCount = 0
+		for _, boardDef in ipairs(BOARDS) do
+			local memBoard = studioMemoryBoards[boardDef.storeKey]
+			if memBoard then
+				if memBoard[tostring(userId)] ~= nil then
+					memBoard[tostring(userId)] = nil
+					removedCount += 1
+					warn(string.format("[GLBS:Studio] MEM REMOVE: key=%s userId=%d", boardDef.storeKey, userId))
+				end
+			end
+		end
+
+		for key, _ in pairs(cachedEntries) do
+			cachedEntries[key] = nil
+		end
+
+		warn(string.format("[GLBS] Removed %d entries for userId=%d — flushing cache + refreshing all boards", removedCount, userId))
+		GlobalLeaderboardService.RefreshAll()
+		return
+	end
+
+	if userId <= 0 then return end
+
+	for _, boardDef in ipairs(BOARDS) do
+		local fullKey = getFullStoreKey(boardDef)
+		local store = getOrderedStore(boardDef)
+		if store then
+			warn(string.format("[GLBS] RemoveAsync: store=%s userId=%d", fullKey, userId))
+			local ok, err = pcall(function()
+				store:RemoveAsync(tostring(userId))
+			end)
+			if ok then
+				warn(string.format("[GLBS] Removed userId=%d from %s", userId, fullKey))
+			else
+				warn(string.format("[GLBS] RemoveAsync failed for userId=%d from %s: %s", userId, fullKey, tostring(err)))
+			end
+			task.wait(0.5)
+		else
+			warn(string.format("[GLBS] RemoveAsync SKIPPED: no store for %s", fullKey))
+		end
+	end
+
+	for key, _ in pairs(cachedEntries) do
+		cachedEntries[key] = nil
+	end
+
+	GlobalLeaderboardService.RefreshAll()
+end
+
+function GlobalLeaderboardService.ClearSeedFlag(userId: number)
+	seededPlayers[userId] = nil
+	warn(string.format("[GLBS] Cleared seed flag for userId=%d", userId))
+end
+
+function GlobalLeaderboardService.ClearAllBoards()
+	warn("[GLBS] ClearAllBoards called — wiping ALL data")
+
+	for key, _ in pairs(pendingWrites) do
+		pendingWrites[key] = nil
+	end
+
+	for key, _ in pairs(seededPlayers) do
+		seededPlayers[key] = nil
+	end
+
+	if IS_STUDIO then
+		for _, boardDef in ipairs(BOARDS) do
+			studioMemoryBoards[boardDef.storeKey] = {}
+		end
+		warn("[GLBS:Studio] All memory boards cleared")
+	else
+		for _, boardDef in ipairs(BOARDS) do
+			local fullKey = getFullStoreKey(boardDef)
+			local store = getOrderedStore(boardDef)
+			if store then
+				local ok, pages = pcall(function()
+					return store:GetSortedAsync(false, 100)
+				end)
+				if ok and pages then
+					local ok2, entries = pcall(function()
+						return pages:GetCurrentPage()
+					end)
+					if ok2 and entries then
+						for _, e in ipairs(entries) do
+							pcall(function()
+								store:RemoveAsync(e.key)
+							end)
+							task.wait(0.5)
+						end
+						warn(string.format("[GLBS] Cleared %d entries from %s", #entries, fullKey))
+					end
+				end
+			end
+		end
+	end
+
+	for key, _ in pairs(cachedEntries) do
+		cachedEntries[key] = nil
+	end
+
+	GlobalLeaderboardService.RefreshAll()
+	warn("[GLBS] ClearAllBoards complete — all boards refreshed")
+end
+
+function GlobalLeaderboardService.DumpBoardState()
+	warn("[GLBS] === BOARD STATE DUMP ===")
+	warn(string.format("[GLBS] IS_STUDIO=%s  SEASON=%s", tostring(IS_STUDIO), LEADERBOARD_SEASON))
+
+	for _, boardDef in ipairs(BOARDS) do
+		local key = boardDef.storeKey
+		local fullKey = getFullStoreKey(boardDef)
+		warn(string.format("[GLBS]   Board: %s  fullKey=%s", key, fullKey))
+
+		if IS_STUDIO then
+			local mem = studioMemoryBoards[key]
+			if mem then
+				local count = 0
+				for uid, val in pairs(mem) do
+					warn(string.format("[GLBS]     MEM: userId=%s value=%s", uid, tostring(val)))
+					count += 1
+				end
+				if count == 0 then
+					warn("[GLBS]     MEM: (empty)")
+				end
+			else
+				warn("[GLBS]     MEM: (nil — never written)")
+			end
+		end
+
+		local cached = cachedEntries[key]
+		if cached then
+			warn(string.format("[GLBS]     CACHE: %d entries", #cached))
+			for i, e in ipairs(cached) do
+				warn(string.format("[GLBS]       #%d %s (userId=%d) = %d", i, e.name, e.userId, e.value))
+			end
+		else
+			warn("[GLBS]     CACHE: (nil)")
+		end
+	end
+
+	local pendingCount = 0
+	for k, v in pairs(pendingWrites) do
+		warn(string.format("[GLBS]   PENDING WRITE: %s -> userId=%d val=%d", k, v.userId, v.value))
+		pendingCount += 1
+	end
+	if pendingCount == 0 then
+		warn("[GLBS]   PENDING WRITES: (none)")
+	end
+
+	warn("[GLBS] === END DUMP ===")
+end
+
+function GlobalLeaderboardService.PurgeTestEntries()
+	if IS_STUDIO then
+		warn("[GLBS:Purge] Skipped (Studio mode)")
+		return
+	end
+
+	warn("[GLBS:Purge] Scanning all boards for negative userId entries...")
+	local totalRemoved = 0
+
+	for _, boardDef in ipairs(BOARDS) do
+		local fullKey = getFullStoreKey(boardDef)
+		local okS, store = pcall(DataStoreService.GetOrderedDataStore, DataStoreService, fullKey)
+		if not okS or not store then continue end
+
+		local okP, pages = pcall(store.GetSortedAsync, store, false, 100)
+		if not okP or not pages then continue end
+		local okE, entries = pcall(pages.GetCurrentPage, pages)
+		if not okE or not entries then continue end
+
+		for _, e in ipairs(entries) do
+			local uid = tonumber(e.key)
+			if uid and uid <= 0 then
+				local okR, errR = pcall(function()
+					store:RemoveAsync(e.key)
+				end)
+				if okR then
+					totalRemoved += 1
+					warn(string.format("[GLBS:Purge] Removed key=%s val=%s from %s", e.key, tostring(e.value), fullKey))
+				else
+					warn(string.format("[GLBS:Purge] RemoveAsync FAILED key=%s from %s: %s", e.key, fullKey, tostring(errR)))
+				end
+				task.wait(0.6)
+			end
+		end
+	end
+
+	if totalRemoved > 0 then
+		warn(string.format("[GLBS:Purge] Done -- removed %d test entries", totalRemoved))
+		GlobalLeaderboardService.RefreshAll()
+	else
+		warn("[GLBS:Purge] Done -- no test entries found")
+	end
+end
+
 function GlobalLeaderboardService.Init()
 	if initialized then
 		warn("[GLBS] Already initialized")
@@ -718,11 +917,10 @@ function GlobalLeaderboardService.Init()
 	end
 	initialized = true
 
-	warn(string.format("[GLBS] Init (IS_STUDIO=%s) — %s",
-		tostring(IS_STUDIO),
+	warn(string.format("[GLBS] Init (IS_STUDIO=%s, season=%s) -- %s",
+		tostring(IS_STUDIO), LEADERBOARD_SEASON,
 		IS_STUDIO and "IN-MEMORY MODE (no ODS reads/writes)" or "PRODUCTION MODE (OrderedDataStore)"))
 
-	-- Locate lobby parts
 	local lobbyStuff = workspace:FindFirstChild("LobbyStuff")
 	if not lobbyStuff then
 		warn("[GLBS] Workspace.LobbyStuff not found!")
@@ -741,19 +939,18 @@ function GlobalLeaderboardService.Init()
 
 	warn("[GLBS] === STORE KEY MAPPING ===")
 	for _, bd in ipairs(BOARDS) do
-		warn(string.format("[GLBS]   storeKey='%s' -> part='%s' weekly=%s",
-			bd.storeKey, bd.partName, tostring(bd.weekly)))
+		warn(string.format("[GLBS]   storeKey='%s' -> part='%s' weekly=%s fullKey='%s'",
+			bd.storeKey, bd.partName, tostring(bd.weekly), getFullStoreKey(bd)))
 	end
 	warn("[GLBS] =========================")
 
-	-- Render empty boards
 	for _, boardDef in ipairs(BOARDS) do
 		renderBoard(boardDef, {})
 	end
 
-	-- Periodic refresh loop
 	task.spawn(function()
 		task.wait(3)
+		GlobalLeaderboardService.PurgeTestEntries()
 		GlobalLeaderboardService.RefreshAll()
 
 		while true do
@@ -762,7 +959,9 @@ function GlobalLeaderboardService.Init()
 		end
 	end)
 
-	warn("[GLBS] Init complete — refresh every " .. REFRESH_INTERVAL .. "s")
+	warn("[GLBS] Init complete -- refresh every " .. REFRESH_INTERVAL .. "s")
 end
+
+GlobalLeaderboardService.SEASON = LEADERBOARD_SEASON
 
 return GlobalLeaderboardService

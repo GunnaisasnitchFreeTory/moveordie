@@ -428,7 +428,7 @@ function RewardPopup.Show(data)
 	_onDismissCallback = data.onDismiss
 
 	local titleText = data.title or "YOU WON!"
-	local nameText = data.name or "???"
+	local nameText = data.name or "MISSING ITEM"
 	local rarityStr = resolveRarity(data)
 	local okText = data.okText or "OK"
 	local rarityColor = RARITY_COLORS[rarityStr] or RARITY_COLORS.Common
@@ -727,7 +727,7 @@ function RewardPopup.ShowBatch(items)
 		nameLbl.Font = Enum.Font.GothamBold
 		nameLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
 		nameLbl.TextSize = 13
-		nameLbl.Text = item.name or "???"
+		nameLbl.Text = item.name or "MISSING ITEM"
 		nameLbl.TextWrapped = true
 		nameLbl.ZIndex = 54
 		nameLbl.Parent = card

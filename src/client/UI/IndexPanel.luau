@@ -133,26 +133,9 @@ local function applyLockOverlay(vpFrame: ViewportFrame)
 	lockIcon.Parent = vpFrame
 end
 
---- Build sub-label for unowned crowns based on source
+--- Build sub-label for unowned crowns (delegates to ItemCatalog)
 local function getCrownSubLabel(crown): string?
-	if crown.obtainable == false then
-		if crown.source == "DailyReward" then
-			return "Daily Reward"
-		end
-		return "Bundle / Exclusive"
-	end
-	if crown.source == "Level" then
-		local milestone = ItemCatalog.GetMilestoneWins(crown.id)
-		if milestone then
-			return tostring(milestone) .. " Wins"
-		end
-		return "Wins Milestone"
-	elseif crown.source == "Findable" then
-		return "Crown Crate"
-	elseif crown.source == "Exclusive" then
-		return "Shop Only"
-	end
-	return nil
+	return ItemCatalog.GetCrownAcquisitionLabel(crown.id)
 end
 
 local function populateCrowns()
@@ -209,13 +192,7 @@ local function populatePets()
 		local isOwned = ownedSet[pet.id] == true
 		local subLabel = nil
 		if not isOwned then
-			if pet.obtainable == false then
-				subLabel = "Bundle / Exclusive"
-			elseif pet.shopOnly then
-				subLabel = "Shop Only"
-			else
-				subLabel = "Pet Crate"
-			end
+			subLabel = ItemCatalog.GetPetAcquisitionLabel(pet.id)
 		end
 
 		local card = Components.CreateViewportItemCard(contentFrame, {
@@ -261,7 +238,7 @@ local function populateIconImages()
 		local isOwned = ownedSet[iconImg.id] == true
 		local subLabel = nil
 		if not isOwned then
-			subLabel = "Bundle / Exclusive"
+			subLabel = ItemCatalog.GetIconImageAcquisitionLabel(iconImg.id)
 		end
 
 		local card = Components.CreateViewportItemCard(contentFrame, {

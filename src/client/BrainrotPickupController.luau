@@ -176,7 +176,7 @@ local function showPickupPopup(data)
 	end
 
 	local imageId = data.imageAssetId or ""
-	local displayName = data.petName or "???"
+	local displayName = data.petName or "MISSING ITEM"
 	local coinsAwarded = data.coins or 0
 	local alreadyOwned = data.alreadyOwned or false
 	local isNew = data.isNew

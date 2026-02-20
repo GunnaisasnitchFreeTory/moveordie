@@ -97,20 +97,9 @@ local function clearContent()
 	end
 end
 
---- Build a sub-label for unowned crowns based on source
+--- Build a sub-label for unowned crowns based on source (delegates to ItemCatalog)
 local function getSubLabel(crown): string?
-	if crown.source == "Level" then
-		local milestone = ItemCatalog.GetMilestoneWins(crown.id)
-		if milestone then
-			return tostring(milestone) .. " Wins"
-		end
-		return "Wins Milestone"
-	elseif crown.source == "Findable" then
-		return "Crown Crate"
-	elseif crown.source == "Exclusive" then
-		return "Shop Only"
-	end
-	return nil
+	return ItemCatalog.GetCrownAcquisitionLabel(crown.id)
 end
 
 local function refresh()

@@ -35,7 +35,7 @@ function CrateRevealUI.ShowReward(data)
 	RewardPopup.Show({
 		icon       = data.image or "",
 		title      = "YOU WON!",
-		name       = data.name or "???",
+		name       = data.name or "MISSING ITEM",
 		rarityText = data.rarity or "Common",
 		okText     = "CLAIM",
 		onDismiss  = nil,
@@ -60,7 +60,7 @@ function CrateRevealUI.ShowRewards(items)
 		table.insert(mapped, {
 			icon       = data.image or "",
 			title      = "YOU WON!",
-			name       = data.name or "???",
+			name       = data.name or "MISSING ITEM",
 			rarityText = data.rarity or "Common",
 			itemId     = data.itemId or "",
 			itemType   = data.itemType or "",

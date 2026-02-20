@@ -37,7 +37,7 @@ ItemCatalog.FALLBACK_IMAGE = ""
 ItemCatalog.Pets = {
 	-- ── Common (8) ──
 	pet_bald_guest = {
-		id        = "pet_bald_uest",
+		id        = "pet_bald_guest",
 		name      = "Bald Guest",
 		modelName = "Bald Guest",
 		type      = "Pet",
@@ -1059,18 +1059,18 @@ ItemCatalog.Icons = {
 	icon_67_kid            = { id = "icon_67_kid",            name = "67 Kid",            image = "rbxassetid://108813228966097", iconText = "\240\159\150\188", rarity = "Legendary", source = "brainrot_bundle" },
 	icon_steve_harrington  = { id = "icon_steve_harrington",  name = "Steve Harrington",  image = "rbxassetid://135833855438688", iconText = "\240\159\150\188", rarity = "Legendary", source = "brainrot_bundle" },
 	-- Placeholders
-	icon_placeholder_1  = { id = "icon_placeholder_1",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Common" },
-	icon_placeholder_2  = { id = "icon_placeholder_2",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Uncommon" },
-	icon_placeholder_3  = { id = "icon_placeholder_3",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Rare" },
-	icon_placeholder_4  = { id = "icon_placeholder_4",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Epic" },
-	icon_placeholder_5  = { id = "icon_placeholder_5",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Legendary" },
-	icon_placeholder_6  = { id = "icon_placeholder_6",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Common" },
-	icon_placeholder_7  = { id = "icon_placeholder_7",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Uncommon" },
-	icon_placeholder_8  = { id = "icon_placeholder_8",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Rare" },
-	icon_placeholder_9  = { id = "icon_placeholder_9",  name = "???", image = "", iconText = "\240\159\150\188", rarity = "Epic" },
-	icon_placeholder_10 = { id = "icon_placeholder_10", name = "???", image = "", iconText = "\240\159\150\188", rarity = "Legendary" },
-	icon_placeholder_11 = { id = "icon_placeholder_11", name = "???", image = "", iconText = "\240\159\150\188", rarity = "Common" },
-	icon_placeholder_12 = { id = "icon_placeholder_12", name = "???", image = "", iconText = "\240\159\150\188", rarity = "Rare" },
+	icon_placeholder_1  = { id = "icon_placeholder_1",  name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Common", placeholder = true },
+	icon_placeholder_2  = { id = "icon_placeholder_2",  name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Uncommon", placeholder = true },
+	icon_placeholder_3  = { id = "icon_placeholder_3",  name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Rare", placeholder = true },
+	icon_placeholder_4  = { id = "icon_placeholder_4",  name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Epic", placeholder = true },
+	icon_placeholder_5  = { id = "icon_placeholder_5",  name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Legendary", placeholder = true },
+	icon_placeholder_6  = { id = "icon_placeholder_6",  name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Common", placeholder = true },
+	icon_placeholder_7  = { id = "icon_placeholder_7",  name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Uncommon", placeholder = true },
+	icon_placeholder_8  = { id = "icon_placeholder_8",  name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Rare", placeholder = true },
+	icon_placeholder_9  = { id = "icon_placeholder_9",  name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Epic", placeholder = true },
+	icon_placeholder_10 = { id = "icon_placeholder_10", name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Legendary", placeholder = true },
+	icon_placeholder_11 = { id = "icon_placeholder_11", name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Common", placeholder = true },
+	icon_placeholder_12 = { id = "icon_placeholder_12", name = "Coming Soon", image = "", iconText = "\240\159\150\188", rarity = "Rare", placeholder = true },
 }
 
 ItemCatalog._iconOrder = {
@@ -1309,6 +1309,163 @@ function ItemCatalog.GetMilestoneWins(crownId: string): number?
 		end
 	end
 	return nil
+end
+
+--- Crowns obtainable from the Spin Wheel (catalogId values from SpinWheelConfig).
+--- Maintained here so FateCrownsPanel doesn't need to require SpinWheelConfig.
+ItemCatalog._spinWheelCrownIds = {
+	["crown_sparkle"] = true,
+}
+
+--- Pets obtainable from the Spin Wheel (catalogId values from SpinWheelConfig).
+ItemCatalog._spinWheelPetIds = {
+	["pet_dog"] = true,
+	["pet_noob"] = true,
+	["pet_penguin"] = true,
+}
+
+--- Single source-of-truth label describing how a crown is obtained.
+function ItemCatalog.GetCrownAcquisitionLabel(crownId: string): string?
+	local crown = ItemCatalog.Crowns[crownId]
+	if not crown then return nil end
+
+	if crown.source == "Level" then
+		local milestone = ItemCatalog.GetMilestoneWins(crownId)
+		if milestone then
+			return tostring(milestone) .. (milestone == 1 and " Win" or " Wins")
+		end
+		return "Wins Milestone"
+	elseif crown.source == "Findable" then
+		if ItemCatalog._spinWheelCrownIds[crownId] then
+			return "Crown Crate / Spin Wheel"
+		end
+		return "Crown Crate"
+	elseif crown.source == "Exclusive" then
+		return "Shop"
+	elseif crown.source == "DailyReward" then
+		return "Daily Reward"
+	elseif crown.source == "brainrot_bundle" then
+		return "Brainrot Bundle"
+	end
+	return nil
+end
+
+--- Single source-of-truth label describing how a pet is obtained.
+function ItemCatalog.GetPetAcquisitionLabel(petId: string): string?
+	local pet = ItemCatalog.Pets[petId]
+	if not pet then return nil end
+
+	if pet.source == "brainrot_bundle" then
+		return "Brainrot Bundle"
+	elseif pet.source == "brainrot_mode" then
+		return "Save the Brainrot Mode"
+	elseif pet.source == "bundle_future" then
+		return "Coming Soon"
+	elseif pet.shopOnly then
+		return "Shop"
+	else
+		if ItemCatalog._spinWheelPetIds[petId] then
+			return "Pet Crate / Spin Wheel"
+		end
+		return "Pet Crate"
+	end
+end
+
+--- Single source-of-truth label describing how an icon image is obtained.
+function ItemCatalog.GetIconImageAcquisitionLabel(iconImageId: string): string?
+	local iconImage = ItemCatalog.IconImages and ItemCatalog.IconImages[iconImageId]
+	if not iconImage then return nil end
+
+	local source = iconImage.source
+	if source == "brainrot_bundle" then
+		return "Brainrot Bundle"
+	elseif source == "shop" or iconImage.shopOnly then
+		return "Shop"
+	elseif source == "daily_reward" then
+		return "Daily Reward"
+	elseif source == "spin_wheel" then
+		return "Spin Wheel"
+	elseif source and source ~= "" then
+		return source:sub(1, 1):upper() .. source:sub(2):gsub("_", " ")
+	end
+	return "Exclusive"
+end
+
+--- Generic dispatcher — resolves acquisition label for any item type.
+--- Returns (displayText, badgeType) where badgeType is a canonical enum string.
+function ItemCatalog.GetItemAcquisitionInfo(itemType: string, itemId: string): (string?, string?)
+	local label: string? = nil
+
+	if itemType == "Crowns" then
+		label = ItemCatalog.GetCrownAcquisitionLabel(itemId)
+	elseif itemType == "Pets" then
+		label = ItemCatalog.GetPetAcquisitionLabel(itemId)
+	elseif itemType == "IconImages" then
+		label = ItemCatalog.GetIconImageAcquisitionLabel(itemId)
+	end
+
+	if not label then return nil, nil end
+
+	local badgeType: string? = nil
+	if label == "Brainrot Bundle" then
+		badgeType = "EXCLUSIVE_BUNDLE"
+	elseif label == "Save the Brainrot Mode" then
+		badgeType = "SAVE_BRAINROT_MODE"
+	elseif label == "Shop" then
+		badgeType = "SHOP"
+	end
+
+	return label, badgeType
+end
+
+--- Startup validation: logs resolution counts per source for each item type.
+function ItemCatalog.ValidateAcquisitionLabels()
+	local results = { Crowns = {}, Pets = {}, IconImages = {} }
+	local failures = {}
+
+	if ItemCatalog.Crowns then
+		for id in pairs(ItemCatalog.Crowns) do
+			local label = ItemCatalog.GetCrownAcquisitionLabel(id)
+			if label then
+				results.Crowns[label] = (results.Crowns[label] or 0) + 1
+			else
+				table.insert(failures, "Crown:" .. id)
+			end
+		end
+	end
+
+	if ItemCatalog.Pets then
+		for id in pairs(ItemCatalog.Pets) do
+			local label = ItemCatalog.GetPetAcquisitionLabel(id)
+			if label then
+				results.Pets[label] = (results.Pets[label] or 0) + 1
+			else
+				table.insert(failures, "Pet:" .. id)
+			end
+		end
+	end
+
+	if ItemCatalog.IconImages then
+		for id in pairs(ItemCatalog.IconImages) do
+			local label = ItemCatalog.GetIconImageAcquisitionLabel(id)
+			if label then
+				results.IconImages[label] = (results.IconImages[label] or 0) + 1
+			end
+		end
+	end
+
+	for itemType, counts in pairs(results) do
+		for source, count in pairs(counts) do
+			print(string.format("[ItemCatalog:Validate] %s -> %s: %d items", itemType, source, count))
+		end
+	end
+
+	if #failures > 0 then
+		warn(string.format("[ItemCatalog:Validate] %d items with no acquisition label: %s",
+			#failures, table.concat(failures, ", ")))
+	else
+		print("[ItemCatalog:Validate] All items have valid acquisition labels")
+	end
 end
 
 return ItemCatalog
