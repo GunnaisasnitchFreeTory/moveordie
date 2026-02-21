@@ -45,7 +45,7 @@ local function log(...)
 end
 
 local BASE_STATS = {
-	WalkSpeed      = 16,
+	WalkSpeed      = 20,
 	JumpPower      = 50,
 	CoinMultiplier = 1.0,
 }

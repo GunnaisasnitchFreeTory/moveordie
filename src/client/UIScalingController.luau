@@ -18,8 +18,8 @@ local SCALED_GUI_NAMES = {
 
 local DAILY_PANEL_NAME = "DAILYREWARDSPanel"
 
-local PHONE_SIDEBAR_SCALE = 0.72
-local PHONE_SIDEBAR_TOP_INSET = 8
+local PHONE_SIDEBAR_SCALE = 0.65
+local PHONE_SIDEBAR_TOP_INSET = -16
 local PHONE_CELL_H_MULT = 0.88
 local PHONE_PAD_Y_MULT = 0.6
 local ORIG_CELL_H = 86
@@ -27,11 +27,23 @@ local ORIG_PAD_Y = 8
 
 local DESKTOP_SIDEBAR_Y_OFFSET = 75
 
+local PHONE_INTERMISSION_Y = -28
+local PHONE_INTERMISSION_SCALE = 0.78
+local PHONE_SIDEBAR_X_SHIFT = 6
+local PHONE_COIN_SCALE = 0.55
+local PHONE_COIN_Y_SHIFT = -6
+
 local Camera = workspace.CurrentCamera
 local deviceClass: string = "Desktop"
 local trackedScales: { UIScale } = {}
 local _sidebarPhoneTuned = false
 local _sidebarDesktopOffset = false
+local _intermissionPhoneTuned = false
+local _coinPhoneTuned = false
+local _origIntermissionY: number? = nil
+local _origSidebarBgAlpha: number? = nil
+local _origSidebarBgStrokeAlpha: number? = nil
+local _origSidebarStudAlpha: number? = nil
 local _playerGui: Instance? = nil
 
 local function classify(): string
@@ -180,7 +192,20 @@ local function applyLeftStackPhoneTuning()
 		s.Parent = sidebarBg
 
 		local p = sidebarBg.Position
-		sidebarBg.Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset + PHONE_SIDEBAR_TOP_INSET)
+		sidebarBg.Position = UDim2.new(p.X.Scale, p.X.Offset + PHONE_SIDEBAR_X_SHIFT, p.Y.Scale, p.Y.Offset + PHONE_SIDEBAR_TOP_INSET)
+
+		_origSidebarBgAlpha = sidebarBg.BackgroundTransparency
+		sidebarBg.BackgroundTransparency = 1
+		local bgStroke = sidebarBg:FindFirstChildWhichIsA("UIStroke")
+		if bgStroke then
+			_origSidebarBgStrokeAlpha = bgStroke.Transparency
+			bgStroke.Transparency = 1
+		end
+		local bgStud = sidebarBg:FindFirstChild("StudTexture")
+		if bgStud and bgStud:IsA("ImageLabel") then
+			_origSidebarStudAlpha = bgStud.ImageTransparency
+			bgStud.ImageTransparency = 1
+		end
 	end
 
 	if sidebar and not sidebar:FindFirstChild("PhoneSidebarScale") then
@@ -190,7 +215,7 @@ local function applyLeftStackPhoneTuning()
 		s.Parent = sidebar
 
 		local p = sidebar.Position
-		sidebar.Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset + PHONE_SIDEBAR_TOP_INSET)
+		sidebar.Position = UDim2.new(p.X.Scale, p.X.Offset + PHONE_SIDEBAR_X_SHIFT, p.Y.Scale, p.Y.Offset + PHONE_SIDEBAR_TOP_INSET)
 
 		local grid = sidebar:FindFirstChildWhichIsA("UIGridLayout")
 		if grid then
@@ -225,7 +250,25 @@ local function removeLeftStackPhoneTuning()
 			if ps then ps:Destroy() end
 
 			local p = frame.Position
-			frame.Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset - PHONE_SIDEBAR_TOP_INSET)
+			frame.Position = UDim2.new(p.X.Scale, p.X.Offset - PHONE_SIDEBAR_X_SHIFT, p.Y.Scale, p.Y.Offset - PHONE_SIDEBAR_TOP_INSET)
+		end
+	end
+
+	local sidebarBg = hudGui:FindFirstChild("SidebarBg")
+	if sidebarBg then
+		if _origSidebarBgAlpha ~= nil then
+			sidebarBg.BackgroundTransparency = _origSidebarBgAlpha
+			_origSidebarBgAlpha = nil
+		end
+		local bgStroke = sidebarBg:FindFirstChildWhichIsA("UIStroke")
+		if bgStroke and _origSidebarBgStrokeAlpha ~= nil then
+			bgStroke.Transparency = _origSidebarBgStrokeAlpha
+			_origSidebarBgStrokeAlpha = nil
+		end
+		local bgStud = sidebarBg:FindFirstChild("StudTexture")
+		if bgStud and bgStud:IsA("ImageLabel") and _origSidebarStudAlpha ~= nil then
+			bgStud.ImageTransparency = _origSidebarStudAlpha
+			_origSidebarStudAlpha = nil
 		end
 	end
 
@@ -276,16 +319,104 @@ local function removeDesktopLeftStackOffset()
 	_sidebarDesktopOffset = false
 end
 
+local function applyIntermissionPhoneTuning()
+	if _intermissionPhoneTuned then return end
+	if not _playerGui then return end
+	local hudGui = _playerGui:FindFirstChild("HUDGui")
+	if not hudGui then return end
+	local bar = hudGui:FindFirstChild("IntermissionBar")
+	if not bar then return end
+	_origIntermissionY = bar.Position.Y.Offset
+	bar.Position = UDim2.new(bar.Position.X.Scale, bar.Position.X.Offset, 0, PHONE_INTERMISSION_Y)
+
+	if not bar:FindFirstChild("PhoneIntermissionScale") then
+		local s = Instance.new("UIScale")
+		s.Name = "PhoneIntermissionScale"
+		s.Scale = PHONE_INTERMISSION_SCALE
+		s.Parent = bar
+	end
+
+	_intermissionPhoneTuned = true
+	print(string.format("[UI] Phone -> IntermissionBar moved higher (Y=%d) scaled %.2f", PHONE_INTERMISSION_Y, PHONE_INTERMISSION_SCALE))
+end
+
+local function removeIntermissionPhoneTuning()
+	if not _intermissionPhoneTuned then return end
+	if not _playerGui then return end
+	local hudGui = _playerGui:FindFirstChild("HUDGui")
+	if not hudGui then return end
+	local bar = hudGui:FindFirstChild("IntermissionBar")
+	if bar then
+		local ps = bar:FindFirstChild("PhoneIntermissionScale")
+		if ps then ps:Destroy() end
+		if _origIntermissionY ~= nil then
+			bar.Position = UDim2.new(bar.Position.X.Scale, bar.Position.X.Offset, 0, _origIntermissionY)
+			_origIntermissionY = nil
+		end
+	end
+	_intermissionPhoneTuned = false
+end
+
+local function applyCoinFramePhoneTuning()
+	if _coinPhoneTuned then return end
+	if not _playerGui then return end
+	local hudGui = _playerGui:FindFirstChild("HUDGui")
+	if not hudGui then return end
+	local coinFrame = hudGui:FindFirstChild("CoinFrame")
+	if not coinFrame then return end
+
+	if not coinFrame:FindFirstChild("PhoneCoinScale") then
+		local s = Instance.new("UIScale")
+		s.Name = "PhoneCoinScale"
+		s.Scale = PHONE_COIN_SCALE
+		s.Parent = coinFrame
+	end
+
+	local shadow = coinFrame:FindFirstChild("Shadow")
+	if shadow then
+		shadow.Size = UDim2.new(1, 4, 1, 4)
+	end
+
+	local p = coinFrame.Position
+	coinFrame.Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset + PHONE_COIN_Y_SHIFT)
+
+	_coinPhoneTuned = true
+	print(string.format("[UI] Phone -> CoinFrame scaled to %.2f, Y shifted %d, shadow shrunk", PHONE_COIN_SCALE, PHONE_COIN_Y_SHIFT))
+end
+
+local function removeCoinFramePhoneTuning()
+	if not _coinPhoneTuned then return end
+	if not _playerGui then return end
+	local hudGui = _playerGui:FindFirstChild("HUDGui")
+	if not hudGui then return end
+	local coinFrame = hudGui:FindFirstChild("CoinFrame")
+	if coinFrame then
+		local ps = coinFrame:FindFirstChild("PhoneCoinScale")
+		if ps then ps:Destroy() end
+		local shadow = coinFrame:FindFirstChild("Shadow")
+		if shadow then
+			shadow.Size = UDim2.new(1, 12, 1, 12)
+		end
+		local p = coinFrame.Position
+		coinFrame.Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset - PHONE_COIN_Y_SHIFT)
+	end
+	_coinPhoneTuned = false
+end
+
 local function applyPhoneTuning()
 	applyLeftStackPhoneTuning()
 	applyDailyRewardsPhoneConstraint()
 	applyModeVotePhoneClamp()
+	applyIntermissionPhoneTuning()
+	applyCoinFramePhoneTuning()
 end
 
 local function removePhoneTuning()
 	removeLeftStackPhoneTuning()
 	removeDailyRewardsPhoneConstraint()
 	removeModeVotePhoneClamp()
+	removeIntermissionPhoneTuning()
+	removeCoinFramePhoneTuning()
 end
 
 local function onViewportChanged()

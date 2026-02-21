@@ -3,6 +3,7 @@
 	Creates small floating badge labels above key lobby objects:
 	  • "SPIN THE WHEEL" above game.Workspace.SpinTheWheel
 	  • "CRATE SHOP" above game.Workspace.CrownPetShop
+	  • "BRAINROT BUNDLE" above game.Workspace.Brainrot Game Bun
 
 	ANCHORING: For each target, computes the bounding box of ALL
 	descendant BaseParts, then creates an invisible anchor Part at
@@ -14,6 +15,8 @@
 
 	Called from: init.client.luau via WorldIndicators.Init()
 ]]
+
+local TweenService = game:GetService("TweenService")
 
 local WorldIndicators = {}
 
@@ -39,6 +42,13 @@ local INDICATORS = {
 		text         = "COMING SOON",
 		icon         = "\xE2\x8F\xB3",
 		extraPadding = 4,
+	},
+	{
+		targetName   = "Brainrot Game Bun",
+		text         = "BRAINROT BUNDLE",
+		icon         = "\xF0\x9F\xA7\xA0",
+		extraPadding = 4,
+		pulse        = true,
 	},
 }
 
@@ -218,6 +228,29 @@ local function createBadge(adornee: BasePart, text: string, icon: string)
 	return billboard
 end
 
+local function startPulse(billboard: BillboardGui)
+	local bg = billboard:FindFirstChild("Badge")
+	if not bg then return end
+	local uiScale = Instance.new("UIScale")
+	uiScale.Scale = 1
+	uiScale.Parent = bg
+
+	task.spawn(function()
+		local tweenUp = TweenService:Create(uiScale,
+			TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+			{ Scale = 1.06 })
+		local tweenDown = TweenService:Create(uiScale,
+			TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+			{ Scale = 1.0 })
+		while uiScale and uiScale.Parent do
+			tweenUp:Play()
+			tweenUp.Completed:Wait()
+			tweenDown:Play()
+			tweenDown.Completed:Wait()
+		end
+	end)
+end
+
 -- ═══════════════════════════════════════════════════════════════════
 -- INIT
 -- ═══════════════════════════════════════════════════════════════════
@@ -260,7 +293,10 @@ function WorldIndicators.Init()
 				return
 			end
 
-			createBadge(anchor, cfg.text, cfg.icon)
+			local billboard = createBadge(anchor, cfg.text, cfg.icon)
+			if cfg.pulse then
+				startPulse(billboard)
+			end
 			successCount += 1
 			log(string.format("Created: %s above %s", cfg.text, cfg.targetName))
 		end)

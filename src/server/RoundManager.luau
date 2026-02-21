@@ -65,6 +65,7 @@ local matchMode: string = "Normal"
 
 -- Freeze state storage (player -> original values)
 local frozenPlayers: { [Player]: { WalkSpeed: number, JumpPower: number, JumpHeight: number } } = {}
+local freezeRemote: RemoteEvent = nil
 
 local RoundManager = {}
 
@@ -134,6 +135,11 @@ local function freezeAllPlayers()
 	for _, player in ipairs(players) do
 		freezePlayer(player)
 	end
+	if freezeRemote then
+		for _, player in ipairs(players) do
+			freezeRemote:FireClient(player, "Freeze", RoundConfig.FreezeSeconds)
+		end
+	end
 	log(string.format("Froze %d players", #players))
 end
 
@@ -142,11 +148,20 @@ end
 ]]
 local function unfreezeAllPlayers()
 	local count = 0
+	local toNotify = {}
 	for player, _ in pairs(frozenPlayers) do
+		table.insert(toNotify, player)
 		unfreezePlayer(player)
 		count = count + 1
 	end
 	frozenPlayers = {}
+	if freezeRemote then
+		for _, player in ipairs(toNotify) do
+			if player.Parent then
+				freezeRemote:FireClient(player, "Unfreeze")
+			end
+		end
+	end
 	if count > 0 then
 		log(string.format("Unfroze %d players", count))
 	end
@@ -401,6 +416,21 @@ function RoundManager.Init()
 	
 	-- Initialize HazardManager (depends on MapManager being ready)
 	HazardManager.Init()
+
+	local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotesFolder then
+		remotesFolder = Instance.new("Folder")
+		remotesFolder.Name = "Remotes"
+		remotesFolder.Parent = ReplicatedStorage
+	end
+	local existingFreeze = remotesFolder:FindFirstChild("FreezeIndicator")
+	if not existingFreeze then
+		freezeRemote = Instance.new("RemoteEvent")
+		freezeRemote.Name = "FreezeIndicator"
+		freezeRemote.Parent = remotesFolder
+	else
+		freezeRemote = existingFreeze
+	end
 	
 	initialized = true
 	log("Initialized")

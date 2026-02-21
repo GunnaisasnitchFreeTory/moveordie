@@ -28,9 +28,9 @@ local KillFeed = {}
 local feedGui = nil
 local feedContainer = nil
 local MAX_MESSAGES = 5
-local MESSAGE_LIFETIME = 3.0
-local SLIDE_DURATION = 0.3
-local FADE_DURATION = 0.5
+local MESSAGE_LIFETIME = 2.6
+local SLIDE_DURATION = 0.25
+local FADE_DURATION = 0.4
 
 local REASON_MAP = {
 	Beam       = "a Beam",

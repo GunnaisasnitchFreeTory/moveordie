@@ -176,7 +176,18 @@ else
 	warn("[Client] FireworksController FAILED:", fwErr)
 end
 
--- 10. GroupSignController (walk-up group join prompt)
+-- 10. FreezeIndicatorController (shows FREEZE text when player is frozen)
+local freezeOk, freezeErr = pcall(function()
+	local FreezeIndicatorController = require(Client:WaitForChild("FreezeIndicatorController"))
+	FreezeIndicatorController.Init()
+end)
+if freezeOk then
+	print("[Client] FreezeIndicatorController loaded OK")
+else
+	warn("[Client] FreezeIndicatorController FAILED:", freezeErr)
+end
+
+-- 11. GroupSignController (walk-up group join prompt)
 local gsOk, gsErr = pcall(function()
 	local GroupSignController = require(Client:WaitForChild("GroupSignController"))
 	GroupSignController.Init()

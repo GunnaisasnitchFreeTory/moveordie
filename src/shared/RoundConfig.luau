@@ -10,12 +10,12 @@
 local RoundConfig = {}
 
 -- Phase durations (seconds)
-RoundConfig.FreeMoveSeconds = 7.5     -- Players can reposition freely
-RoundConfig.TelegraphGraceSeconds = 0.6  -- Grace: telegraph visible but players can still move
-RoundConfig.TelegraphSeconds = 2.0    -- Tile warning pulse (BEFORE beams appear)
-RoundConfig.FreezeSeconds = 6.0       -- Total freeze time (telegraph + beam warning)
+RoundConfig.FreeMoveSeconds = 7.1     -- Players can reposition freely (~5% faster)
+RoundConfig.TelegraphGraceSeconds = 0.55 -- Grace: telegraph visible but players can still move (~8% faster)
+RoundConfig.TelegraphSeconds = 1.9    -- Tile warning pulse (BEFORE beams appear) (~5% faster)
+RoundConfig.FreezeSeconds = 5.7       -- Total freeze time (telegraph + beam warning) (~5% faster)
 RoundConfig.StrikeSeconds = 0.25      -- Beam fires
-RoundConfig.RecoverySeconds = 0.75    -- Brief pause before next round
+RoundConfig.RecoverySeconds = 0.55    -- Brief pause before next round (~8% faster)
 
 -- Match limits (caps to prevent infinite matches)
 RoundConfig.MaxRoundsPerMatch = 20    -- 0 = unlimited

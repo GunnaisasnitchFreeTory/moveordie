@@ -32,10 +32,12 @@ local function startAnimation(model)
 
 	local allParts = {}
 	if model:IsA("BasePart") then
-		table.insert(allParts, model)
+		if not model:GetAttribute("NoAnimate") then
+			table.insert(allParts, model)
+		end
 	else
 		for _, desc in ipairs(model:GetDescendants()) do
-			if desc:IsA("BasePart") then
+			if desc:IsA("BasePart") and not desc:GetAttribute("NoAnimate") then
 				table.insert(allParts, desc)
 			end
 		end
@@ -137,7 +139,7 @@ local function showAnnouncement(data)
 	local label = Instance.new("TextLabel")
 	label.Name = "AnnouncementLabel"
 	label.Size = UDim2.new(1, 0, 0, 40)
-	label.Position = UDim2.new(0.5, 0, 0, 100)
+	label.Position = UDim2.new(0.5, 0, 0, 150)
 	label.AnchorPoint = Vector2.new(0.5, 0)
 	label.BackgroundTransparency = 1
 	label.Font = Enum.Font.GothamBold
@@ -154,6 +156,45 @@ local function showAnnouncement(data)
 		local tween = TweenService:Create(
 			label,
 			TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+			{ TextTransparency = 1, TextStrokeTransparency = 1 }
+		)
+		tween:Play()
+		tween.Completed:Wait()
+		if sg and sg.Parent then sg:Destroy() end
+	end)
+end
+
+local function showDeniedMessage()
+	local player = Players.LocalPlayer
+	local playerGui = player:FindFirstChild("PlayerGui")
+	if not playerGui then return end
+
+	local sg = Instance.new("ScreenGui")
+	sg.Name = "SwordDenied"
+	sg.ResetOnSpawn = false
+	sg.DisplayOrder = 50
+	sg.IgnoreGuiInset = true
+	sg.Parent = playerGui
+
+	local lbl = Instance.new("TextLabel")
+	lbl.Name = "DeniedLabel"
+	lbl.Size = UDim2.new(1, 0, 0, 30)
+	lbl.Position = UDim2.new(0.5, 0, 0, 150)
+	lbl.AnchorPoint = Vector2.new(0.5, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Font = Enum.Font.GothamBold
+	lbl.TextSize = 16
+	lbl.TextColor3 = Color3.fromRGB(255, 200, 80)
+	lbl.TextStrokeColor3 = Color3.fromRGB(50, 30, 0)
+	lbl.TextStrokeTransparency = 0.3
+	lbl.Text = "You already have a sword!"
+	lbl.Parent = sg
+
+	task.delay(1.5, function()
+		if not lbl or not lbl.Parent then return end
+		local tween = TweenService:Create(
+			lbl,
+			TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
 			{ TextTransparency = 1, TextStrokeTransparency = 1 }
 		)
 		tween:Play()
@@ -187,7 +228,11 @@ function SwordPickupController.Init()
 
 		remote.OnClientEvent:Connect(function(data)
 			if type(data) == "table" then
-				showAnnouncement(data)
+				if data.denied then
+					showDeniedMessage()
+				else
+					showAnnouncement(data)
+				end
 			end
 		end)
 	end)

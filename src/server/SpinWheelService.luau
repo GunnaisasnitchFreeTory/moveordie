@@ -112,6 +112,10 @@ local DATA_VERSION = 2
 local playerCache: { [number]: { lastFreeSpinTime: number, purchasedSpins: number, dataVersion: number } } = {}
 local spinInProgress: { [number]: boolean } = {}
 
+local function log(...)
+	print("[SpinWheelService]", ...)
+end
+
 local _findableCrownPool: { { id: string, name: string, rarity: string, image: string? } }? = nil
 
 local function getFindableCrownPool()
@@ -133,24 +137,34 @@ local function getFindableCrownPool()
 	return _findableCrownPool
 end
 
-local function pickRandomFindableCrown(player: Player): (string, string, string, boolean)
+local function pickRandomFindableCrown(player: Player): (string, string, string, boolean, string?)
 	local pool = getFindableCrownPool()
 	if #pool == 0 then
-		return "crown_sparkle", "Sparkle Crown", "Common", false
+		warn("[SpinWheel] Crown pool empty — using fallback crown_sparkle")
+		return "crown_sparkle", "Sparkle Crown", "Common", false, "rbxassetid://132865723131777"
 	end
 
 	local IS = getInventoryService()
 
 	for _ = 1, CROWN_MAX_REROLL do
 		local pick = pool[math.random(1, #pool)]
-		if not IS or not IS.OwnsItem(player, "Crowns", pick.id) then
-			return pick.id, pick.name, pick.rarity, false
+		local owns = false
+		if IS and type(IS.OwnsItem) == "function" then
+			local ok, result = pcall(IS.OwnsItem, IS, player, "Crowns", pick.id)
+			owns = ok and result
+		end
+		if not owns then
+			return pick.id, pick.name, pick.rarity, false, pick.image
 		end
 	end
 
 	local pick = pool[math.random(1, #pool)]
-	local isDuplicate = IS and IS.OwnsItem(player, "Crowns", pick.id) or false
-	return pick.id, pick.name, pick.rarity, isDuplicate
+	local isDuplicate = false
+	if IS and type(IS.OwnsItem) == "function" then
+		local ok, result = pcall(IS.OwnsItem, IS, player, "Crowns", pick.id)
+		isDuplicate = ok and result or false
+	end
+	return pick.id, pick.name, pick.rarity, isDuplicate, pick.image
 end
 local pendingSpin: {
 	[number]: {
@@ -167,12 +181,8 @@ local pendingSpin: {
 
 local SpinWheelService = {}
 
-local function log(...)
-	print("[SpinWheelService]", ...)
-end
-
 local function isUnlimitedSpinsEnabled(): boolean
-	return RunService:IsStudio() or SpinWheelConfig.DEBUG_UNLIMITED_SPINS == true
+	return SpinWheelConfig.DEBUG_UNLIMITED_SPINS == true
 end
 
 local function grantPet(player: Player, catalogId: string)
@@ -236,12 +246,17 @@ local function saveData(userId: number, data: { lastFreeSpinTime: number, purcha
 	end)
 end
 
-local function getRandomSegment(): number
+local function getRandomSegment(): number?
 	local segments = SpinWheelConfig.Segments
+	if not segments or #segments == 0 then
+		warn("[SpinWheelService] Segments table is nil or empty!")
+		return nil
+	end
 	local totalWeight = 0
 	for _, seg in ipairs(segments) do
 		totalWeight = totalWeight + (seg.weight or seg.chance or 1)
 	end
+	if totalWeight <= 0 then return 1 end
 	local roll = math.random() * totalWeight
 	local cumulative = 0
 	for i, seg in ipairs(segments) do
@@ -265,6 +280,15 @@ local function clearPending(userId: number, reason: string?)
 end
 
 function SpinWheelService.Init()
+	local pool = getFindableCrownPool()
+	if #pool == 0 then
+		warn("[SpinWheel] ERROR: Findable crown pool is EMPTY — check ReplicatedStorage.ItemModels.Crowns.Findable")
+	else
+		log(string.format("Findable crown pool ready (count=%d)", #pool))
+		for _, entry in ipairs(pool) do
+			log(string.format("  crown: %s (%s) image=%s", entry.name, entry.id, tostring(entry.image ~= "" and "yes" or "MISSING")))
+		end
+	end
 	log("Initialized")
 	if isUnlimitedSpinsEnabled() then
 		log("DEBUG: Unlimited spins ENABLED")
@@ -369,29 +393,69 @@ function SpinWheelService.RequestSpin(player: Player)
 		player.Name, userId, spinType, data.purchasedSpins, os.time()))
 
 	local segIndex = getRandomSegment()
-	local segment = SpinWheelConfig.Segments[segIndex]
-	local rewardType = segment.reward
-	local rewardName = segment.name
+	local segment = segIndex and SpinWheelConfig.Segments[segIndex]
+
+	if not segment then
+		if spinType == "free" then
+			data.lastFreeSpinTime = data.lastFreeSpinTime - SpinWheelConfig.FREE_SPIN_COOLDOWN
+		elseif spinType == "purchased" then
+			data.purchasedSpins = data.purchasedSpins + 1
+		end
+		spinInProgress[userId] = nil
+		warn(string.format("[SpinWheelService] SPIN FAILED: segment %s is nil for %s — spin refunded",
+			tostring(segIndex), player.Name))
+		return { success = false, reason = "Spin failed — try again." }
+	end
+
+	local rewardType = segment.reward or "Coins"
+	local rewardName = segment.name or "Unknown Reward"
 	local coinsToAward = segment.amount or 0
 	local catalogId = segment.catalogId
 	local rarity = segment.rarity or "Common"
 	local isDuplicate = false
+	local resolvedWheelImage = nil
 
-	if rewardType == "Pet" and catalogId then
-		local petInfo = ItemCatalog.GetPet(catalogId)
-		if petInfo then
-			rewardName = petInfo.name .. " (" .. petInfo.rarity .. ")"
+	local resolveOk, resolveErr = pcall(function()
+		if rewardType == "Pet" and catalogId then
+			local petInfo = ItemCatalog and ItemCatalog.GetPet and ItemCatalog.GetPet(catalogId)
+			if petInfo then
+				rewardName = petInfo.name .. " (" .. petInfo.rarity .. ")"
+			end
+		elseif rewardType == "Crown" then
+			local crownId, crownName, crownRarity, crownIsDup, crownImage = pickRandomFindableCrown(player)
+			if not crownId then
+				error("pickRandomFindableCrown returned nil")
+			end
+			catalogId = crownId
+			rewardName = crownName
+			rarity = crownRarity
+			isDuplicate = crownIsDup
+			if crownImage and crownImage ~= "" then
+				resolvedWheelImage = crownImage
+			end
+			if isDuplicate then
+				coinsToAward = CROWN_DUPLICATE_COINS
+			end
+			log(string.format("[SpinWheel] Crown wedge -> selected=%s (%s) dup=%s image=%s",
+				crownName, crownId, tostring(isDuplicate), tostring(resolvedWheelImage ~= nil)))
 		end
-	elseif rewardType == "Crown" then
-		local crownId, crownName, crownRarity, crownIsDup = pickRandomFindableCrown(player)
-		catalogId = crownId
-		rewardName = crownName
-		rarity = crownRarity
-		isDuplicate = crownIsDup
-		if isDuplicate then
-			coinsToAward = CROWN_DUPLICATE_COINS
+	end)
+	if not resolveOk then
+		warn(string.format("[SpinWheelService] REWARD RESOLVE FAILED for %s: %s", player.Name, tostring(resolveErr)))
+		if rewardType == "Crown" then
+			if spinType == "free" then
+				data.lastFreeSpinTime = data.lastFreeSpinTime - SpinWheelConfig.FREE_SPIN_COOLDOWN
+			elseif spinType == "purchased" then
+				data.purchasedSpins = data.purchasedSpins + 1
+			end
+			spinInProgress[userId] = nil
+			warn(string.format("[SpinWheel] Crown wedge FAILED -> %s (spin NOT consumed)", tostring(resolveErr)))
+			return { success = false, reason = "Reward failed to load \xe2\x80\x94 try again" }
 		end
-		log(string.format("Crown roll for %s: %s (%s) dup=%s", player.Name, crownName, crownId, tostring(isDuplicate)))
+		rewardType = "Coins"
+		rewardName = segment.name or "Coins"
+		coinsToAward = math.max(segment.amount or 0, 100)
+		catalogId = nil
 	end
 
 	local spinId = HttpService:GenerateGUID(false)
@@ -431,11 +495,13 @@ function SpinWheelService.RequestSpin(player: Player)
 		local rCatalog = pending.catalogId
 		local rName = pending.rewardName or "Unknown"
 
+		if type(rCoins) ~= "number" then rCoins = 0 end
+
 		local grantOk, grantErr = pcall(function()
-			if rType == "Pet" and rCatalog then
+			if rType == "Pet" and rCatalog and rCatalog ~= "" then
 				grantPet(livePlayer, rCatalog)
 				log(string.format("GRANTED spinId=%s Pet %s to %s", spinId, rCatalog, livePlayer.Name))
-			elseif rType == "Crown" and rCatalog then
+			elseif rType == "Crown" and rCatalog and rCatalog ~= "" then
 				if pending.isDuplicate then
 					local ES = getEconomyService()
 					if ES and type(ES.AwardCoins) == "function" then
@@ -484,7 +550,7 @@ function SpinWheelService.RequestSpin(player: Player)
 		catalogId = catalogId,
 		rarity = rarity,
 		isDuplicate = isDuplicate,
-		wheelImage = segment.wheelImage or "",
+		wheelImage = resolvedWheelImage or (segment and segment.wheelImage) or "",
 		spinId = spinId,
 	}
 end

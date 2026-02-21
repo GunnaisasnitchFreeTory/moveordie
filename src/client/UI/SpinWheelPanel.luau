@@ -17,6 +17,7 @@
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
+local UserInputService = game:GetService("UserInputService")
 
 local SpinWheelPanel = {}
 
@@ -118,6 +119,55 @@ local function setOverlayUIVisible(show: boolean)
 	if modeVoteGui then
 		modeVoteGui.Enabled = show
 	end
+end
+
+----------------------------------------------------------------------------
+-- MOBILE: Wrap BuySpinsPanel content in a ScrollingFrame
+----------------------------------------------------------------------------
+local function applyMobileBuyScroll()
+	if not UserInputService.TouchEnabled then return end
+	local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
+	if not vp or math.min(vp.X, vp.Y) >= 600 then return end
+	if not spinFrame then return end
+
+	local buyPanel = spinFrame:FindFirstChild("BuySpinsPanel", true)
+	if not buyPanel then return end
+	if buyPanel:FindFirstChild("MobileScroll") then return end
+
+	local SCROLL_TOP = 96
+
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Name = "MobileScroll"
+	scroll.Position = UDim2.new(0, 0, 0, SCROLL_TOP)
+	scroll.Size = UDim2.new(1, 0, 1, -SCROLL_TOP - 28)
+	scroll.BackgroundTransparency = 1
+	scroll.BorderSizePixel = 0
+	scroll.ScrollBarThickness = 4
+	scroll.ScrollBarImageColor3 = Color3.fromRGB(100, 110, 150)
+	scroll.ZIndex = 21
+	scroll.CanvasSize = UDim2.fromOffset(0, 0)
+	scroll.Parent = buyPanel
+
+	local toMove = {}
+	for _, child in ipairs(buyPanel:GetChildren()) do
+		if child:IsA("GuiObject") and child ~= scroll and child.Name ~= "ErrorLabel" then
+			if child.Position.Y.Offset >= SCROLL_TOP then
+				table.insert(toMove, child)
+			end
+		end
+	end
+
+	local maxBottom = 0
+	for _, child in ipairs(toMove) do
+		local newY = child.Position.Y.Offset - SCROLL_TOP
+		child.Position = UDim2.new(child.Position.X.Scale, child.Position.X.Offset, 0, newY)
+		child.Parent = scroll
+		local bottom = newY + child.Size.Y.Offset
+		if bottom > maxBottom then maxBottom = bottom end
+	end
+
+	scroll.CanvasSize = UDim2.fromOffset(0, maxBottom + 12)
+	log("Mobile BuySpinsPanel scroll applied (canvas=" .. tostring(maxBottom + 12) .. ")")
 end
 
 ----------------------------------------------------------------------------
@@ -300,6 +350,8 @@ function SpinWheelPanel.Show()
 			end
 		end
 	end)
+
+	task.defer(applyMobileBuyScroll)
 
 	-- Background effects
 	if bgEffect and bgEffect:IsA("CanvasGroup") then

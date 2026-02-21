@@ -50,7 +50,7 @@ local MAP_TRACK_START       = 32
 local MAP_TRACK_VOLUME      = 0.48
 
 -- Crossfade transition (both tracks overlap — no silent gap)
-local CROSSFADE_TIME        = 1.5
+local CROSSFADE_TIME        = 1.2
 
 -- SFX
 local SFX_VOLUME            = 0.8

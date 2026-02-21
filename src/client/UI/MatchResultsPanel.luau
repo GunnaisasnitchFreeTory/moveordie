@@ -67,7 +67,7 @@ local _matchStateVal: StringValue? = nil  -- ReplicatedStorage.MatchStatus.State
 -- CONSTANTS
 -- ═══════════════════════════════════════════
 
-local DISPLAY_SECONDS = 8
+local DISPLAY_SECONDS = 7
 
 local PLACEMENT_SUFFIXES = { "st", "nd", "rd" }
 local function ordinal(n: number): string
@@ -503,9 +503,9 @@ function MatchResultsPanel.Show(data)
 	Instance.new("UICorner", barFill).CornerRadius = UDim.new(0, 8)
 
 	local targetFillW = math.floor(BAR_W * fillFraction)
-	task.delay(0.4, function()
+	task.delay(0.3, function()
 		if barFill and barFill.Parent then
-			TweenService:Create(barFill, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			TweenService:Create(barFill, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 				Size = UDim2.new(0, targetFillW, 1, 0)
 			}):Play()
 		end
@@ -577,9 +577,9 @@ function MatchResultsPanel.Show(data)
 		local grantScale = Instance.new("UIScale")
 		grantScale.Scale = 0.5
 		grantScale.Parent = grantLbl
-		task.delay(0.8, function()
-			if grantScale and grantScale.Parent then
-				TweenService:Create(grantScale, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	task.delay(0.6, function()
+		if grantScale and grantScale.Parent then
+			TweenService:Create(grantScale, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 			end
 		end)
 		yOffset += 28

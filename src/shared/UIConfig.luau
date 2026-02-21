@@ -172,33 +172,33 @@ UIConfig.StudTexture = {
 -- ═══════════════════════════════════════════════════════════════════
 
 UIConfig.Anim = {
-	OpenDuration   = 0.30,
-	CloseDuration  = 0.20,
+	OpenDuration   = 0.26,
+	CloseDuration  = 0.18,
 	OpenStartScale = 0.92,
 	OpenEase       = Enum.EasingStyle.Quad,
 	CloseEase      = Enum.EasingStyle.Quad,
 
 	HoverScale     = 1.04,
-	HoverDuration  = 0.14,
+	HoverDuration  = 0.12,
 	ClickScale     = 0.92,
-	ClickDuration  = 0.06,
-	BounceDuration = 0.24,
+	ClickDuration  = 0.05,
+	BounceDuration = 0.20,
 	BtnEase        = Enum.EasingStyle.Quad,
 
 	CoinBumpScale    = 1.15,
-	CoinBumpDuration = 0.28,
+	CoinBumpDuration = 0.24,
 
-	RoundSlideDuration = 0.32,
+	RoundSlideDuration = 0.28,
 
-	SunburstSpeed = 8,
+	SunburstSpeed = 9,
 
 	PopupOpenStartScale = 0.92,
-	PopupOpenDuration   = 0.18,
+	PopupOpenDuration   = 0.15,
 	PopupOpenEase       = Enum.EasingStyle.Quad,
-	PopupCloseDuration    = 0.18,
+	PopupCloseDuration    = 0.15,
 	PopupCloseEase        = Enum.EasingStyle.Quad,
 	PopupCloseTargetScale = 0.9,
-	PopupDestroyDelay     = 0.25,
+	PopupDestroyDelay     = 0.20,
 }
 
 -- ═══════════════════════════════════════════════════════════════════

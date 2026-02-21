@@ -44,6 +44,11 @@ local GLOW_FILL_TRANSPARENCY = 0.5
 local GLOW_OUTLINE_COLOR = Color3.fromRGB(255, 255, 255)
 local GLOW_OUTLINE_TRANSPARENCY = 0.1
 
+local BEACON_HEIGHT = 50
+local RING_DIAMETER = 8
+local RING_COLOR = Color3.fromRGB(0, 200, 255)
+local DENIED_COOLDOWN = 3
+
 local SwordSpawnService = {}
 
 local initialized = false
@@ -54,6 +59,7 @@ local activePickups: { { model: Model, spawnRound: number } } = {}
 local swordHolders: { [Player]: { tool: Tool, spawnRound: number, deathConn: RBXScriptConnection? } } = {}
 
 local swordSpawnedRemote: RemoteEvent? = nil
+local swordDeniedCooldowns: { [number]: number } = {}
 
 local function log(...)
 	print("[SwordSpawn]", ...)
@@ -163,6 +169,27 @@ local function removeAllSwords()
 	swordHolders = {}
 end
 
+local function playerHasSword(player: Player): boolean
+	if swordHolders[player] then return true end
+	local backpack = player:FindFirstChild("Backpack")
+	if backpack then
+		for _, item in ipairs(backpack:GetChildren()) do
+			if item:IsA("Tool") and item.Name == "ClassicSword" then
+				return true
+			end
+		end
+	end
+	local character = player.Character
+	if character then
+		for _, item in ipairs(character:GetChildren()) do
+			if item:IsA("Tool") and item.Name == "ClassicSword" then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 local function onSwordKill(killer: Player, victim: Player)
 	log(string.format("%s killed %s with sword! +%d coins", killer.Name, victim.Name, KILL_BONUS))
 	EconomyService.AwardCoins(killer, KILL_BONUS, "SwordKill", true)
@@ -265,6 +292,56 @@ local function spawnSwordPickup(roundNumber: number)
 	particles.LightInfluence = 0.3
 	particles.Parent = handleClone
 
+	local groundY = spawnPos.Y - SPAWN_Y_OFFSET
+
+	local beaconAnchor = Instance.new("Part")
+	beaconAnchor.Name = "BeaconAnchor"
+	beaconAnchor.Anchored = true
+	beaconAnchor.CanCollide = false
+	beaconAnchor.Transparency = 1
+	beaconAnchor.Size = Vector3.new(0.1, 0.1, 0.1)
+	beaconAnchor.CFrame = CFrame.new(spawnPos.X, groundY + BEACON_HEIGHT, spawnPos.Z)
+	beaconAnchor:SetAttribute("NoAnimate", true)
+	beaconAnchor.Parent = pickupModel
+
+	local attachBottom = Instance.new("Attachment")
+	attachBottom.Name = "BeaconBottom"
+	attachBottom.Parent = handleClone
+
+	local attachTop = Instance.new("Attachment")
+	attachTop.Name = "BeaconTop"
+	attachTop.Parent = beaconAnchor
+
+	local beam = Instance.new("Beam")
+	beam.Name = "SwordBeacon"
+	beam.Attachment0 = attachBottom
+	beam.Attachment1 = attachTop
+	beam.Color = ColorSequence.new(RING_COLOR, Color3.fromRGB(100, 240, 255))
+	beam.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(0.8, 0.6),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	beam.LightEmission = 1
+	beam.LightInfluence = 0
+	beam.Width0 = 4
+	beam.Width1 = 1
+	beam.FaceCamera = true
+	beam.Parent = pickupModel
+
+	local ring = Instance.new("Part")
+	ring.Name = "GroundRing"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.Size = Vector3.new(0.15, RING_DIAMETER, RING_DIAMETER)
+	ring.CFrame = CFrame.new(spawnPos.X, groundY + 0.1, spawnPos.Z) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Material = Enum.Material.Neon
+	ring.Color = RING_COLOR
+	ring.Transparency = 0.3
+	ring:SetAttribute("NoAnimate", true)
+	ring.Parent = pickupModel
+
 	local collected = false
 	local conn = handleClone.Touched:Connect(function(hit)
 		if collected then return end
@@ -277,7 +354,17 @@ local function spawnSwordPickup(roundNumber: number)
 		local player = Players:GetPlayerFromCharacter(character)
 		if not player then return end
 
-		if swordHolders[player] then return end
+		if playerHasSword(player) then
+			local userId = player.UserId
+			local now = tick()
+			if not swordDeniedCooldowns[userId] or (now - swordDeniedCooldowns[userId]) >= DENIED_COOLDOWN then
+				swordDeniedCooldowns[userId] = now
+				if swordSpawnedRemote then
+					swordSpawnedRemote:FireClient(player, { denied = true })
+				end
+			end
+			return
+		end
 
 		collected = true
 		pickupModel:Destroy()
@@ -415,6 +502,13 @@ function SwordSpawnService.OnRoundStart(roundNumber: number)
 end
 
 function SwordSpawnService.OnRoundEnd()
+	for _, entry in ipairs(activePickups) do
+		if entry.model and entry.model.Parent then
+			entry.model:Destroy()
+			log(string.format("Round ended — despawned unpicked sword from round %d", entry.spawnRound))
+		end
+	end
+	activePickups = {}
 end
 
 function SwordSpawnService.OnMatchEnd()
