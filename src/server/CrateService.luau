@@ -173,8 +173,8 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 local UNIFIED_PRICES = {
-	{ quantity = 1, cost = 300, currency = "Coins" },
-	{ quantity = 3, cost = 500, currency = "Coins" },
+	{ quantity = 1, cost = 500, currency = "Coins" },
+	{ quantity = 3, cost = 800, currency = "Coins" },
 	{ quantity = 6, cost = 400, currency = "Robux" },
 }
 

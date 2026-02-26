@@ -70,7 +70,7 @@ end
 function DailyRewardService.GetStatus(player)
 	local PDS = getPDS()
 	if not PDS or not PDS.IsLoaded(player) then
-		return { streak = 0, canClaim = false, secondsUntilNext = 0, rewards = DailyRewardConfig.Rewards }
+		return { dataLoaded = false, streak = 0, canClaim = false, secondsUntilNext = 0, rewards = DailyRewardConfig.Rewards }
 	end
 
 	local lastClaim = PDS.GetField(player, "LastDailyRewardTime") or 0
@@ -90,6 +90,7 @@ function DailyRewardService.GetStatus(player)
 	end
 
 	return {
+		dataLoaded = true,
 		streak = effectiveStreak,
 		lastClaimTime = lastClaim,
 		canClaim = canClaim,
@@ -194,19 +195,17 @@ function DailyRewardService.Claim(player)
 	elseif rewardDef.type == "Spins" then
 		local spinsToGrant = rewardDef.amount or 1
 		local spinService = getSpinWheel()
-		if spinService and type(spinService.GrantRobuxSpins) == "function" then
-			local granted = spinService.GrantRobuxSpins(player, spinsToGrant)
-			if granted then
-				grantResult.amount = spinsToGrant
-				log(string.format("%s claimed Day %d: %d free spins", player.Name, streak, spinsToGrant))
-			else
-				warn("[DailyRewardService] SpinWheelService.GrantRobuxSpins failed for", player.Name)
-				grantResult.amount = spinsToGrant
-			end
-		else
-			warn("[DailyRewardService] SpinWheelService not available for granting spins")
-			grantResult.amount = spinsToGrant
+		if not spinService or type(spinService.GrantRobuxSpins) ~= "function" then
+			_claimLock[userId] = nil
+			return { success = false, reason = "SpinWheelService unavailable" }
 		end
+		local granted = spinService.GrantRobuxSpins(player, spinsToGrant)
+		if not granted then
+			_claimLock[userId] = nil
+			return { success = false, reason = "Spins grant failed" }
+		end
+		grantResult.amount = spinsToGrant
+		log(string.format("%s claimed Day %d: %d free spins", player.Name, streak, spinsToGrant))
 	end
 
 	PDS.SetField(player, "LastDailyRewardTime", now)

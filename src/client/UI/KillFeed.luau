@@ -33,9 +33,17 @@ local SLIDE_DURATION = 0.25
 local FADE_DURATION = 0.4
 
 local REASON_MAP = {
-	Beam       = "a Beam",
-	OOB        = "the Barrier",
-	Disconnect = "Disconnecting",
+	Beam           = "a Beam",
+	OOB            = "the Barrier",
+	Disconnect     = "Disconnecting",
+	TungTungSahur  = "TungTungSahur",
+}
+
+-- Color override per reason key (nil = default white)
+local REASON_COLOR = {
+	Beam          = Color3.fromRGB(255, 165, 0),  -- orange
+	OOB           = Color3.fromRGB(220, 50, 50),  -- red
+	TungTungSahur = Color3.fromRGB(255, 60, 180), -- hot pink
 }
 
 local function getReasonText(reason)
@@ -141,12 +149,7 @@ function KillFeed.Init(screenGui)
 			killFeedEvent.OnClientEvent:Connect(function(playerName, reason)
 				local reasonText = getReasonText(reason)
 				local text = playerName .. " was eliminated by " .. reasonText
-				local color = C.TextWhite
-				if reason == "Beam" then
-					color = C.Orange
-				elseif reason == "OOB" then
-					color = C.Red
-				end
+				local color = REASON_COLOR[reason] or C.TextWhite
 				createFeedEntry(text, color)
 			end)
 		end

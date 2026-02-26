@@ -187,6 +187,17 @@ else
 	warn("[Client] FreezeIndicatorController FAILED:", freezeErr)
 end
 
+-- 10b. TungTungSahurController (countdown + announcement UI for Brainrot hazard)
+local ttsOk, ttsErr = pcall(function()
+	local TungTungSahurController = require(Client:WaitForChild("TungTungSahurController"))
+	TungTungSahurController.Init()
+end)
+if ttsOk then
+	print("[Client] TungTungSahurController loaded OK")
+else
+	warn("[Client] TungTungSahurController FAILED:", ttsErr)
+end
+
 -- 11. GroupSignController (walk-up group join prompt)
 local gsOk, gsErr = pcall(function()
 	local GroupSignController = require(Client:WaitForChild("GroupSignController"))

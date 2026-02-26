@@ -29,9 +29,10 @@ local PlayerState = require(Shared:WaitForChild("PlayerState"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local HazardManager = require(Server:WaitForChild("HazardManager"))
 local MapManager = require(Server:WaitForChild("MapManager"))
-local BrainrotModeService = require(Server:WaitForChild("BrainrotModeService"))
-local RoundCoinService = require(Server:WaitForChild("RoundCoinService"))
-local SwordSpawnService = require(Server:WaitForChild("SwordSpawnService"))
+local BrainrotModeService    = require(Server:WaitForChild("BrainrotModeService"))
+local RoundCoinService       = require(Server:WaitForChild("RoundCoinService"))
+local SwordSpawnService      = require(Server:WaitForChild("SwordSpawnService"))
+local TungTungSahurService   = require(Server:WaitForChild("TungTungSahurService"))
 
 --[[ PHASE CONSTANTS ]]
 local Phase = {
@@ -141,6 +142,7 @@ local function freezeAllPlayers()
 		end
 	end
 	log(string.format("Froze %d players", #players))
+	TungTungSahurService.OnFreezeBegin()
 end
 
 --[[
@@ -162,6 +164,7 @@ local function unfreezeAllPlayers()
 			end
 		end
 	end
+	TungTungSahurService.OnFreezeEnd()
 	if count > 0 then
 		log(string.format("Unfroze %d players", count))
 	end
@@ -279,6 +282,8 @@ local function cleanupModeRound()
 	if matchMode == "Brainrot" then BrainrotModeService.OnRoundEnd() end
 	if matchMode == "Normal" then RoundCoinService.OnRoundEnd() end
 	SwordSpawnService.OnRoundEnd()
+	-- Pass currentRound so TTS only despawns on round 6, not earlier rounds
+	TungTungSahurService.OnRoundEnd(currentRound)
 end
 
 --[[
@@ -312,6 +317,9 @@ local function runRoundCycle(): boolean
 	if matchMode == "Brainrot" then
 		BrainrotModeService.OnRoundStart(currentRound)
 	end
+
+	-- TungTungSahur hazard (Brainrot mode, rounds 2–6)
+	TungTungSahurService.OnRoundStart(currentRound, matchMode)
 
 	-- Normal mode: spawn collectible coins
 	if matchMode == "Normal" then

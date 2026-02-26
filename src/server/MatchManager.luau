@@ -28,9 +28,10 @@ local RoundManager = require(Server:WaitForChild("RoundManager"))
 local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
 local EconomyService = require(Server:WaitForChild("EconomyService"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
-local BrainrotModeService = require(Server:WaitForChild("BrainrotModeService"))
-local RoundCoinService = require(Server:WaitForChild("RoundCoinService"))
-local SwordSpawnService = require(Server:WaitForChild("SwordSpawnService"))
+local BrainrotModeService    = require(Server:WaitForChild("BrainrotModeService"))
+local RoundCoinService       = require(Server:WaitForChild("RoundCoinService"))
+local SwordSpawnService      = require(Server:WaitForChild("SwordSpawnService"))
+local TungTungSahurService   = require(Server:WaitForChild("TungTungSahurService"))
 
 --[[ CONFIGURATION ]]
 local Config = {
@@ -537,6 +538,7 @@ local function runPlaying()
 	end
 
 	SwordSpawnService.OnMatchEnd()
+	TungTungSahurService.OnMatchEnd()
 	
 	MapManager.OnMatchEnd()
 	
@@ -794,6 +796,7 @@ function MatchManager.Init()
 
 	BrainrotModeService.Init()
 	RoundCoinService.Init()
+	TungTungSahurService.Init()
 
 	MapManager.Init()
 	RoundManager.Init()

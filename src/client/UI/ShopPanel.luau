@@ -14,6 +14,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
+local TweenService       = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
@@ -55,6 +56,12 @@ local canvas: CanvasGroup = nil
 local uiScale: UIScale = nil
 local overlay: Frame = nil
 local contentFrame: ScrollingFrame = nil
+local coinsBgArt: ImageLabel? = nil
+-- FadeOverlays: a Frame child of coinsBgArt used as container + duplicate guard.
+-- Overlays are ImageLabels inside it, created once and reused across open/close cycles.
+local _fadeContainer: Frame? = nil           -- "FadeOverlays" frame inside coinsBgArt
+local _fadeOverlays: {ImageLabel} = {}       -- the 6 overlay ImageLabels
+local _fadeThreads: {thread} = {}            -- per-overlay animation threads
 local visible = false
 local closeCallback: (() -> ())? = nil
 local activeTab = 1
@@ -91,6 +98,121 @@ local function clearCards()
 	end
 end
 
+local NUM_OVERLAYS = 6
+
+-- Stop animation threads and reset overlays to fully transparent.
+-- Does NOT destroy overlays — they are reused on the next open.
+local function stopCoinsBgAnim()
+	for _, t in ipairs(_fadeThreads) do
+		pcall(task.cancel, t)
+	end
+	_fadeThreads = {}
+	for _, ovl in ipairs(_fadeOverlays) do
+		TweenService:Create(ovl, TweenInfo.new(0), { ImageTransparency = 0.97 }):Play()
+	end
+	print("[PremiumShopBG] Fade stopped")
+end
+
+-- Build the FadeOverlays container + 6 overlay ImageLabels (only once).
+-- Subsequent calls are no-ops if FadeOverlays already exists.
+local function ensureFadeOverlays()
+	if not coinsBgArt then return end
+	if _fadeContainer and _fadeContainer.Parent then return end  -- already built
+
+	-- Transparent full-size container parented to coinsBgArt
+	local container = Instance.new("Frame")
+	container.Name               = "FadeOverlays"
+	container.AnchorPoint        = Vector2.new(0, 0)
+	container.Position           = UDim2.fromScale(0, 0)
+	container.Size               = UDim2.fromScale(1, 1)
+	container.BackgroundTransparency = 1
+	container.BorderSizePixel    = 0
+	container.ZIndex             = coinsBgArt.ZIndex + 1
+	container.Parent             = coinsBgArt
+	_fadeContainer               = container
+	_fadeOverlays                = {}
+
+	for i = 1, NUM_OVERLAYS do
+		local ovl = Instance.new("ImageLabel")
+		ovl.Name                   = "Overlay" .. i
+		ovl.AnchorPoint            = Vector2.new(0.5, 0.5)
+		-- Slight random position offset: center ± 0.005–0.015 scale
+		local ox = (math.random() * 0.02 - 0.01)
+		local oy = (math.random() * 0.02 - 0.01)
+		ovl.Position               = UDim2.fromScale(0.5 + ox, 0.5 + oy)
+		ovl.Size                   = UDim2.fromScale(1.02, 1.02)  -- very slightly oversized to cover seams
+		ovl.BackgroundTransparency = 1
+		ovl.Image                  = coinsBgArt.Image
+		ovl.ScaleType              = Enum.ScaleType.Crop
+		ovl.ZIndex                 = container.ZIndex
+		ovl.Rotation               = (math.random() * 4 - 2)     -- -2 to +2 degrees
+		ovl.ImageTransparency      = 0.97
+		ovl.Parent                 = container
+		table.insert(_fadeOverlays, ovl)
+	end
+end
+
+-- Start (or restart) per-overlay fade loops.
+-- Overlays are created once by ensureFadeOverlays; this just drives the tweens.
+local function startCoinsBgAnim()
+	if not coinsBgArt or not coinsBgArt.Parent then return end
+	ensureFadeOverlays()
+	if #_fadeOverlays == 0 then return end
+	-- Stop any existing threads before launching new ones (idempotent restart)
+	for _, t in ipairs(_fadeThreads) do pcall(task.cancel, t) end
+	_fadeThreads = {}
+
+	for i, ovl in ipairs(_fadeOverlays) do
+		local capturedOvl = ovl
+		local t = task.spawn(function()
+			-- Stagger start so overlays are not synchronized
+			task.wait(math.random(0, 30) / 10)  -- 0–3s initial delay per overlay
+
+			while capturedOvl.Parent do
+				local fadeDur  = math.random(22, 55) / 10        -- 2.2–5.5s per half-cycle
+				local holdDur  = math.random(0, 15) / 10         -- 0–1.5s hold
+				local minTrans = math.random(75, 88) / 100       -- 0.75–0.88 (slightly visible)
+				local maxTrans = math.random(92, 98) / 100       -- 0.92–0.98 (nearly invisible)
+
+				local tIn = TweenService:Create(
+					capturedOvl,
+					TweenInfo.new(fadeDur, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+					{ ImageTransparency = minTrans }
+				)
+				tIn:Play()
+				tIn.Completed:Wait()
+				if not capturedOvl.Parent then break end
+
+				if holdDur > 0 then
+					task.wait(holdDur)
+					if not capturedOvl.Parent then break end
+				end
+
+				local tOut = TweenService:Create(
+					capturedOvl,
+					TweenInfo.new(fadeDur, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+					{ ImageTransparency = maxTrans }
+				)
+				tOut:Play()
+				tOut.Completed:Wait()
+				if not capturedOvl.Parent then break end
+			end
+		end)
+		table.insert(_fadeThreads, t)
+	end
+
+	print(string.format("[PremiumShopBG] Fade overlays ready count=%d", #_fadeOverlays))
+end
+
+local function setCoinsBgVisible(visible_: boolean)
+	if coinsBgArt then coinsBgArt.Visible = visible_ end
+	if visible_ then
+		startCoinsBgAnim()
+	else
+		stopCoinsBgAnim()
+	end
+end
+
 local _fateCoinImage: string = ""
 do
 	local entry = ItemCatalog.Get and ItemCatalog.Get("Currency", "FATE_COINS") or nil
@@ -110,7 +232,7 @@ do
 			end
 		end
 		if _fateCoinImage == "" then
-			warn("[PremiumShop] FATE_COINS image is EMPTY — coin cards will show text fallback")
+			warn("[PremiumShop] FATE_COINS image is EMPTY -- coin cards will show text fallback")
 		end
 	end
 end
@@ -206,6 +328,7 @@ end
 
 local function populateCards(filterType: string)
 	clearCards()
+	setCoinsBgVisible(filterType == "Currency")
 
 	if not contentFrame:FindFirstChildOfClass("UIGridLayout") then
 		Components.AddGridLayout(contentFrame)
@@ -328,6 +451,7 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		end
 		if CATEGORIES[idx].filter == "Bundle" then
 			clearCards()
+			setCoinsBgVisible(false)
 			if _BundlePanel and _BundlePanel.PopulateInto then
 				_BundlePanel.PopulateInto(contentFrame)
 			end
@@ -345,10 +469,25 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	content.Position = UDim2.new(0, 12, 0, S.PanelHeaderHeight + S.TabHeight + 18)
 	content.Size = UDim2.new(1, -24, 1, -(S.PanelHeaderHeight + S.TabHeight + 28))
 
+	-- Coins tab decorative background -- sits behind card grid, fixed (not scrollable)
+	coinsBgArt = Instance.new("ImageLabel")
+	coinsBgArt.Name = "BackgroundArt"
+	coinsBgArt.AnchorPoint = Vector2.new(0, 0)
+	coinsBgArt.Position = content.Position
+	coinsBgArt.Size = content.Size
+	coinsBgArt.BackgroundTransparency = 1
+	coinsBgArt.Image = "rbxassetid://92371827400252"
+	coinsBgArt.ImageTransparency = 0.55     -- subtle, won't compete with cards
+	coinsBgArt.ScaleType = Enum.ScaleType.Crop  -- cover-fill, no distortion
+	coinsBgArt.ZIndex = 4                   -- below contentFrame (ZIndex 5)
+	coinsBgArt.Visible = true               -- Coins is the default tab
+	coinsBgArt.Parent = canvas
+
 	_setActiveTab = setActiveTab
 
 	Components.AddGridLayout(contentFrame)
 	setActiveTab(1)
+	startCoinsBgAnim()
 	populateCards(CATEGORIES[1].filter)
 end
 
@@ -377,6 +516,7 @@ function ShopPanel.Hide()
 	if not visible then return end
 	visible = false
 	overlay.Visible = false
+	stopCoinsBgAnim()
 	local t = AnimUtil.ClosePanel(canvas, uiScale)
 	task.spawn(function()
 		t.Completed:Wait()

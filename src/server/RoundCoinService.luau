@@ -3,8 +3,8 @@
 	Server-side collectible coin spawning during Normal rounds.
 
 	Spawns 4-5 coins per round inside the barrier.
-	- "Fate Coin" (+50)  — always available
-	- "More Fate Coin" (+250) — 40% chance, only when Round >= 6
+	- "Fate Coin" (+20)  — always available
+	- "More Fate Coin" (+50) — 40% chance, only when Round >= 6
 
 	Coins use Touched for collection (server-authoritative).
 	Reuses Brainrot-style glow (Highlight) and sets attributes so
@@ -33,8 +33,8 @@ local EDGE_MARGIN      = 6
 local RAYCAST_HEIGHT   = 80
 
 local COIN_DEFS = {
-	["Fate Coin"]      = { value = 50,  minRound = 1, weight = 60 },
-	["More Fate Coin"] = { value = 250, minRound = 6, weight = 40 },
+	["Fate Coin"]      = { value = 20,  minRound = 1, weight = 60 },
+	["More Fate Coin"] = { value = 50,  minRound = 6, weight = 40 },
 }
 
 local COLLECT_SOUND_ID = "rbxassetid://135303694517645"

@@ -725,17 +725,34 @@ function DailyRewardsPanel.TryAutoShow(openerFn)
 	_hasAutoShown = true
 	local doOpen = openerFn or function() DailyRewardsPanel.Show() end
 	task.spawn(function()
-		task.wait(3)
+		task.wait(2)
 		if FORCE_OPEN_DAILY_ON_JOIN then
 			log("FORCE_OPEN: auto-opening Daily Rewards")
 			doOpen()
-		else
+			return
+		end
+		-- Retry until PlayerData is loaded on the server (up to ~18 s total)
+		local MAX_ATTEMPTS = 6
+		local RETRY_WAIT  = 3
+		for attempt = 1, MAX_ATTEMPTS do
 			local status = fetchStatus()
-			if status and status.canClaim then
-				log("Auto-opening: reward available")
-				doOpen()
+			if status then
+				if status.canClaim then
+					log(string.format("Auto-opening: reward available (attempt %d)", attempt))
+					doOpen()
+					return
+				elseif status.dataLoaded ~= false then
+					-- Data is fully loaded but no reward is available yet
+					log("Auto-show: data loaded, no reward available")
+					return
+				end
+				log(string.format("Auto-show: data not loaded yet (attempt %d/%d), retrying in %ds", attempt, MAX_ATTEMPTS, RETRY_WAIT))
+			end
+			if attempt < MAX_ATTEMPTS then
+				task.wait(RETRY_WAIT)
 			end
 		end
+		log("Auto-show: gave up waiting for data after " .. MAX_ATTEMPTS .. " attempts")
 	end)
 end
 

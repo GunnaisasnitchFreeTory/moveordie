@@ -40,10 +40,11 @@ local function getThumbnailRenderer()
 	return _ThumbnailRenderer
 end
 
-local FOLDER_NAME = "BrainrotPickups"
-local BOB_AMPLITUDE = 0.4
-local BOB_SPEED = 2.5
+local FOLDER_NAME    = "BrainrotPickups"
+local BOB_AMPLITUDE  = 0.4    -- ±0.4 studs max, well within ±0.35-0.6 spec
+local BOB_SPEED      = 2.5
 local ROTATION_SPEED = 25
+local HOVER_ABOVE_GROUND = 3.0  -- studs above floor to lock baseY
 
 local POPUP_DISPLAY_ORDER = 135
 local POPUP_DURATION = 3.0
@@ -59,25 +60,74 @@ local activeAnimations = {}
 local _popupGui = nil
 local _activePopup = nil
 
+-- Raycast params: ignore the model itself + its descendants
+local function makeRaycastParams(model): RaycastParams
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local exclude = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then table.insert(exclude, d) end
+	end
+	if model:IsA("BasePart") then table.insert(exclude, model) end
+	params.FilterDescendantsInstances = exclude
+	return params
+end
+
+-- Find ground Y below a given world position; returns nil if no ground found.
+local function findGroundY(worldPos: Vector3, model): number?
+	local params = makeRaycastParams(model)
+	local result = Workspace:Raycast(worldPos, Vector3.new(0, -300, 0), params)
+	if result then
+		return result.Position.Y
+	end
+	return nil
+end
+
 local function startAnimation(model)
 	if activeAnimations[model] then return end
 
-	local baseParts = {}
-	local basePositions = {}
-
-	if model:IsA("BasePart") then
-		table.insert(baseParts, model)
-		basePositions[model] = model.Position
-	else
-		for _, desc in ipairs(model:GetDescendants()) do
-			if desc:IsA("BasePart") then
-				table.insert(baseParts, desc)
-				basePositions[desc] = desc.Position
+	-- Ensure PrimaryPart is set so PivotTo works correctly for the whole model
+	local primaryPart
+	if model:IsA("Model") then
+		primaryPart = model.PrimaryPart
+		if not primaryPart then
+			primaryPart = model:FindFirstChildWhichIsA("BasePart", true)
+			if primaryPart then
+				model.PrimaryPart = primaryPart
 			end
 		end
+	elseif model:IsA("BasePart") then
+		primaryPart = model
 	end
 
-	if #baseParts == 0 then return end
+	if not primaryPart then
+		warn("[Brainrot] No BasePart found — cannot animate:", model.Name)
+		return
+	end
+
+	local baseCFrame = primaryPart.CFrame
+	local spawnPos   = baseCFrame.Position
+
+	-- Find ground to determine correct hover baseY
+	local groundY = findGroundY(spawnPos, model)
+	local baseY: number
+	if groundY then
+		baseY = groundY + HOVER_ABOVE_GROUND
+		print(string.format("[BrainrotHover] BaseY=%.3f (ground=%.3f + %.1f offset)", baseY, groundY, HOVER_ABOVE_GROUND))
+	else
+		-- Fallback: use spawn position as-is
+		baseY = spawnPos.Y
+		print(string.format("[BrainrotHover] BaseY=%.3f (no ground found, using spawn Y)", baseY))
+	end
+
+	-- Snap model to correct hover height immediately
+	local correctedCF = CFrame.new(spawnPos.X, baseY, spawnPos.Z) * (baseCFrame - baseCFrame.Position)
+	if model:IsA("Model") then
+		model:PivotTo(correctedCF)
+	else
+		model.CFrame = correctedCF
+	end
+	baseCFrame = correctedCF  -- update reference
 
 	local startTime = tick()
 
@@ -85,23 +135,25 @@ local function startAnimation(model)
 		if not model or not model.Parent then return end
 
 		local elapsed = tick() - startTime
+		-- Pure sine — oscillates between -BOB_AMPLITUDE and +BOB_AMPLITUDE, NEVER accumulates
 		local bobOffset = math.sin(elapsed * BOB_SPEED) * BOB_AMPLITUDE
-		local rotationAngle = elapsed * ROTATION_SPEED
+		-- Hard clamp so drift from any source cannot push Y outside ±amplitude
+		local clampedY = math.clamp(baseY + bobOffset, baseY - BOB_AMPLITUDE, baseY + BOB_AMPLITUDE)
+		local rotationAngle = math.rad(elapsed * ROTATION_SPEED)
 
-		for _, part in ipairs(baseParts) do
-			if part and part.Parent then
-				local basePos = basePositions[part]
-				if basePos then
-					local newPos = basePos + Vector3.new(0, bobOffset, 0)
-					part.CFrame = CFrame.new(newPos) * CFrame.Angles(0, math.rad(rotationAngle), 0)
-				end
-			end
+		local animCFrame = CFrame.new(baseCFrame.Position.X, clampedY, baseCFrame.Position.Z)
+			* CFrame.Angles(0, rotationAngle, 0)
+
+		if model:IsA("Model") then
+			model:PivotTo(animCFrame)
+		else
+			model.CFrame = animCFrame
 		end
 	end)
 
 	activeAnimations[model] = {
 		connection = conn,
-		basePositions = basePositions,
+		baseCFrame = baseCFrame,
 		startTime = startTime,
 	}
 end

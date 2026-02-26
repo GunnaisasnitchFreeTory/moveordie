@@ -1,13 +1,15 @@
 --[[
 	SwordSpawnService
-	Server-side random sword spawning during rounds 1-7.
+	Server-side sword spawning during rounds 1-7.
 
-	- Random chance per eligible round to spawn a ClassicSword pickup
-	- Pickup is a hovering world model (client handles animation)
-	- On collection: clone ClassicSword from ServerStorage into Backpack
-	- First kill with sword: +50 coins, sword removed immediately
-	- Swords auto-removed after 2 rounds or at round 8+
-	- All swords cleaned up on match end
+	- Spawns immediately at round start (if below cap), then recurs every
+	  SPAWN_INTERVAL_MIN–SPAWN_INTERVAL_MAX seconds while the round is active.
+	- Hard cap: MAX_SWORDS_ALIVE uncollected pickups at once (no pileups).
+	- Pickup is a hovering world model (client handles animation).
+	- On collection: clone ClassicSword from ServerStorage into Backpack.
+	- First kill with sword: +50 coins, sword removed immediately.
+	- Swords auto-removed after 2 rounds or at round 8+.
+	- All swords cleaned up on match end.
 
 	Works in BOTH Normal and Brainrot modes.
 
@@ -28,11 +30,19 @@ local Server = ServerScriptService:WaitForChild("Server")
 local MapManager = require(Server:WaitForChild("MapManager"))
 local EconomyService = require(Server:WaitForChild("EconomyService"))
 
-local SPAWN_CHANCE = 0.35
 local MAX_SPAWN_ROUND = 7
 local SWORD_LIFESPAN_ROUNDS = 2
 local KILL_BONUS = 50
 local SOUND_ID = "rbxassetid://93965767748928"
+
+-- Spawn frequency: one attempt every SPAWN_INTERVAL_MIN–MAX seconds while a round is active
+local SPAWN_INTERVAL_MIN = 16
+local SPAWN_INTERVAL_MAX = 22
+-- Hard cap: never have more than this many uncollected pickups in the world at once
+local MAX_SWORDS_ALIVE = 1
+-- Probability (0–1) that a sword spawns immediately when a round starts.
+-- Combined with the per-round cap this keeps sword presence at ~40-60% of rounds.
+local INITIAL_SPAWN_CHANCE = 0.50
 
 local PICKUP_FOLDER_NAME = "SwordPickups"
 local SPAWN_Y_OFFSET = 3.0
@@ -61,8 +71,23 @@ local swordHolders: { [Player]: { tool: Tool, spawnRound: number, deathConn: RBX
 local swordSpawnedRemote: RemoteEvent? = nil
 local swordDeniedCooldowns: { [number]: number } = {}
 
+local _spawnLoopActive = false
+local _currentRound = 0
+-- Hard cap: at most one sword pickup spawns per round
+local _swordsSpawnedThisRound = 0
+
 local function log(...)
 	print("[SwordSpawn]", ...)
+end
+
+local function countActivePickups(): number
+	local count = 0
+	for _, entry in ipairs(activePickups) do
+		if entry.model and entry.model.Parent then
+			count += 1
+		end
+	end
+	return count
 end
 
 local function getPickupsFolder(): Folder
@@ -375,11 +400,12 @@ local function spawnSwordPickup(roundNumber: number)
 
 	pickupModel.Parent = getPickupsFolder()
 
+	_swordsSpawnedThisRound += 1
 	table.insert(activePickups, { model = pickupModel, spawnRound = roundNumber })
 
 	log(string.format(
-		"Sword pickup spawned at (%.0f, %.0f, %.0f) for round %d",
-		spawnPos.X, spawnPos.Y, spawnPos.Z, roundNumber
+		"Sword pickup spawned at (%.0f, %.0f, %.0f) for round %d (round total: %d)",
+		spawnPos.X, spawnPos.Y, spawnPos.Z, roundNumber, _swordsSpawnedThisRound
 	))
 
 	if swordSpawnedRemote then
@@ -477,13 +503,20 @@ function SwordSpawnService.Init()
 		if swordHolders[player] then
 			removeSwordFromPlayer(player)
 		end
+		swordDeniedCooldowns[player.UserId] = nil
 	end)
 
-	log("Initialized")
+	log(string.format("Initialized — interval=%d–%ds, maxAlive=%d, initialChance=%.0f%%",
+		SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX, MAX_SWORDS_ALIVE, INITIAL_SPAWN_CHANCE * 100))
 end
 
 function SwordSpawnService.OnRoundStart(roundNumber: number)
 	cleanupExpiredSwords(roundNumber)
+
+	-- Stop any loop from the previous round before setting new state
+	_spawnLoopActive = false
+	_currentRound = roundNumber
+	_swordsSpawnedThisRound = 0
 
 	if roundNumber > MAX_SPAWN_ROUND then
 		log(string.format("Round %d > %d — force removing all swords", roundNumber, MAX_SPAWN_ROUND))
@@ -494,14 +527,37 @@ function SwordSpawnService.OnRoundStart(roundNumber: number)
 		return
 	end
 
-	if math.random() <= SPAWN_CHANCE then
+	-- 50% chance of an immediate spawn at round start (prevents swords every single round)
+	if math.random() < INITIAL_SPAWN_CHANCE and countActivePickups() < MAX_SWORDS_ALIVE then
 		spawnSwordPickup(roundNumber)
 	else
-		log(string.format("Round %d: No sword spawn (random)", roundNumber))
+		log(string.format("Round %d: skipping initial spawn (chance or cap)", roundNumber))
 	end
+
+	-- Periodic loop: one attempt every 16–22 s, capped at 1 sword total per round
+	_spawnLoopActive = true
+	task.spawn(function()
+		while _spawnLoopActive and _currentRound == roundNumber do
+			local interval = SPAWN_INTERVAL_MIN + math.random() * (SPAWN_INTERVAL_MAX - SPAWN_INTERVAL_MIN)
+			task.wait(interval)
+			if not _spawnLoopActive or _currentRound ~= roundNumber then break end
+			if _swordsSpawnedThisRound >= 1 then
+				log(string.format("Round %d: per-round cap reached — no further spawns", roundNumber))
+				break
+			end
+			local alive = countActivePickups()
+			if alive < MAX_SWORDS_ALIVE then
+				spawnSwordPickup(roundNumber)
+			else
+				log(string.format("Round %d: %d/%d swords active — skipping periodic spawn", roundNumber, alive, MAX_SWORDS_ALIVE))
+			end
+		end
+		log(string.format("Spawn loop ended for round %d", roundNumber))
+	end)
 end
 
 function SwordSpawnService.OnRoundEnd()
+	_spawnLoopActive = false
 	for _, entry in ipairs(activePickups) do
 		if entry.model and entry.model.Parent then
 			entry.model:Destroy()
@@ -512,6 +568,7 @@ function SwordSpawnService.OnRoundEnd()
 end
 
 function SwordSpawnService.OnMatchEnd()
+	_spawnLoopActive = false
 	removeAllSwords()
 	clearPickupsFolder()
 	disconnectTouched()

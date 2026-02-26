@@ -22,106 +22,106 @@ local UIConfig = {}
 -- ═══════════════════════════════════════════════════════════════════
 
 UIConfig.Colors = {
-	-- Panel chrome
-	PanelBg         = Color3.fromRGB(28, 32, 58),
-	PanelBgInner    = Color3.fromRGB(35, 40, 68),
-	CardBg          = Color3.fromRGB(48, 55, 88),
-	CardBgLighter   = Color3.fromRGB(65, 72, 108),
-	CardBgDark      = Color3.fromRGB(30, 34, 55),
-	CardStroke      = Color3.fromRGB(72, 80, 115),
+	-- Panel chrome — slightly more blue-saturated for depth contrast
+	PanelBg         = Color3.fromRGB(20, 25, 55),
+	PanelBgInner    = Color3.fromRGB(28, 34, 68),
+	CardBg          = Color3.fromRGB(42, 50, 92),
+	CardBgLighter   = Color3.fromRGB(60, 68, 118),
+	CardBgDark      = Color3.fromRGB(24, 28, 55),
+	CardStroke      = Color3.fromRGB(75, 88, 135),
 	Overlay         = Color3.fromRGB(0, 0, 0),
-	OverlayTransparency = 0.4, -- semi-transparent dark backdrop behind modals
+	OverlayTransparency = 0.4,
 
-	-- Per-panel accent (header gradient base) — BRIGHTER
-	HeaderShop    = Color3.fromRGB(245, 48, 72),
-	HeaderCrowns  = Color3.fromRGB(162, 42, 238),
-	HeaderPets    = Color3.fromRGB(248, 145, 25),
-	HeaderIndex   = Color3.fromRGB(35, 195, 58),
-	HeaderCrate   = Color3.fromRGB(248, 168, 18),
-	HeaderSpin    = Color3.fromRGB(62, 178, 252),
+	-- Per-panel accent (header gradient base) — +20% saturation
+	HeaderShop    = Color3.fromRGB(255, 35, 62),
+	HeaderCrowns  = Color3.fromRGB(172, 28, 252),
+	HeaderPets    = Color3.fromRGB(255, 132, 12),
+	HeaderIndex   = Color3.fromRGB(22, 218, 48),
+	HeaderCrate   = Color3.fromRGB(255, 162, 8),
+	HeaderSpin    = Color3.fromRGB(38, 185, 255),
 
-	-- Accents (slightly more vivid)
-	Gold   = Color3.fromRGB(255, 215, 38),
-	Blue   = Color3.fromRGB(55, 175, 255),
-	Green  = Color3.fromRGB(55, 228, 68),
-	Red    = Color3.fromRGB(240, 42, 42),
-	Pink   = Color3.fromRGB(255, 95, 148),
-	Orange = Color3.fromRGB(255, 152, 32),
-	Cyan   = Color3.fromRGB(45, 228, 228),
-	Purple = Color3.fromRGB(175, 68, 255),
+	-- Accents (+15-20% saturation, no brightness loss)
+	Gold   = Color3.fromRGB(255, 205, 18),
+	Blue   = Color3.fromRGB(38, 178, 255),
+	Green  = Color3.fromRGB(38, 238, 55),
+	Red    = Color3.fromRGB(255, 32, 38),
+	Pink   = Color3.fromRGB(255, 72, 145),
+	Orange = Color3.fromRGB(255, 142, 18),
+	Cyan   = Color3.fromRGB(22, 238, 238),
+	Purple = Color3.fromRGB(188, 52, 255),
 
-	-- Text hierarchy
+	-- Text hierarchy — bright white, no washed-out greys
 	TextWhite = Color3.fromRGB(255, 255, 255),
-	TextLight = Color3.fromRGB(210, 215, 235),
-	TextMuted = Color3.fromRGB(155, 162, 192),
-	TextDark  = Color3.fromRGB(18, 18, 32),
+	TextLight = Color3.fromRGB(218, 224, 248),
+	TextMuted = Color3.fromRGB(165, 175, 218),
+	TextDark  = Color3.fromRGB(12, 12, 28),
 
-	-- Buttons (brighter greens/blues)
-	BuyButton        = Color3.fromRGB(48, 215, 48),
-	BuyButtonHover   = Color3.fromRGB(72, 242, 72),
-	EquipButton      = Color3.fromRGB(50, 168, 255),
-	EquipButtonHover = Color3.fromRGB(82, 198, 255),
-	RobuxButton      = Color3.fromRGB(42, 200, 88),
-	RobuxButtonHover = Color3.fromRGB(58, 232, 108),
-	CloseBtn         = Color3.fromRGB(240, 38, 52),
-	CloseBtnHover    = Color3.fromRGB(255, 62, 75),
-	DisabledBtn      = Color3.fromRGB(68, 72, 95),
+	-- Buttons (+20% saturation, brighter face for contrast)
+	BuyButton        = Color3.fromRGB(32, 228, 48),
+	BuyButtonHover   = Color3.fromRGB(55, 252, 72),
+	EquipButton      = Color3.fromRGB(32, 178, 255),
+	EquipButtonHover = Color3.fromRGB(65, 205, 255),
+	RobuxButton      = Color3.fromRGB(28, 215, 82),
+	RobuxButtonHover = Color3.fromRGB(45, 242, 105),
+	CloseBtn         = Color3.fromRGB(252, 28, 45),
+	CloseBtnHover    = Color3.fromRGB(255, 55, 72),
+	DisabledBtn      = Color3.fromRGB(62, 68, 98),
 
-	-- HUD
-	HudCoinBg  = Color3.fromRGB(32, 38, 65),
-	HudRoundBg = Color3.fromRGB(255, 168, 38),
+	-- HUD — more vivid so readable against bright sky
+	HudCoinBg  = Color3.fromRGB(22, 32, 72),
+	HudRoundBg = Color3.fromRGB(255, 158, 22),
 
 	-- Sidebar
-	SidebarBg      = Color3.fromRGB(42, 48, 78),
+	SidebarBg      = Color3.fromRGB(38, 45, 82),
 	SidebarBgAlpha = 0.08,
 
-	-- Sidebar button colors (BRIGHTER, more vivid)
-	SideShop     = Color3.fromRGB(248, 55, 72),
-	SideCrowns   = Color3.fromRGB(188, 62, 255),
-	SidePets     = Color3.fromRGB(252, 158, 35),
-	SideIndex    = Color3.fromRGB(48, 218, 68),
-	SideSpectate = Color3.fromRGB(48, 175, 255),
-	SideSettings = Color3.fromRGB(135, 145, 168),
-	SideAFK      = Color3.fromRGB(255, 205, 42),
-	SideIcons    = Color3.fromRGB(252, 95, 178),
-	SideDaily    = Color3.fromRGB(60, 180, 255),
-	SideStats    = Color3.fromRGB(48, 210, 190),
+	-- Sidebar button colors (+20% saturation, Settings de-greyed to indigo)
+	SideShop     = Color3.fromRGB(255, 42, 65),
+	SideCrowns   = Color3.fromRGB(198, 48, 255),
+	SidePets     = Color3.fromRGB(255, 148, 22),
+	SideIndex    = Color3.fromRGB(32, 228, 62),
+	SideSpectate = Color3.fromRGB(32, 182, 255),
+	SideSettings = Color3.fromRGB(108, 128, 218),
+	SideAFK      = Color3.fromRGB(255, 198, 28),
+	SideIcons    = Color3.fromRGB(255, 78, 182),
+	SideDaily    = Color3.fromRGB(38, 188, 255),
+	SideStats    = Color3.fromRGB(28, 222, 198),
 
 	-- Extra panel header accents
-	HeaderSpectate = Color3.fromRGB(48, 172, 252),
-	HeaderSettings = Color3.fromRGB(135, 145, 168),
-	HeaderIcons    = Color3.fromRGB(248, 95, 172),
+	HeaderSpectate = Color3.fromRGB(32, 182, 255),
+	HeaderSettings = Color3.fromRGB(108, 128, 218),
+	HeaderIcons    = Color3.fromRGB(255, 72, 178),
 
-	-- Rarity palette (slightly brighter)
-	Common    = Color3.fromRGB(170, 178, 200),
-	Uncommon  = Color3.fromRGB(58, 225, 62),
-	Rare      = Color3.fromRGB(38, 150, 255),
-	Epic      = Color3.fromRGB(178, 42, 255),
-	Legendary = Color3.fromRGB(255, 198, 18),
-	Exclusive = Color3.fromRGB(255, 58, 58),
+	-- Rarity palette (+15-20% saturation, Common de-greyed)
+	Common    = Color3.fromRGB(158, 172, 225),
+	Uncommon  = Color3.fromRGB(38, 242, 55),
+	Rare      = Color3.fromRGB(22, 162, 255),
+	Epic      = Color3.fromRGB(192, 28, 255),
+	Legendary = Color3.fromRGB(255, 192, 8),
+	Exclusive = Color3.fromRGB(255, 42, 42),
 
 	-- Tab pills
 	TabActive       = Color3.fromRGB(255, 255, 255),
-	TabInactive     = Color3.fromRGB(62, 68, 100),
-	TabTextActive   = Color3.fromRGB(18, 18, 32),
-	TabTextInactive = Color3.fromRGB(178, 185, 212),
+	TabInactive     = Color3.fromRGB(55, 62, 105),
+	TabTextActive   = Color3.fromRGB(12, 12, 28),
+	TabTextInactive = Color3.fromRGB(188, 198, 228),
 
 	-- Intermission
-	IntermissionBg     = Color3.fromRGB(32, 160, 255),
-	IntermissionBg2    = Color3.fromRGB(75, 195, 255),
+	IntermissionBg     = Color3.fromRGB(22, 168, 255),
+	IntermissionBg2    = Color3.fromRGB(62, 202, 255),
 	IntermissionText   = Color3.fromRGB(255, 255, 255),
-	IntermissionStroke = Color3.fromRGB(15, 92, 178),
+	IntermissionStroke = Color3.fromRGB(8, 85, 195),
 }
 
 -- ═══════════════════════════════════════════════════════════════════
--- SIZES  (refined — thinner strokes, tighter radius)
+-- SIZES  (panel stroke thickened to 2.0 for sharper panel edges)
 -- ═══════════════════════════════════════════════════════════════════
 
 UIConfig.Sizes = {
 	PanelWidth        = 0.64,
 	PanelHeight       = 0.80,
 	PanelCorner       = 14,
-	PanelStroke       = 1.5,
+	PanelStroke       = 2.0,
 	PanelHeaderHeight = 56,
 
 	CardWidth  = 142,
@@ -157,14 +157,14 @@ UIConfig.Sizes = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════
--- STUD TEXTURE  (MUCH MORE VISIBLE — lighter color, lower transparency)
+-- STUD TEXTURE  (more visible — lower transparency, brighter tint)
 -- ═══════════════════════════════════════════════════════════════════
 
 UIConfig.StudTexture = {
 	AssetId      = "rbxassetid://14861368908",
 	TileSize     = UDim2.fromOffset(64, 64),
-	Transparency = 0.55,
-	Color        = Color3.fromRGB(85, 98, 145),
+	Transparency = 0.46,
+	Color        = Color3.fromRGB(92, 108, 168),
 }
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -263,7 +263,6 @@ UIConfig.MockCrates = {
 		iconColor = Color3.fromRGB(185, 68, 235),
 		accentColor = Color3.fromRGB(218, 128, 255),
 		drops = {
-			-- Basic Color Crowns (Common) — high chance
 			{ name = "Red Crown",         chance = 13, rarity = "Common",    itemId = "crown_red",          modelPath = "ItemModels.Crowns.Findable.Red Crown" },
 			{ name = "Blue Crown",        chance = 13, rarity = "Common",    itemId = "crown_blue",         modelPath = "ItemModels.Crowns.Findable.Blue Crown" },
 			{ name = "Green Crown",       chance = 13, rarity = "Common",    itemId = "crown_green",        modelPath = "ItemModels.Crowns.Findable.Green Crown" },
@@ -271,7 +270,6 @@ UIConfig.MockCrates = {
 			{ name = "Pink Crown",        chance = 13, rarity = "Common",    itemId = "crown_pink",         modelPath = "ItemModels.Crowns.Findable.Pink Crown" },
 			{ name = "White Crown",       chance = 12, rarity = "Common",    itemId = "crown_white",        modelPath = "ItemModels.Crowns.Findable.White Crown" },
 			{ name = "Orange Crown",      chance = 12, rarity = "Common",    itemId = "crown_orange",       modelPath = "ItemModels.Crowns.Findable.Orange Crown" },
-			-- VFX Crowns (Rare/Epic) — low chance
 			{ name = "Sparkle Crown",     chance = 3,  rarity = "Rare",      itemId = "crown_sparkle",      modelPath = "ItemModels.Crowns.Findable.Sparkle Crown" },
 			{ name = "Anime Lines Crown", chance = 2,  rarity = "Rare",      itemId = "crown_anime_lines",  modelPath = "ItemModels.Crowns.Findable.Anime Lines Crown" },
 			{ name = "Darkness Crown",    chance = 2,  rarity = "Rare",      itemId = "crown_darkness",     modelPath = "ItemModels.Crowns.Findable.Darkness Crown" },
@@ -281,8 +279,8 @@ UIConfig.MockCrates = {
 			{ name = "Aura Crown",        chance = 0.5, rarity = "Legendary", itemId = "crown_aura",        modelPath = "ItemModels.Crowns.Findable.Aura Crown" },
 		},
 		prices = {
-			{ label = "1 Crate",  cost = 300, currency = "Coins" },
-			{ label = "3 Crates", cost = 500, currency = "Coins" },
+			{ label = "1 Crate",  cost = 500, currency = "Coins" },
+			{ label = "3 Crates", cost = 800, currency = "Coins" },
 			{ label = "6 Crates", cost = 400, currency = "Robux", productId = 3539706736 },
 		},
 	},
@@ -302,8 +300,8 @@ UIConfig.MockCrates = {
 			{ name = "Penguin",     chance = 12, rarity = "Common", itemId = "pet_penguin",     modelPath = "ItemModels.Pets.Common.Penguin" },
 		},
 		prices = {
-			{ label = "1 Crate",  cost = 300, currency = "Coins" },
-			{ label = "3 Crates", cost = 500, currency = "Coins" },
+			{ label = "1 Crate",  cost = 500, currency = "Coins" },
+			{ label = "3 Crates", cost = 800, currency = "Coins" },
 			{ label = "6 Crates", cost = 400, currency = "Robux", productId = 3539709447 },
 		},
 	},
@@ -320,8 +318,8 @@ UIConfig.MockCrates = {
 			{ name = "Eagle",     chance = 20, rarity = "Rare", itemId = "pet_eagle",     modelPath = "ItemModels.Pets.Rare.Eagle" },
 		},
 		prices = {
-			{ label = "1 Crate",  cost = 300, currency = "Coins" },
-			{ label = "3 Crates", cost = 500, currency = "Coins" },
+			{ label = "1 Crate",  cost = 500, currency = "Coins" },
+			{ label = "3 Crates", cost = 800, currency = "Coins" },
 			{ label = "6 Crates", cost = 400, currency = "Robux", productId = 3539710049 },
 		},
 	},
@@ -336,8 +334,8 @@ UIConfig.MockCrates = {
 			{ name = "Dolphin",   chance = 33, rarity = "Epic", itemId = "pet_dolphin", modelPath = "ItemModels.Pets.Epic.Dolphin" },
 		},
 		prices = {
-			{ label = "1 Crate",  cost = 300, currency = "Coins" },
-			{ label = "3 Crates", cost = 500, currency = "Coins" },
+			{ label = "1 Crate",  cost = 500, currency = "Coins" },
+			{ label = "3 Crates", cost = 800, currency = "Coins" },
 			{ label = "6 Crates", cost = 400, currency = "Robux", productId = 3539710471 },
 		},
 	},
