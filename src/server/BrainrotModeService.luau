@@ -36,8 +36,8 @@ local SPAWN_Y_OFFSET = 2.5
 local EDGE_MARGIN = 8
 local RAYCAST_HEIGHT = 80
 
-local COINS_NEW_PET = 100
-local COINS_DUPLICATE = 200
+local COINS_NEW_PET = 25
+local COINS_DUPLICATE = 10
 
 local BrainrotModeService = {}
 
@@ -182,7 +182,8 @@ local function spawnBrainrot(petId: string)
 
 	if clone:IsA("Model") then
 		if clone.PrimaryPart then
-			clone:PivotTo(CFrame.new(spawnPos))
+			local yRot = math.random() * math.pi * 2
+			clone:PivotTo(CFrame.new(spawnPos) * CFrame.fromAxisAngle(Vector3.new(0, 1, 0), yRot))
 		else
 			local firstPart = clone:FindFirstChildWhichIsA("BasePart", true)
 			if firstPart then

@@ -12,13 +12,45 @@
 	  4. UIController (panels use cached deps — instant)
 ]]
 
+local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService      = game:GetService("TweenService")
 local Client = script
 
 local _bootTime = tick()
 local function ts() return string.format("%.3f", tick() - _bootTime) end
 
 print(string.format("[UIBoot] t=%s Client init starting", ts()))
+
+-- ── LOADING SCREEN ────────────────────────────────────────────────────────────
+-- Must be created BEFORE any yields so it covers the frame-1 flash caused by
+-- StarterGui elements (SpinWheelGuiScripts buttons etc.) that appear before
+-- UIController finishes building the HUD.
+local _loadGui = Instance.new("ScreenGui")
+_loadGui.Name            = "LoadingScreen"
+_loadGui.ResetOnSpawn    = false
+_loadGui.IgnoreGuiInset  = true
+_loadGui.DisplayOrder    = 10000
+_loadGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+_loadGui.Parent          = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+local _loadBg = Instance.new("Frame")
+_loadBg.Size                  = UDim2.fromScale(1, 1)
+_loadBg.BackgroundColor3      = Color3.new(0, 0, 0)
+_loadBg.BackgroundTransparency = 0
+_loadBg.BorderSizePixel       = 0
+_loadBg.ZIndex                = 1
+_loadBg.Parent                = _loadGui
+
+local function dismissLoadingScreen()
+	TweenService:Create(_loadBg, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 1,
+	}):Play()
+	task.delay(0.4, function()
+		if _loadGui and _loadGui.Parent then _loadGui:Destroy() end
+	end)
+end
+-- ─────────────────────────────────────────────────────────────────────────────
 
 -- 0. Wait for game to load (assets replicated)
 if not game:IsLoaded() then
@@ -76,6 +108,10 @@ if uiOk then
 else
 	warn(string.format("[UIBoot] t=%s UIController FAILED: %s", ts(), tostring(uiErr)))
 end
+
+-- Dismiss loading screen now that the HUD and all panels are built.
+-- The 0.35s fade reveals the fully-styled UI instead of the grey-box flash.
+dismissLoadingScreen()
 
 -- 3b. UIScalingController (device-class responsive scaling)
 local scalingOk, scalingErr = pcall(function()
@@ -214,7 +250,6 @@ pcall(function()
 	local buildVal = ReplicatedStorage:WaitForChild("BUILD_ID", 10)
 	if not buildVal then return end
 
-	local Players = game:GetService("Players")
 	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
 	local screenGui = Instance.new("ScreenGui")

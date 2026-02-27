@@ -12,7 +12,7 @@
 
 local PlayerData = {}
 
-PlayerData.VERSION = 3
+PlayerData.VERSION = 4
 
 -- DataStore key — Studio uses a separate namespace to prevent leaking test data into production
 local RunService = game:GetService("RunService")
@@ -39,6 +39,7 @@ PlayerData.Attributes = {
 	DailyStreak           = "DailyStreak",
 	LifetimeDeaths        = "LifetimeDeaths",
 	TimePlayedSeconds     = "TimePlayedSeconds",
+	DailyQuestData        = "DailyQuestData",
 }
 
 --- Compute current UTC week identifier.
@@ -68,6 +69,7 @@ function PlayerData.GetDefaults(): { [string]: any }
 		DailyStreak           = 0,
 		LifetimeDeaths        = 0,
 		TimePlayedSeconds     = 0,
+		DailyQuestData        = "",
 	}
 end
 
@@ -96,6 +98,7 @@ function PlayerData.Validate(data: { [string]: any }): { [string]: any }
 	if type(data.DailyStreak) ~= "number" then data.DailyStreak = 0 end
 	if type(data.LifetimeDeaths) ~= "number" then data.LifetimeDeaths = 0 end
 	if type(data.TimePlayedSeconds) ~= "number" then data.TimePlayedSeconds = 0 end
+	if type(data.DailyQuestData) ~= "string" then data.DailyQuestData = "" end
 
 	if data.EquippedPet ~= nil and type(data.EquippedPet) ~= "string" then
 		data.EquippedPet = nil

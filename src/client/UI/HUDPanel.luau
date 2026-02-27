@@ -71,6 +71,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	onIcons: () -> (),
 	onDaily: () -> (),
 	onStats: () -> (),
+	onQuests: () -> (),
 })
 	-- COIN COUNTER (glossy capsule)
 	local coinFrame = Instance.new("Frame")
@@ -492,6 +493,16 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		Color3.fromRGB(100, 210, 255),
 		Color3.fromRGB(30, 120, 200),
 		function() if callbacks.onDaily then callbacks.onDaily() end end
+	)
+
+	-- ── TOP-RIGHT: Daily Quests button ────────────────────────────
+	createTopRightPill(
+		"QuestsBtn", 140,
+		"\xE2\x9A\x94 Quests",
+		Color3.fromRGB(180, 30, 30),
+		Color3.fromRGB(255, 70, 70),
+		Color3.fromRGB(120, 12, 12),
+		function() if callbacks.onQuests then callbacks.onQuests() end end
 	)
 
 	-- INTERMISSION SHOW/HIDE HELPERS

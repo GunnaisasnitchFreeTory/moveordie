@@ -137,6 +137,29 @@ local function getFindableCrownPool()
 	return _findableCrownPool
 end
 
+-- Rarity weights for spin wheel crown selection (grind-heavy tuning)
+local CROWN_RARITY_WEIGHT = {
+	Common    = 50,
+	Rare      = 2,
+	Epic      = 1,
+	Legendary = 0,
+}
+
+local function weightedPickCrown(pool: { { id: string, name: string, rarity: string, image: string? } })
+	local total = 0
+	for _, entry in ipairs(pool) do
+		total += (CROWN_RARITY_WEIGHT[entry.rarity] or 1)
+	end
+	if total <= 0 then return pool[math.random(1, #pool)] end
+	local roll = math.random() * total
+	local cumulative = 0
+	for _, entry in ipairs(pool) do
+		cumulative += (CROWN_RARITY_WEIGHT[entry.rarity] or 1)
+		if roll <= cumulative then return entry end
+	end
+	return pool[#pool]
+end
+
 local function pickRandomFindableCrown(player: Player): (string, string, string, boolean, string?)
 	local pool = getFindableCrownPool()
 	if #pool == 0 then
@@ -147,7 +170,7 @@ local function pickRandomFindableCrown(player: Player): (string, string, string,
 	local IS = getInventoryService()
 
 	for _ = 1, CROWN_MAX_REROLL do
-		local pick = pool[math.random(1, #pool)]
+		local pick = weightedPickCrown(pool)
 		local owns = false
 		if IS and type(IS.OwnsItem) == "function" then
 			local ok, result = pcall(IS.OwnsItem, IS, player, "Crowns", pick.id)
@@ -158,7 +181,7 @@ local function pickRandomFindableCrown(player: Player): (string, string, string,
 		end
 	end
 
-	local pick = pool[math.random(1, #pool)]
+	local pick = weightedPickCrown(pool)
 	local isDuplicate = false
 	if IS and type(IS.OwnsItem) == "function" then
 		local ok, result = pcall(IS.OwnsItem, IS, player, "Crowns", pick.id)

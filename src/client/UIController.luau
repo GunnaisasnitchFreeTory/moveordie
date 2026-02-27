@@ -110,6 +110,7 @@ local MatchResultsPanel = safeRequire("MatchResultsPanel")
 local DailyRewardsPanel = safeRequire("DailyRewardsPanel")
 local StatsPanel        = safeRequire("StatsPanel")
 local ModeVotePanel     = safeRequire("ModeVotePanel")
+local QuestsPanel       = safeRequire("QuestsPanel")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -297,6 +298,7 @@ function UIController.Init()
 	safeInit("SpinWheelPanel", SpinWheelPanel.Init, panelGui, onPanelClosed)
 	safeInit("DailyRewardsPanel", DailyRewardsPanel.Init, panelGui, onPanelClosed)
 	safeInit("StatsPanel", StatsPanel.Init, panelGui, onPanelClosed)
+	safeInit("QuestsPanel", QuestsPanel.Init, panelGui, onPanelClosed)
 
 	safeInit("ModeVotePanel", ModeVotePanel.Init)
 
@@ -315,6 +317,7 @@ function UIController.Init()
 			onIcons    = function() openPanel("Icons") end,
 			onDaily    = function() openPanel("Daily") end,
 			onStats    = function() openPanel("Stats") end,
+			onQuests   = function() openPanel("Quests") end,
 			onAFK      = function()
 				task.spawn(function()
 					local remotes = ReplicatedStorage:FindFirstChild("Remotes")

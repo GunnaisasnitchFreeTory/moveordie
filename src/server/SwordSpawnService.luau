@@ -59,6 +59,14 @@ local RING_DIAMETER = 8
 local RING_COLOR = Color3.fromRGB(0, 200, 255)
 local DENIED_COOLDOWN = 3
 
+local _DQS = nil
+local function getDQS()
+	if _DQS ~= nil then return _DQS end
+	local ok, mod = pcall(require, Server:FindFirstChild("DailyQuestService"))
+	if ok and mod then _DQS = mod else _DQS = false end
+	return _DQS
+end
+
 local SwordSpawnService = {}
 
 local initialized = false
@@ -220,6 +228,8 @@ local function onSwordKill(killer: Player, victim: Player)
 	EconomyService.AwardCoins(killer, KILL_BONUS, "SwordKill", true)
 	EconomyService.TrackMatchCoins(killer, KILL_BONUS)
 	removeSwordFromPlayer(killer)
+	local dqs = getDQS()
+	if dqs and dqs.OnSwordKill then pcall(dqs.OnSwordKill, killer) end
 end
 
 local function giveSwordToPlayer(player: Player, spawnRound: number)

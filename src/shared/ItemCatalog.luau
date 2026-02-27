@@ -473,6 +473,22 @@ ItemCatalog.Pets = {
 		source    = "brainrot_mode",
 	},
 
+	-- ── Quest-exclusive Pet — only from Daily Quest (survive TTS 7 times) ──
+	pet_tungtungsahur = {
+		id        = "pet_tungtungsahur",
+		name      = "TungTungSahur",
+		modelName = "TUNGTUNGSAHUR",
+		type      = "Pet",
+		rarity    = "Legendary",
+		modelPath = "ItemModels.Pets.Legendary.Brainrots.TUNGTUNGSAHUR",
+		image     = "",
+		iconText  = "\240\159\145\190",
+		iconColor = Color3.fromRGB(255, 60, 60),
+		stats     = { CoinMultiplier = 1.20, WalkSpeed = 3, JumpPower = 5 },
+		obtainable = false,
+		source    = "quest_only",
+	},
+
 	-- ── Brainrot Bundle Pets (5) — obtainable via Brainrot Bundle ──
 	pet_67 = {
 		id        = "pet_67",

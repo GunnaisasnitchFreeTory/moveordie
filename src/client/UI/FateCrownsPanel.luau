@@ -24,6 +24,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
 if not Shared then
@@ -48,6 +49,15 @@ end
 local UIConfig = Deps.UIConfig
 local ItemCatalog = Deps.ItemCatalog
 
+-- Build a crownId → gamepassId map from MockPremiumItems so the inventory
+-- can fall back to gamepass ownership for exclusive crowns (same source as Shop).
+local _crownGamepassMap: {[string]: number} = {}
+for _, item in ipairs(UIConfig.MockPremiumItems) do
+	if item.type == "ExclusiveCrown" and item.gamepassId and item.id then
+		_crownGamepassMap[item.id] = item.gamepassId
+	end
+end
+
 local Client = script.Parent
 local AnimUtil   = require(Client:WaitForChild("AnimUtil"))
 local SoundUtil  = require(Client:WaitForChild("SoundUtil"))
@@ -71,10 +81,22 @@ local FateCrownsPanel = {}
 local function getOwnedCrownSet(): { [string]: boolean }
 	local json = player:GetAttribute("OwnedCrowns") or "[]"
 	local okDec, list = pcall(HttpService.JSONDecode, HttpService, json)
-	if not okDec or type(list) ~= "table" then return {} end
+	if not okDec or type(list) ~= "table" then list = {} end
 	local set = {}
 	for _, id in ipairs(list) do
 		set[id] = true
+	end
+	-- Exclusive crowns sold as gamepasses: if the player owns the gamepass,
+	-- treat the crown as owned in the inventory (same logic as Shop's "OWNED" check).
+	for crownId, gamepassId in pairs(_crownGamepassMap) do
+		if not set[crownId] then
+			local gpOk, owns = pcall(function()
+				return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
+			end)
+			if gpOk and owns then
+				set[crownId] = true
+			end
+		end
 	end
 	return set
 end

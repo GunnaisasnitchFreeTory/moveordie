@@ -61,20 +61,21 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 local REWARD_TABLES = {
+	-- Weights tuned for heavy grind: Rare ~0.3%, Epic ~0.15%, Aura ~0.07%
 	crate_crown = {
-		{ itemId = "crown_red",         category = "Crowns", weight = 25 },
-		{ itemId = "crown_blue",        category = "Crowns", weight = 25 },
-		{ itemId = "crown_green",       category = "Crowns", weight = 25 },
-		{ itemId = "crown_purple",      category = "Crowns", weight = 25 },
-		{ itemId = "crown_pink",        category = "Crowns", weight = 25 },
-		{ itemId = "crown_white",       category = "Crowns", weight = 25 },
-		{ itemId = "crown_orange",      category = "Crowns", weight = 25 },
-		{ itemId = "crown_sparkle",     category = "Crowns", weight = 5 },
-		{ itemId = "crown_anime_lines", category = "Crowns", weight = 4 },
-		{ itemId = "crown_darkness",    category = "Crowns", weight = 4 },
-		{ itemId = "crown_love",        category = "Crowns", weight = 4 },
-		{ itemId = "crown_glitch",      category = "Crowns", weight = 3 },
-		{ itemId = "crown_mystical",    category = "Crowns", weight = 3 },
+		{ itemId = "crown_red",         category = "Crowns", weight = 50 },
+		{ itemId = "crown_blue",        category = "Crowns", weight = 50 },
+		{ itemId = "crown_green",       category = "Crowns", weight = 50 },
+		{ itemId = "crown_purple",      category = "Crowns", weight = 50 },
+		{ itemId = "crown_pink",        category = "Crowns", weight = 50 },
+		{ itemId = "crown_white",       category = "Crowns", weight = 50 },
+		{ itemId = "crown_orange",      category = "Crowns", weight = 50 },
+		{ itemId = "crown_sparkle",     category = "Crowns", weight = 3 },
+		{ itemId = "crown_anime_lines", category = "Crowns", weight = 1 },
+		{ itemId = "crown_darkness",    category = "Crowns", weight = 1 },
+		{ itemId = "crown_love",        category = "Crowns", weight = 1 },
+		{ itemId = "crown_glitch",      category = "Crowns", weight = 1 },
+		{ itemId = "crown_mystical",    category = "Crowns", weight = 1 },
 		{ itemId = "crown_aura",        category = "Crowns", weight = 1 },
 	},
 	crate_pet_common = {

@@ -33,6 +33,14 @@ local RoundCoinService       = require(Server:WaitForChild("RoundCoinService"))
 local SwordSpawnService      = require(Server:WaitForChild("SwordSpawnService"))
 local TungTungSahurService   = require(Server:WaitForChild("TungTungSahurService"))
 
+local _DQS = nil
+local function getDQS()
+	if _DQS ~= nil then return _DQS end
+	local ok, mod = pcall(require, Server:FindFirstChild("DailyQuestService"))
+	if ok and mod then _DQS = mod else _DQS = false end
+	return _DQS
+end
+
 --[[ CONFIGURATION ]]
 local Config = {
 	IntermissionSeconds = 18,
@@ -585,6 +593,9 @@ local function resolveRankingsAndReward()
 
 					local weeklyWins = (PDS.GetField(entry.player, "WeeklyWins") or 0) + 1
 					PDS.SetField(entry.player, "WeeklyWins", weeklyWins)
+
+					local dqs = getDQS()
+					if dqs and dqs.OnPlayerWon then pcall(dqs.OnPlayerWon, entry.player) end
 
 					log(string.format("%s won! LifetimeWins=%d WeeklyWins=%d",
 						entry.player.Name, lifetimeWins, weeklyWins))
