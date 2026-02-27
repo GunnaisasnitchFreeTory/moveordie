@@ -17,6 +17,7 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local UIConfig = require(Shared:WaitForChild("UIConfig"))
@@ -124,14 +125,26 @@ end
 function KillFeed.Init(screenGui)
 	feedGui = screenGui
 
+	-- On mobile the top-right button stack (Stats/Daily/Quests) ends at ~178px.
+	-- Anchor to top-right and push the feed below with a 17px gap.
+	local isMobile = UserInputService.TouchEnabled
+	local QUESTS_BTN_BOTTOM = 178  -- y=140 + height=38
+	local MOBILE_TOP_OFFSET = QUESTS_BTN_BOTTOM + 17
+
 	feedContainer = Instance.new("Frame")
 	feedContainer.Name = "KillFeedContainer"
-	feedContainer.AnchorPoint = Vector2.new(1, 0.5)
-	feedContainer.Position = UDim2.new(1, -16, 0.45, 0)
 	feedContainer.Size = UDim2.new(0, 320, 0, (32 + 6) * MAX_MESSAGES)
 	feedContainer.BackgroundTransparency = 1
 	feedContainer.BorderSizePixel = 0
 	feedContainer.Parent = screenGui
+
+	if isMobile then
+		feedContainer.AnchorPoint = Vector2.new(1, 0)
+		feedContainer.Position    = UDim2.new(1, -16, 0, MOBILE_TOP_OFFSET)
+	else
+		feedContainer.AnchorPoint = Vector2.new(1, 0.5)
+		feedContainer.Position    = UDim2.new(1, -16, 0.45, 0)
+	end
 
 	local layout = Instance.new("UIListLayout")
 	layout.SortOrder = Enum.SortOrder.LayoutOrder

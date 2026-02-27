@@ -204,7 +204,13 @@ local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 
 	-- Exclusive Crowns
 	[1717864767] = { type = "Crown", category = "Crowns", itemId = "crown_ultra",             label = "Ultra Crown" },
-	[1717992747] = { type = "Crown", category = "Crowns", itemId = "crown_electric",          label = "Electric Crown" },
+	[1728155288] = { type = "Crown", category = "Crowns", itemId = "crown_fire_circle",        label = "Fire Circle Crown" },
+	[1728821173] = { type = "Crown", category = "Crowns", itemId = "crown_nen_x_killua",       label = "Nen X Killua Crown" },
+	[1727051517] = { type = "Crown", category = "Crowns", itemId = "crown_slashes",            label = "Slashes Crown" },
+	-- Electric Crown (1717992747) removed from migration map.
+	-- It is now purchasable with Fate Coins via ShopService. Existing holders
+	-- who joined before this change already had the crown migrated to OwnedCrowns.
+	-- Removing this entry prevents repeated re-grants when OwnedCrowns is cleared.
 	[1716918881] = { type = "Crown", category = "Crowns", itemId = "crown_rengoku",           label = "Rengoku Crown" },
 	[1717662811] = { type = "Crown", category = "Crowns", itemId = "crown_infinite_void",     label = "Infinite Void Crown" },
 

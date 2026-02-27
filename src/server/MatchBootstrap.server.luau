@@ -12,6 +12,7 @@ local Server = ServerScriptService:WaitForChild("Server")
 local MatchManager = require(Server:WaitForChild("MatchManager"))
 local GlobalLeaderboardService = require(Server:WaitForChild("GlobalLeaderboardService"))
 local DailyQuestService = require(Server:WaitForChild("DailyQuestService"))
+local ShopService       = require(Server:WaitForChild("ShopService"))
 
 -- Small delay to ensure PlayerStateBootstrap + PlayerDataBootstrap run first
 -- (Roblox doesn't guarantee script execution order)
@@ -21,6 +22,7 @@ task.wait(0.5)
 -- and rendering works when players seed stats on join.
 GlobalLeaderboardService.Init()
 DailyQuestService.Init()
+ShopService.Init()
 
 -- Initialize MatchManager (creates MatchStatus, inits MapManager, RoundManager, EconomyService)
 MatchManager.Init()

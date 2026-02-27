@@ -327,17 +327,22 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 function Components.CreateDimOverlay(parent: Instance, onClose: () -> ()): Frame
-	-- Fully transparent click-catcher (no dark/dim overlay — user preference)
+	-- Invisible full-screen click blocker that sits ABOVE all HUD elements
+	-- (ZIndex 4) but BELOW the panel canvas (ZIndex 5).
+	-- This prevents stray clicks on HUD buttons from reaching through to the
+	-- underlying HUD while any panel is open, which would trigger a panel switch
+	-- mid-purchase and fire the close animation on the wrong frame.
 	local overlay = Instance.new("TextButton")
 	overlay.Name = "DimOverlay"
 	overlay.Size = UDim2.fromScale(1, 1)
 	overlay.Position = UDim2.fromScale(0, 0)
 	overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	overlay.BackgroundTransparency = 1 -- invisible; only intercepts clicks to close
+	overlay.BackgroundTransparency = 1  -- invisible but fully blocks input
 	overlay.BorderSizePixel = 0
 	overlay.Text = ""
 	overlay.AutoButtonColor = false
-	overlay.ZIndex = 1
+	overlay.Active = true               -- must be true to intercept clicks
+	overlay.ZIndex = 4                  -- above HUD (2-3), below canvas (5)
 	overlay.Visible = false
 	overlay.Parent = parent
 	overlay.MouseButton1Click:Connect(function()

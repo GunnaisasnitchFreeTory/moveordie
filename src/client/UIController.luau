@@ -153,6 +153,8 @@ local function closeCurrentPanel()
 		DailyRewardsPanel.Hide()
 	elseif currentPanel == "Stats" and StatsPanel.IsVisible() then
 		StatsPanel.Hide()
+	elseif currentPanel == "Quests" and QuestsPanel.IsVisible() then
+		QuestsPanel.Hide()
 	end
 	currentPanel = nil
 
@@ -196,6 +198,8 @@ local function openPanel(name: string)
 		DailyRewardsPanel.Show()
 	elseif name == "Stats" then
 		StatsPanel.Show()
+	elseif name == "Quests" then
+		QuestsPanel.Show()
 	end
 
 	HUDPanel.SetBannerOverrideHidden(true)

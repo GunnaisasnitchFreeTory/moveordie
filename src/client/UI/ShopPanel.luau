@@ -48,6 +48,7 @@ local AnimUtil          = require(Client:WaitForChild("AnimUtil"))
 local SoundUtil         = require(Client:WaitForChild("SoundUtil"))
 local Components        = require(Client:WaitForChild("Components"))
 local ThumbnailRenderer = require(Client:WaitForChild("ThumbnailRenderer"))
+local RewardPopup       = require(Client:WaitForChild("RewardPopup"))
 
 local C = UIConfig.Colors
 local S = UIConfig.Sizes
@@ -91,6 +92,28 @@ do
 end
 
 local _warnedMissing = {}
+-- Items purchased this session: avoids waiting for OwnedCrowns attribute to propagate
+local _locallyOwned: {[string]: true} = {}
+
+-- ─── Crown background animation state ─────────────────────────────
+-- Crown images collected once at module load from ItemCatalog.Crowns.
+local _crownBgImages: {string} = {}
+do
+	if ItemCatalog and ItemCatalog.Crowns then
+		for _, data in pairs(ItemCatalog.Crowns) do
+			local img = (ItemCatalog.GetImage and ItemCatalog.GetImage(data)) or data.image or ""
+			if img ~= "" then
+				table.insert(_crownBgImages, img)
+			end
+		end
+	end
+	print(string.format("[CrownBG] Collected %d crown images", #_crownBgImages))
+end
+
+local crownBgFrame: Frame? = nil            -- container Frame, created in Init
+local _crownSlots: {ImageLabel} = {}        -- 3 reusable ImageLabel slots
+local _crownBgThread: thread? = nil         -- single animation coroutine
+local _crownBgRunning = false               -- guard: prevents duplicate loops
 
 local function clearCards()
 	for _, child in ipairs(contentFrame:GetChildren()) do
@@ -213,6 +236,105 @@ local function setCoinsBgVisible(visible_: boolean)
 	end
 end
 
+-- ─── Crown tab animated background ────────────────────────────────
+
+local function stopCrownBgAnim()
+	_crownBgRunning = false
+	if _crownBgThread then
+		pcall(task.cancel, _crownBgThread)
+		_crownBgThread = nil
+	end
+	for _, slot in ipairs(_crownSlots) do
+		TweenService:Create(slot, TweenInfo.new(0), { ImageTransparency = 1 }):Play()
+	end
+end
+
+local function startCrownBgAnim()
+	if not crownBgFrame or not crownBgFrame.Parent then return end
+	if #_crownBgImages == 0 or #_crownSlots == 0 then return end
+	-- Idempotent: kill any running loop before starting a new one
+	stopCrownBgAnim()
+	_crownBgRunning = true
+
+	local function shuffled(t: {string}): {string}
+		local copy = table.clone(t)
+		for i = #copy, 2, -1 do
+			local j = math.random(1, i)
+			copy[i], copy[j] = copy[j], copy[i]
+		end
+		return copy
+	end
+
+	_crownBgThread = task.spawn(function()
+		local slotIdx  = 0
+		local imgQueue = shuffled(_crownBgImages)
+		local imgIdx   = 0
+
+		while _crownBgRunning do
+			-- Advance slot (round-robin through 3 slots)
+			slotIdx = (slotIdx % #_crownSlots) + 1
+			imgIdx  = imgIdx + 1
+			if imgIdx > #imgQueue then
+				imgQueue = shuffled(_crownBgImages)
+				imgIdx   = 1
+			end
+
+			local slot = _crownSlots[slotIdx]
+			local img  = imgQueue[imgIdx]
+
+			-- Assign new image and randomise placement before fade-in
+			slot.Image            = img
+			slot.ImageTransparency = 1
+			slot.Position = UDim2.fromScale(
+				math.random(20, 80) / 100,
+				math.random(12, 88) / 100
+			)
+			slot.Rotation = math.random(-20, 20)
+
+			-- Fade IN  (1.2 s)
+			local targetTrans = math.random(94, 97) / 100   -- 0.94–0.97: very dark / barely visible
+			local tIn = TweenService:Create(
+				slot,
+				TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+				{ ImageTransparency = targetTrans }
+			)
+			tIn:Play()
+			tIn.Completed:Wait()
+			if not _crownBgRunning then break end
+
+			-- Hold (1.8–3.5 s)
+			task.wait(math.random(18, 35) / 10)
+			if not _crownBgRunning then break end
+
+			-- Fire-and-forget fade OUT (1.2 s) — next iteration starts 0.5 s early
+			-- creating a cross-fade overlap between two crown images.
+			TweenService:Create(
+				slot,
+				TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+				{ ImageTransparency = 1 }
+			):Play()
+
+			-- Wait 0.7 s: the remaining 0.5 s of the fade-out overlaps the next fade-in
+			task.wait(0.7)
+			if not _crownBgRunning then break end
+		end
+
+		-- Final cleanup: hide all slots
+		for _, s in ipairs(_crownSlots) do
+			TweenService:Create(s, TweenInfo.new(0.3), { ImageTransparency = 1 }):Play()
+		end
+	end)
+end
+
+local function setCrownBgVisible(visible_: boolean)
+	if crownBgFrame then crownBgFrame.Visible = visible_ end
+	if visible_ then
+		startCrownBgAnim()
+	else
+		stopCrownBgAnim()
+	end
+end
+
 local _fateCoinImage: string = ""
 do
 	local entry = ItemCatalog.Get and ItemCatalog.Get("Currency", "FATE_COINS") or nil
@@ -329,6 +451,7 @@ end
 local function populateCards(filterType: string)
 	clearCards()
 	setCoinsBgVisible(filterType == "Currency")
+	setCrownBgVisible(filterType == "ExclusiveCrown")
 
 	if not contentFrame:FindFirstChildOfClass("UIGridLayout") then
 		Components.AddGridLayout(contentFrame)
@@ -341,17 +464,43 @@ local function populateCards(filterType: string)
 		if item.type == filterType then
 			order += 1
 
-			local isGamepass = item.gamepassId and item.gamepassId > 0
-			local isProduct  = item.productId and item.productId > 0
-			local isOwned = isGamepass and checkGamepassOwned(item.gamepassId) or false
+			local isGamepass  = item.gamepassId and item.gamepassId > 0
+			local isProduct   = item.productId and item.productId > 0
+			local isFateCoins = item.fateCoins and item.fateCoins > 0
+
+			-- Ownership check
+			local isOwned = false
+			if isGamepass then
+				isOwned = checkGamepassOwned(item.gamepassId)
+			elseif isFateCoins then
+				-- Local cache: immediately true after a successful purchase this session
+				if _locallyOwned[item.id] then
+					isOwned = true
+				else
+					-- Fallback: check OwnedCrowns/OwnedPets attribute (may lag by a frame)
+					local attrKey = (filterType == "ExclusiveCrown") and "OwnedCrowns" or "OwnedPets"
+					local raw = LocalPlayer:GetAttribute(attrKey)
+					if raw and type(raw) == "string" and raw ~= "" then
+						for _, ownedId in ipairs(string.split(raw, ",")) do
+							if ownedId == item.id then isOwned = true break end
+						end
+					end
+				end
+			end
 
 			local actionText
 			local actionColor
 			if isOwned then
 				actionText = "OWNED"
 				actionColor = C.DisabledBtn
+			elseif isFateCoins then
+				local fmt = item.fateCoins >= 1000
+					and string.format("%dK F", math.floor(item.fateCoins / 1000))
+					or string.format("%d F", item.fateCoins)
+				actionText  = fmt
+				actionColor = Color3.fromRGB(255, 200, 30)
 			else
-				actionText = string.format("%d ROBUX", item.robux)
+				actionText = string.format("%d ROBUX", item.robux or 0)
 				actionColor = C.RobuxButton
 			end
 
@@ -386,20 +535,62 @@ local function populateCards(filterType: string)
 				tag = item.tag,
 				actionText = actionText,
 				actionColor = actionColor,
-				onAction = function()
-					if isOwned then return end
+			onAction = function()
+				if isOwned then return end
 
-					if isGamepass then
-						MarketplaceService:PromptGamePassPurchase(LocalPlayer, item.gamepassId)
-					elseif isProduct then
-						MarketplaceService:PromptProductPurchase(LocalPlayer, item.productId)
-					else
-						print(string.format("[ShopPanel] No purchase ID for: %s", item.name))
+				if isGamepass then
+					MarketplaceService:PromptGamePassPurchase(LocalPlayer, item.gamepassId)
+				elseif isProduct then
+					MarketplaceService:PromptProductPurchase(LocalPlayer, item.productId)
+				elseif isFateCoins then
+					local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+					local buyRF = remotes and remotes:FindFirstChild("Shop_BuyWithCoins")
+					if not buyRF then
+						warn("[ShopPanel] Shop_BuyWithCoins remote not found")
+						return
 					end
-				end,
+					local ok, result = pcall(buyRF.InvokeServer, buyRF, item.id, item.type)
+					if ok and result and result.success then
+						-- Record locally so ownership check is immediate on next rebuild
+						_locallyOwned[item.id] = true
+						-- Surgically update ONLY this card's ActionBtn — no full rebuild,
+						-- no card-clear flash, no layout shift.
+						local cardFrame = contentFrame:FindFirstChild("ItemCard_" .. item.id)
+						if cardFrame then
+							local actionBtn = cardFrame:FindFirstChild("ActionBtn")
+							if actionBtn then
+								actionBtn.Text = "OWNED"
+								actionBtn.BackgroundColor3 = C.DisabledBtn
+								actionBtn.Active = false
+								local grad = actionBtn:FindFirstChildOfClass("UIGradient")
+								if grad then grad:Destroy() end
+							end
+						else
+							-- Card not found by ID (e.g. first open): fall back to full rebuild
+							populateCards(CATEGORIES[activeTab].filter)
+						end
+						local catEntry = ItemCatalog.Get("Premium", item.id)
+						RewardPopup.Show({
+							title      = "PURCHASED!",
+							name       = item.name,
+							itemId     = item.id,
+							itemType   = item.type,
+							rarityText = item.rarity or (catEntry and catEntry.rarity) or "Legendary",
+							okText     = "NICE!",
+						})
+					elseif ok and result then
+						warn(string.format("[ShopPanel] Purchase failed for %s: %s", item.name, tostring(result.reason)))
+					else
+						warn("[ShopPanel] Remote error:", tostring(result))
+					end
+				else
+					print(string.format("[ShopPanel] No purchase ID for: %s", item.name))
+				end
+			end,
 			}
 
 			local card = Components.CreateItemCard(contentFrame, cardData)
+			card.Name        = "ItemCard_" .. item.id   -- ID tag for surgical update
 			card.LayoutOrder = order
 
 			if wantsThumbnail then
@@ -452,6 +643,7 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		if CATEGORIES[idx].filter == "Bundle" then
 			clearCards()
 			setCoinsBgVisible(false)
+			setCrownBgVisible(false)
 			if _BundlePanel and _BundlePanel.PopulateInto then
 				_BundlePanel.PopulateInto(contentFrame)
 			end
@@ -483,6 +675,44 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	coinsBgArt.Visible = true               -- Coins is the default tab
 	coinsBgArt.Parent = canvas
 
+	-- Crowns tab animated background (cross-fading crown images)
+	-- Created once here; startCrownBgAnim/stopCrownBgAnim drive the tweens.
+	if #_crownBgImages > 0 then
+		local cbf = Instance.new("Frame")
+		cbf.Name                  = "CrownBackground"
+		cbf.AnchorPoint           = Vector2.new(0, 0)
+		cbf.Position              = UDim2.fromScale(0, 0)   -- full canvas
+		cbf.Size                  = UDim2.fromScale(1, 1)   -- full canvas
+		cbf.BackgroundColor3      = Color3.fromRGB(5, 3, 18)  -- very dark purple-black
+		cbf.BackgroundTransparency = 0.35                   -- 65% opaque dark tint
+		cbf.BorderSizePixel       = 0
+		cbf.ClipsDescendants      = true
+		cbf.ZIndex                = 4      -- behind contentFrame (ZIndex 5)
+		cbf.Active                = false
+		cbf.Selectable            = false
+		cbf.Visible               = false
+		cbf.Parent                = canvas
+		crownBgFrame              = cbf
+		_crownSlots               = {}
+
+		for i = 1, 3 do
+			local lbl              = Instance.new("ImageLabel")
+			lbl.Name               = "CrownSlot" .. i
+			lbl.AnchorPoint        = Vector2.new(0.5, 0.5)
+			lbl.Position           = UDim2.fromScale(0.5, 0.5)
+			lbl.Size               = UDim2.fromScale(0.55, 0.88)
+			lbl.BackgroundTransparency = 1
+			lbl.Image              = ""
+			lbl.ScaleType          = Enum.ScaleType.Fit
+			lbl.ImageTransparency  = 1
+			lbl.ZIndex             = 4
+			lbl.Active             = false
+			lbl.Selectable         = false
+			lbl.Parent             = cbf
+			table.insert(_crownSlots, lbl)
+		end
+	end
+
 	_setActiveTab = setActiveTab
 
 	Components.AddGridLayout(contentFrame)
@@ -510,6 +740,10 @@ function ShopPanel.Show()
 	overlay.Visible = true
 	SoundUtil.Open()
 	AnimUtil.OpenPanel(canvas, uiScale)
+	-- Restart crown bg animation if Crowns tab is currently active
+	if CATEGORIES[activeTab] and CATEGORIES[activeTab].filter == "ExclusiveCrown" then
+		setCrownBgVisible(true)
+	end
 end
 
 function ShopPanel.Hide()
@@ -517,6 +751,7 @@ function ShopPanel.Hide()
 	visible = false
 	overlay.Visible = false
 	stopCoinsBgAnim()
+	stopCrownBgAnim()
 	local t = AnimUtil.ClosePanel(canvas, uiScale)
 	task.spawn(function()
 		t.Completed:Wait()

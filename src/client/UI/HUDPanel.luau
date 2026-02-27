@@ -27,6 +27,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
 local UIConfig = require(Shared:WaitForChild("UIConfig", 10))
@@ -122,6 +123,10 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 
 	coinScale = Instance.new("UIScale")
 	coinScale.Parent = coinFrame
+	-- Mobile: shrink the coin frame so it doesn't crowd the sidebar
+	if UserInputService.TouchEnabled then
+		coinScale.Scale = 0.75
+	end
 
 	local coinIcon = Instance.new("TextLabel")
 	coinIcon.Name = "CoinIcon"

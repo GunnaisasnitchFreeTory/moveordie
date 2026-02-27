@@ -37,10 +37,30 @@ if not okCfg or not DailyQuestConfig then
 		IsVisible=function() return false end, Toggle=function()end }
 end
 
-local Client     = script.Parent
-local AnimUtil   = require(Client:WaitForChild("AnimUtil"))
-local SoundUtil  = require(Client:WaitForChild("SoundUtil"))
-local Components = require(Client:WaitForChild("Components"))
+local okIC, ItemCatalog = pcall(require, Shared:WaitForChild("ItemCatalog", 10))
+if not okIC or not ItemCatalog then
+	ItemCatalog = { Pets = {}, Crowns = {}, CoinImage = "" }
+end
+
+local Client          = script.Parent
+local AnimUtil        = require(Client:WaitForChild("AnimUtil"))
+local SoundUtil       = require(Client:WaitForChild("SoundUtil"))
+local Components      = require(Client:WaitForChild("Components"))
+local ThumbnailRenderer = require(Client:WaitForChild("ThumbnailRenderer"))
+local RewardPopup     = require(Client:WaitForChild("RewardPopup"))
+
+local COIN_IMAGE = ItemCatalog.CoinImage or "rbxassetid://111156188787000"
+
+-- Resolve the catalog entry for a quest reward
+local function getRewardItemDef(reward)
+	if not reward then return nil end
+	if reward.type == "Crown" then
+		return ItemCatalog.Crowns and ItemCatalog.Crowns[reward.itemId]
+	elseif reward.type == "Pet" then
+		return ItemCatalog.Pets and ItemCatalog.Pets[reward.itemId]
+	end
+	return nil
+end
 
 -- ── THEME ────────────────────────────────────────────────────────────────────
 
@@ -422,6 +442,7 @@ local function buildPanel(parent: Instance)
 		card.Parent            = row
 
 		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+		card.ClipsDescendants = true
 
 		local cardStroke = Instance.new("UIStroke")
 		cardStroke.Color       = CARD_BORDER
@@ -439,20 +460,66 @@ local function buildPanel(parent: Instance)
 		cardGrad.Rotation = 120
 		cardGrad.Parent   = card
 
-		-- Quest icon
-		local iconLabel = Instance.new("TextLabel")
-		iconLabel.AnchorPoint      = Vector2.new(0.5, 0.5)
-		iconLabel.Position         = UDim2.fromScale(0.5, 0.5)
-		iconLabel.Size             = UDim2.fromScale(0.85, 0.85)
-		iconLabel.BackgroundTransparency = 1
-		iconLabel.Font             = Enum.Font.GothamBold
-		iconLabel.Text             = questDef.icon or "\xE2\x9C\x94"
-		iconLabel.TextColor3       = questDef.iconColor and Color3.fromRGB(
-			questDef.iconColor[1], questDef.iconColor[2], questDef.iconColor[3]) or HEADER_COLOR
-		iconLabel.TextSize         = 32
-		iconLabel.TextScaled       = false
-		iconLabel.ZIndex           = 9
-		iconLabel.Parent           = card
+		-- Reward thumbnail: static image → ImageLabel; 3D model → ViewportFrame via ThumbnailRenderer
+		local reward    = questDef.reward
+		local itemDef   = getRewardItemDef(reward)
+		local staticImg = itemDef and itemDef.image
+		local isCoins   = reward and reward.type == "Coins"
+
+		if isCoins then
+			-- Coin reward: use dedicated art that fills the card
+			local coinImg = Instance.new("ImageLabel")
+			coinImg.AnchorPoint         = Vector2.new(0.5, 0.5)
+			coinImg.Position            = UDim2.fromScale(0.5, 0.5)
+			coinImg.Size                = UDim2.fromScale(1, 1)
+			coinImg.BackgroundTransparency = 1
+			coinImg.Image               = "rbxassetid://130002796842909"
+			coinImg.ScaleType           = Enum.ScaleType.Crop
+			coinImg.ZIndex              = 9
+			coinImg.Parent              = card
+		elseif staticImg and staticImg ~= "" then
+			-- Item with a static image — fill the full card with cropping
+			local imgLabel = Instance.new("ImageLabel")
+			imgLabel.AnchorPoint         = Vector2.new(0.5, 0.5)
+			imgLabel.Position            = UDim2.fromScale(0.5, 0.5)
+			imgLabel.Size                = UDim2.fromScale(1, 1)
+			imgLabel.BackgroundTransparency = 1
+			imgLabel.Image               = staticImg
+			imgLabel.ScaleType           = Enum.ScaleType.Crop
+			imgLabel.ZIndex              = 9
+			imgLabel.Parent              = card
+		else
+			-- 3D model: render via ThumbnailRenderer
+			local vpFrame = Instance.new("ViewportFrame")
+			vpFrame.AnchorPoint         = Vector2.new(0.5, 0.5)
+			vpFrame.Position            = UDim2.fromScale(0.5, 0.5)
+			vpFrame.Size                = UDim2.fromScale(0.92, 0.92)
+			vpFrame.BackgroundTransparency = 1
+			vpFrame.BackgroundColor3    = Color3.new(0, 0, 0)
+			vpFrame.ZIndex              = 9
+			vpFrame.Parent              = card
+
+			if itemDef then
+				task.spawn(function()
+					ThumbnailRenderer.RenderItemToViewport(vpFrame, itemDef)
+				end)
+			else
+				-- Fallback emoji if no item def found
+				local iconLabel = Instance.new("TextLabel")
+				iconLabel.AnchorPoint      = Vector2.new(0.5, 0.5)
+				iconLabel.Position         = UDim2.fromScale(0.5, 0.5)
+				iconLabel.Size             = UDim2.fromScale(0.85, 0.85)
+				iconLabel.BackgroundTransparency = 1
+				iconLabel.Font             = Enum.Font.GothamBold
+				iconLabel.Text             = questDef.icon or "\xE2\x9C\x94"
+				iconLabel.TextColor3       = questDef.iconColor and Color3.fromRGB(
+					questDef.iconColor[1], questDef.iconColor[2], questDef.iconColor[3]) or HEADER_COLOR
+				iconLabel.TextSize         = 28
+				iconLabel.TextScaled       = false
+				iconLabel.ZIndex           = 9
+				iconLabel.Parent           = card
+			end
+		end
 
 		-- ── RIGHT CONTENT AREA ───────────────────────────────────
 		local content = Instance.new("Frame")
@@ -558,7 +625,8 @@ local function buildPanel(parent: Instance)
 		claimStroke.Parent      = claimBtn
 
 		-- Wire claim button
-		local capturedQuestId = questId
+		local capturedQuestId  = questId
+		local capturedQuestDef = questDef
 		AnimUtil.WireButton(claimBtn, function()
 			if not claimBtn.Active then return end
 			claimBtn.Active = false
@@ -566,6 +634,38 @@ local function buildPanel(parent: Instance)
 				local result = claimQuest(capturedQuestId)
 				if result and result.success then
 					SoundUtil.Open()
+					local reward = capturedQuestDef.reward
+					if reward then
+						if reward.type == "Coins" then
+							RewardPopup.Show({
+								title      = "QUEST COMPLETE!",
+								name       = tostring(reward.amount) .. " Fate Coins",
+								itemType   = "Coins",
+								rarityText = "Common",
+								okText     = "CLAIM!",
+							})
+						elseif reward.type == "Crown" then
+							local crownDef = ItemCatalog.Crowns and ItemCatalog.Crowns[reward.itemId]
+							RewardPopup.Show({
+								title      = "QUEST COMPLETE!",
+								name       = crownDef and crownDef.name or reward.itemId,
+								itemId     = reward.itemId,
+								itemType   = "Crown",
+								rarityText = crownDef and crownDef.rarity or "Epic",
+								okText     = "CLAIM!",
+							})
+						elseif reward.type == "Pet" then
+							local petDef = ItemCatalog.Pets and ItemCatalog.Pets[reward.itemId]
+							RewardPopup.Show({
+								title      = "QUEST COMPLETE!",
+								name       = petDef and petDef.name or reward.itemId,
+								itemId     = reward.itemId,
+								itemType   = "Pet",
+								rarityText = petDef and petDef.rarity or "Epic",
+								okText     = "CLAIM!",
+							})
+						end
+					end
 				else
 					claimBtn.Active = true
 				end

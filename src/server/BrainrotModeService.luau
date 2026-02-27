@@ -36,8 +36,8 @@ local SPAWN_Y_OFFSET = 2.5
 local EDGE_MARGIN = 8
 local RAYCAST_HEIGHT = 80
 
-local COINS_NEW_PET = 25
-local COINS_DUPLICATE = 10
+local COINS_NEW_PET = 50
+local COINS_DUPLICATE = 90
 
 local BrainrotModeService = {}
 
