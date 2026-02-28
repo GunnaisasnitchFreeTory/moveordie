@@ -70,6 +70,14 @@ local freezeRemote: RemoteEvent = nil
 
 local RoundManager = {}
 
+local _DQS = nil
+local function getDQS()
+	if _DQS ~= nil then return _DQS end
+	local ok, mod = pcall(require, Server:FindFirstChild("DailyQuestService"))
+	if ok and mod then _DQS = mod else _DQS = false end
+	return _DQS
+end
+
 --[[ HELPERS ]]
 
 local function log(...)
@@ -410,7 +418,16 @@ local function runRoundCycle(): boolean
 	end
 
 	cleanupModeRound()
-	
+
+	-- Notify DailyQuestService: all still-alive (InMatch) players survived this round
+	local dqs = getDQS()
+	if dqs and dqs.OnRoundSurvived then
+		local survivors = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+		for _, p in ipairs(survivors) do
+			pcall(dqs.OnRoundSurvived, p)
+		end
+	end
+
 	return true
 end
 

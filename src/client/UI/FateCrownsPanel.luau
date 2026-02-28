@@ -150,7 +150,7 @@ local function refresh()
 			rarity = crown.rarity,
 			iconColor = crown.iconColor,
 			thumbnailBgColor = crown.thumbnailBgColor,
-			iconText = crown.iconText or "\240\159\145\145",
+			iconText = crown.iconText or "",
 			image = ItemCatalog.GetImage(crown),
 			modelPath = crown.modelPath,
 			locked = not isOwned,
@@ -192,7 +192,7 @@ function FateCrownsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "\240\159\145\145 FATE CROWNS", C.HeaderCrowns, "Crowns")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "FATE CROWNS", C.HeaderCrowns, "Crowns")
 	contentFrame = content
 
 	Components.AddGridLayout(content)

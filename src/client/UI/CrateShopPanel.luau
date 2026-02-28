@@ -177,28 +177,23 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 				bigPreview,
 				crateModelPath,
 				UDim2.new(1, -8, 0, 120),
-				crateData.iconColor,
-				"\240\159\147\166"
-			)
+				crateData.iconColor, "")
 			vp.Position = UDim2.fromOffset(4, 10)
 			vp.BackgroundTransparency = 1
 			rendered = ThumbnailRenderer.RenderItemToViewport(vp, { modelPath = crateModelPath })
 		end
 		if not rendered then
-			local emoji = Instance.new("TextLabel")
-			emoji.Size = UDim2.new(1, 0, 0, 80)
-			emoji.Position = UDim2.fromOffset(0, 20)
-			emoji.BackgroundTransparency = 1
-			emoji.Font = Enum.Font.GothamBold
-			emoji.Text = "\240\159\147\166"
-			emoji.TextSize = 52
-			emoji.TextColor3 = C.TextWhite
-			emoji.Parent = bigPreview
-			local emojiStroke = Instance.new("UIStroke")
-			emojiStroke.Color = Color3.fromRGB(0, 0, 0)
-			emojiStroke.Thickness = 2
-			emojiStroke.Transparency = 0.3
-			emojiStroke.Parent = emoji
+			local crateImg = Instance.new("ImageLabel")
+			crateImg.Name = "CrateImage"
+			crateImg.AnchorPoint = Vector2.new(0.5, 0)
+			crateImg.Size = UDim2.new(0.78, 0, 0, 84)
+			crateImg.Position = UDim2.new(0.5, 0, 0, 14)
+			crateImg.BackgroundTransparency = 1
+			crateImg.Image = "rbxassetid://108812530080296"
+			crateImg.ScaleType = Enum.ScaleType.Fit
+			crateImg.ImageTransparency = 0
+			crateImg.ZIndex = 2
+			crateImg.Parent = bigPreview
 		end
 	end
 
@@ -504,7 +499,7 @@ function CrateShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "\240\159\147\166 CRATE SHOP", C.HeaderCrate, "Crate")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "CRATE SHOP", C.HeaderCrate, "Crate")
 
 	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()

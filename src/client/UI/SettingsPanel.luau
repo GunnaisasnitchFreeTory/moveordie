@@ -116,7 +116,7 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "⚙ SETTINGS", C.HeaderSettings, "Settings")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "SETTINGS", C.HeaderSettings, "Settings")
 
 	-- Hide scrolling, use fixed layout
 	content.ScrollBarThickness = 0
@@ -156,7 +156,7 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	musicText.Font = Enum.Font.GothamBold
 	musicText.TextColor3 = C.TextWhite
 	musicText.TextSize = 20
-	musicText.Text = "🎵  Background Music"
+	musicText.Text = "Background Music"
 	musicText.TextXAlignment = Enum.TextXAlignment.Left
 	musicText.Parent = row1
 
@@ -243,7 +243,7 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	volText.Font = Enum.Font.GothamBold
 	volText.TextColor3 = C.TextWhite
 	volText.TextSize = 20
-	volText.Text = "🔊  Volume"
+	volText.Text = "Volume"
 	volText.TextXAlignment = Enum.TextXAlignment.Left
 	volText.Parent = row2
 

@@ -713,7 +713,7 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 			lockLabel.Position = UDim2.fromScale(0.5, 0.5)
 			lockLabel.BackgroundTransparency = 1
 			lockLabel.Font = Enum.Font.GothamBold
-			lockLabel.Text = "\240\159\148\146"
+			lockLabel.Text = ""
 			lockLabel.TextColor3 = Color3.fromRGB(160, 165, 190)
 			lockLabel.TextSize = 28
 			lockLabel.ZIndex = 3
@@ -984,20 +984,17 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 	ias.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	ias.Parent = iconArea
 
-	local crateEmoji = Instance.new("TextLabel")
-	crateEmoji.Size = UDim2.new(1, 0, 0, 70)
-	crateEmoji.Position = UDim2.fromOffset(0, 18)
-	crateEmoji.BackgroundTransparency = 1
-	crateEmoji.Font = Enum.Font.GothamBold
-	crateEmoji.Text = "\xF0\x9F\x93\xA6"
-	crateEmoji.TextSize = 46
-	crateEmoji.TextColor3 = C.TextWhite
-	crateEmoji.Parent = iconArea
-	local ces = Instance.new("UIStroke")
-	ces.Color = Color3.fromRGB(0, 0, 0)
-	ces.Thickness = 1.8
-	ces.Transparency = 0.22
-	ces.Parent = crateEmoji
+	local crateImg = Instance.new("ImageLabel")
+	crateImg.Name = "CrateImage"
+	crateImg.AnchorPoint = Vector2.new(0.5, 0)
+	crateImg.Size = UDim2.new(0.78, 0, 0, 70)
+	crateImg.Position = UDim2.new(0.5, 0, 0, 12)
+	crateImg.BackgroundTransparency = 1
+	crateImg.Image = "rbxassetid://108812530080296"
+	crateImg.ScaleType = Enum.ScaleType.Fit
+	crateImg.ImageTransparency = 0
+	crateImg.ZIndex = 2
+	crateImg.Parent = iconArea
 
 	local crateName = Instance.new("TextLabel")
 	crateName.Name = "Name"
@@ -1538,7 +1535,7 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 		lockLabel.Position = UDim2.fromScale(0.5, 0.5)
 		lockLabel.BackgroundTransparency = 1
 		lockLabel.Font = Enum.Font.GothamBold
-		lockLabel.Text = "\240\159\148\146"
+		lockLabel.Text = ""
 		lockLabel.TextColor3 = Color3.fromRGB(160, 165, 190)
 		lockLabel.TextSize = 28
 		lockLabel.ZIndex = 3

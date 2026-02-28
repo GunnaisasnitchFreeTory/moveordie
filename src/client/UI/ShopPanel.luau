@@ -94,7 +94,7 @@ end
 local _warnedMissing = {}
 -- Items purchased this session: avoids waiting for OwnedCrowns attribute to propagate
 local _locallyOwned: {[string]: true} = {}
-
+local _isPopulating = false  -- guard: prevents duplicate populate runs
 -- ─── Crown background animation state ─────────────────────────────
 -- Crown images collected once at module load from ItemCatalog.Crowns.
 local _crownBgImages: {string} = {}
@@ -117,7 +117,8 @@ local _crownBgRunning = false               -- guard: prevents duplicate loops
 
 local function clearCards()
 	for _, child in ipairs(contentFrame:GetChildren()) do
-		if child:IsA("Frame") then child:Destroy() end
+		local keep = child:IsA("UIGridLayout") or child:IsA("UIPadding") or child:IsA("UIListLayout")
+		if not keep then child:Destroy() end
 	end
 end
 
@@ -449,6 +450,8 @@ local function checkGamepassOwned(gamepassId: number): boolean
 end
 
 local function populateCards(filterType: string)
+	if _isPopulating then return end
+	_isPopulating = true
 	clearCards()
 	setCoinsBgVisible(filterType == "Currency")
 	setCrownBgVisible(filterType == "ExclusiveCrown")
@@ -610,6 +613,7 @@ local function populateCards(filterType: string)
 			end
 		end
 	end
+	_isPopulating = false
 end
 
 function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
@@ -620,7 +624,7 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "\xF0\x9F\x92\x8E PREMIUM SHOP", C.HeaderShop, "Shop")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "PREMIUM SHOP", C.HeaderShop, "Shop")
 	contentFrame = content
 
 	closeBtn.MouseButton1Click:Connect(function()

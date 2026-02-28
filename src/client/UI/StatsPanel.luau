@@ -195,7 +195,7 @@ function StatsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "\xF0\x9F\x93\x8A PLAYER STATS", HEADER_COLOR, "Stats")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "PLAYER STATS", HEADER_COLOR, "Stats")
 
 	AnimUtil.WireButton(closeBtn, function()
 		SoundUtil.Close()
@@ -236,12 +236,12 @@ function StatsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 
 	-- Build stat rows
 	local stats = getStats()
-	buildStatRow(content, 1, "\xE2\x8F\xB1",  "Time Played",      "TimePlayed", stats.TimePlayed)
-	buildStatRow(content, 2, "\xF0\x9F\x8F\x86", "Wins",           "Wins",       stats.Wins)
-	buildStatRow(content, 3, "\xF0\x9F\x91\x91", "Crowns Obtained","Crowns",     stats.Crowns)
-	buildStatRow(content, 4, "\xF0\x9F\x92\xB0", "Coins Earned",   "Coins",      stats.Coins)
-	buildStatRow(content, 5, "\xF0\x9F\x90\xBE", "Pets Obtained",  "Pets",       stats.Pets)
-	buildStatRow(content, 6, "\xF0\x9F\x92\x80", "Deaths",         "Deaths",     stats.Deaths)
+	buildStatRow(content, 1, "",  "Time Played",      "TimePlayed", stats.TimePlayed)
+	buildStatRow(content, 2, "", "Wins",           "Wins",       stats.Wins)
+	buildStatRow(content, 3, "", "Crowns Obtained","Crowns",     stats.Crowns)
+	buildStatRow(content, 4, "", "Coins Earned",   "Coins",      stats.Coins)
+	buildStatRow(content, 5, "", "Pets Obtained",  "Pets",       stats.Pets)
+	buildStatRow(content, 6, "", "Deaths",         "Deaths",     stats.Deaths)
 
 	print("[StatsPanel] Initialized")
 end

@@ -176,7 +176,7 @@ local function refresh()
 		btn.Font = Enum.Font.GothamBold
 		btn.TextColor3 = isSelected and C.TextWhite or C.TextLight
 		btn.TextSize = 18
-		btn.Text = "  👤  " .. player.DisplayName
+		btn.Text = player.DisplayName
 		btn.TextXAlignment = Enum.TextXAlignment.Left
 		btn.LayoutOrder = i
 		btn.Parent = contentFrame
@@ -280,7 +280,7 @@ function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "👁 SPECTATE", C.HeaderSpectate, "Spectate")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "SPECTATE", C.HeaderSpectate, "Spectate")
 	contentFrame = content
 
 	-- List layout for player entries
@@ -383,7 +383,7 @@ function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		return b
 	end
 
-	makeBottomBtn("◀ Prev", C.Blue, 1, function()
+	makeBottomBtn("PREV", C.Blue, 1, function()
 		if not originalCameraSubject then
 			originalCameraSubject = Camera.CameraSubject
 		end
@@ -394,7 +394,7 @@ function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		refresh()
 	end)
 
-	makeBottomBtn("Next ▶", C.Blue, 2, function()
+	makeBottomBtn("NEXT", C.Blue, 2, function()
 		if not originalCameraSubject then
 			originalCameraSubject = Camera.CameraSubject
 		end
@@ -405,7 +405,7 @@ function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		refresh()
 	end)
 
-	makeBottomBtn("⏹ Stop", C.Red, 3, function()
+	makeBottomBtn("STOP", C.Red, 3, function()
 		if currentTargetPlayer then
 			log("Stopped spectating")
 		end

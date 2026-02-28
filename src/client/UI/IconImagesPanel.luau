@@ -142,7 +142,7 @@ local function refresh()
 			name = item.name or "MISSING ITEM",
 			rarity = rarityStr,
 			iconColor = iconColor,
-			iconText = item.iconText or "\240\159\150\188",
+			iconText = item.iconText or "",
 			image = catalogImage,
 			modelPath = item.modelPath,
 			locked = not isOwned,
@@ -190,7 +190,7 @@ function IconImagesPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "\240\159\150\188 ICON IMAGES", C.HeaderIcons, "Icons")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "ICON IMAGES", C.HeaderIcons, "Icons")
 	contentFrame = content
 
 	Components.AddGridLayout(content)

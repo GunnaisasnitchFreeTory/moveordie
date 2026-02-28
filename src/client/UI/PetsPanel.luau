@@ -130,7 +130,7 @@ local function refresh()
 			rarity = pet.rarity,
 			iconColor = pet.iconColor,
 			thumbnailBgColor = pet.thumbnailBgColor,
-			iconText = pet.iconText or "\240\159\144\190",
+			iconText = pet.iconText or "",
 			image = ItemCatalog.GetImage(pet),
 			modelPath = pet.modelPath,
 			locked = not isOwned,
@@ -182,7 +182,7 @@ function PetsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	end)
 
 	local content, closeBtn
-	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "\xF0\x9F\x90\xBE PETS", C.HeaderPets, "Pets")
+	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "PETS", C.HeaderPets, "Pets")
 	contentFrame = content
 
 	Components.AddGridLayout(content)

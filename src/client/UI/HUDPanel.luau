@@ -370,14 +370,14 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	sGrid.SortOrder = Enum.SortOrder.LayoutOrder
 	sGrid.Parent = sidebar
 
-	Components.CreateSideButton(sidebar, "Shop",     "\xF0\x9F\x92\x8E", C.SideShop,     1, function() if callbacks.onShop then callbacks.onShop() end end)
-	Components.CreateSideButton(sidebar, "Crowns",   "\xF0\x9F\x91\x91", C.SideCrowns,   2, function() if callbacks.onCrowns then callbacks.onCrowns() end end)
-	Components.CreateSideButton(sidebar, "Pets",     "\xF0\x9F\x90\xBE", C.SidePets,     3, function() if callbacks.onPets then callbacks.onPets() end end)
-	Components.CreateSideButton(sidebar, "Index",    "\xF0\x9F\x93\x96", C.SideIndex,    4, function() if callbacks.onIndex then callbacks.onIndex() end end)
-	Components.CreateSideButton(sidebar, "Spectate", "\xF0\x9F\x91\x81", C.SideSpectate, 5, function() if callbacks.onSpectate then callbacks.onSpectate() end end)
-	Components.CreateSideButton(sidebar, "Settings", "\xE2\x9A\x99",  C.SideSettings, 6, function() if callbacks.onSettings then callbacks.onSettings() end end)
+	Components.CreateSideButton(sidebar, "Shop",     "💎", C.SideShop,     1, function() if callbacks.onShop then callbacks.onShop() end end)
+	Components.CreateSideButton(sidebar, "Crowns",   "👑", C.SideCrowns,   2, function() if callbacks.onCrowns then callbacks.onCrowns() end end)
+	Components.CreateSideButton(sidebar, "Pets",     "🐾", C.SidePets,     3, function() if callbacks.onPets then callbacks.onPets() end end)
+	Components.CreateSideButton(sidebar, "Index",    "📖", C.SideIndex,    4, function() if callbacks.onIndex then callbacks.onIndex() end end)
+	Components.CreateSideButton(sidebar, "Spectate", "👁", C.SideSpectate, 5, function() if callbacks.onSpectate then callbacks.onSpectate() end end)
+	Components.CreateSideButton(sidebar, "Settings", "⚙",  C.SideSettings, 6, function() if callbacks.onSettings then callbacks.onSettings() end end)
 
-	local afkBtn = Components.CreateSideButton(sidebar, "Go AFK", "\xF0\x9F\x92\xA4", C.SideAFK, 7, function()
+	local afkBtn = Components.CreateSideButton(sidebar, "Go AFK", "", C.SideAFK, 7, function()
 		if callbacks.onAFK then callbacks.onAFK() end
 	end)
 
@@ -415,16 +415,16 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 			afkLabel.Text = isAFK and "Return" or "Go AFK"
 		end
 		if afkIcon then
-			afkIcon.Text = isAFK and "\xF0\x9F\x8F\x83" or "\xF0\x9F\x92\xA4"
+			afkIcon.Text = isAFK and "🏃" or "💤"
 		end
 		setSideButtonColor(afkBtn, isAFK and C.Green or C.SideAFK)
 	end
 	updateAFKVisual()
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(updateAFKVisual)
 
-	Components.CreateSideButton(sidebar, "Icons", "\xF0\x9F\x96\xBC", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end)
+	Components.CreateSideButton(sidebar, "Icons", "🖼", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end)
 
-	-- ── TOP-RIGHT BUTTON HELPER ─────────────────────────────────
+	-- TOP-RIGHT BUTTON HELPER
 	local function createTopRightPill(name, yOffset, text, bgColor, gradTop, gradBot, onClick)
 		local btn = Instance.new("TextButton")
 		btn.Name = name
@@ -480,30 +480,30 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		return btn
 	end
 
-	-- ── TOP-RIGHT: Stats button ─────────────────────────────────
+	-- TOP-RIGHT: Stats button
 	createTopRightPill(
 		"StatsBtn", 52,
-		"\xF0\x9F\x93\x8A Stats",
+		"Stats",
 		C.SideStats,
 		Color3.fromRGB(80, 240, 220),
 		Color3.fromRGB(20, 140, 130),
 		function() if callbacks.onStats then callbacks.onStats() end end
 	)
 
-	-- ── TOP-RIGHT: Daily Rewards button ─────────────────────────
+	-- TOP-RIGHT: Daily Rewards button
 	createTopRightPill(
 		"DailyBtn", 96,
-		"\xF0\x9F\x93\x85 Daily",
+		"Daily",
 		C.SideDaily,
 		Color3.fromRGB(100, 210, 255),
 		Color3.fromRGB(30, 120, 200),
 		function() if callbacks.onDaily then callbacks.onDaily() end end
 	)
 
-	-- ── TOP-RIGHT: Daily Quests button ────────────────────────────
+	-- TOP-RIGHT: Daily Quests button
 	createTopRightPill(
 		"QuestsBtn", 140,
-		"\xE2\x9A\x94 Quests",
+		"Quests",
 		Color3.fromRGB(180, 30, 30),
 		Color3.fromRGB(255, 70, 70),
 		Color3.fromRGB(120, 12, 12),

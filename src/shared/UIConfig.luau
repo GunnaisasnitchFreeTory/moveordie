@@ -22,13 +22,13 @@ local UIConfig = {}
 -- ═══════════════════════════════════════════════════════════════════
 
 UIConfig.Colors = {
-	-- Panel chrome — slightly more blue-saturated for depth contrast
-	PanelBg         = Color3.fromRGB(20, 25, 55),
-	PanelBgInner    = Color3.fromRGB(28, 34, 68),
-	CardBg          = Color3.fromRGB(42, 50, 92),
-	CardBgLighter   = Color3.fromRGB(60, 68, 118),
-	CardBgDark      = Color3.fromRGB(24, 28, 55),
-	CardStroke      = Color3.fromRGB(75, 88, 135),
+	-- Panel chrome — matched to Crown panel dark purple-black
+	PanelBg         = Color3.fromRGB(5,  3,  18),
+	PanelBgInner    = Color3.fromRGB(9,  6,  26),
+	CardBg          = Color3.fromRGB(14, 10, 36),
+	CardBgLighter   = Color3.fromRGB(22, 16, 52),
+	CardBgDark      = Color3.fromRGB(6,  4,  20),
+	CardStroke      = Color3.fromRGB(60, 45, 110),
 	Overlay         = Color3.fromRGB(0, 0, 0),
 	OverlayTransparency = 0.4,
 

@@ -28,25 +28,21 @@ local INDICATORS = {
 	{
 		targetName   = "SpinTheWheel",
 		text         = "SPIN THE WHEEL",
-		icon         = "\xF0\x9F\x8E\xB0",
 		extraPadding = 4,
 	},
 	{
 		targetName   = "CrownPetShop",
 		text         = "CRATE SHOP",
-		icon         = "\xF0\x9F\x93\xA6",
 		extraPadding = 3,
 	},
 	{
 		targetName   = "JJK Game Bun",
 		text         = "COMING SOON",
-		icon         = "\xE2\x8F\xB3",
 		extraPadding = 4,
 	},
 	{
 		targetName   = "Brainrot Game Bun",
 		text         = "BRAINROT BUNDLE",
-		icon         = "\xF0\x9F\xA7\xA0",
 		extraPadding = 4,
 		pulse        = true,
 	},
@@ -146,7 +142,7 @@ end
 -- CREATE BADGE
 -- ═══════════════════════════════════════════════════════════════════
 
-local function createBadge(adornee: BasePart, text: string, icon: string)
+local function createBadge(adornee: BasePart, text: string)
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "WorldIndicator_" .. text:gsub("%s+", "")
 	billboard.Adornee = adornee
@@ -184,33 +180,21 @@ local function createBadge(adornee: BasePart, text: string, icon: string)
 	bgStroke.Parent = bg
 
 	local pad = Instance.new("UIPadding")
-	pad.PaddingLeft = UDim.new(0, 6)
+	pad.PaddingLeft = UDim.new(0, 8)
 	pad.PaddingRight = UDim.new(0, 8)
 	pad.Parent = bg
 
-	local iconLabel = Instance.new("TextLabel")
-	iconLabel.Name = "Icon"
-	iconLabel.Size = UDim2.fromOffset(ICON_SIZE, ICON_SIZE)
-	iconLabel.AnchorPoint = Vector2.new(0, 0.5)
-	iconLabel.Position = UDim2.new(0, 0, 0.5, 0)
-	iconLabel.BackgroundTransparency = 1
-	iconLabel.Font = Enum.Font.GothamBold
-	iconLabel.TextSize = ICON_SIZE - 4
-	iconLabel.Text = icon
-	iconLabel.TextColor3 = TEXT_COLOR
-	iconLabel.Parent = bg
-
 	local label = Instance.new("TextLabel")
 	label.Name = "Label"
-	label.AnchorPoint = Vector2.new(0, 0.5)
-	label.Position = UDim2.new(0, ICON_SIZE + 2, 0.5, 0)
-	label.Size = UDim2.new(1, -(ICON_SIZE + 2), 0, 20)
+	label.AnchorPoint = Vector2.new(0.5, 0.5)
+	label.Position = UDim2.new(0.5, 0, 0.5, 0)
+	label.Size = UDim2.new(1, -16, 0, 20)
 	label.BackgroundTransparency = 1
 	label.Font = Enum.Font.GothamBold
 	label.TextColor3 = TEXT_COLOR
 	label.TextSize = MAX_TEXT_SIZE
 	label.TextScaled = true
-	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextXAlignment = Enum.TextXAlignment.Center
 	label.Text = text
 	label.Parent = bg
 

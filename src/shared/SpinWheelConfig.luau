@@ -47,7 +47,7 @@ SpinWheelConfig.Segments = {
 	-- Segment 1: 100 Fate Coins (HIGH)
 	{
 		name       = "100 Coins",
-		icon       = "\240\159\170\153",
+		icon = "",
 		reward     = "Coins",
 		amount     = 100,
 		weight     = 25,
@@ -58,7 +58,7 @@ SpinWheelConfig.Segments = {
 	-- Segment 2: Dog Pet (HIGH)
 	{
 		name       = "Dog Pet",
-		icon       = "\240\159\144\190",
+		icon = "",
 		reward     = "Pet",
 		catalogId  = "pet_dog",
 		wheelImage = "rbxassetid://81462451441223",
@@ -71,7 +71,7 @@ SpinWheelConfig.Segments = {
 	-- Segment 3: 200 Fate Coins (HIGH)
 	{
 		name       = "200 Coins",
-		icon       = "\240\159\170\153",
+		icon = "",
 		reward     = "Coins",
 		amount     = 200,
 		weight     = 15,
@@ -82,7 +82,7 @@ SpinWheelConfig.Segments = {
 	-- Segment 4: Noob Pet (MEDIUM)
 	{
 		name       = "Noob Pet",
-		icon       = "\240\159\144\190",
+		icon = "",
 		reward     = "Pet",
 		catalogId  = "pet_noob",
 		wheelImage = "rbxassetid://81702684827965",
@@ -95,7 +95,7 @@ SpinWheelConfig.Segments = {
 	-- Segment 5: Sparkle Crown (MEDIUM)
 	{
 		name       = "Sparkle Crown",
-		icon       = "\240\159\145\145",
+		icon = "",
 		reward     = "Crown",
 		catalogId  = "crown_sparkle",
 		wheelImage = "rbxassetid://123657387753624",
@@ -108,7 +108,7 @@ SpinWheelConfig.Segments = {
 	-- Segment 6: 500 Fate Coins (LOW)
 	{
 		name       = "500 Coins",
-		icon       = "\240\159\146\142",
+		icon = "",
 		reward     = "Coins",
 		amount     = 500,
 		weight     = 6,
@@ -119,7 +119,7 @@ SpinWheelConfig.Segments = {
 	-- Segment 7: Penguin Pet (LOW)
 	{
 		name       = "Penguin Pet",
-		icon       = "\240\159\144\190",
+		icon = "",
 		reward     = "Pet",
 		catalogId  = "pet_penguin",
 		wheelImage = "rbxassetid://115903577500727",

@@ -62,11 +62,19 @@ local Config = {
 	WalkSpeed       = 26,    -- noticeably faster than a running player (default 16)
 	AttackRange     = 5,     -- studs: distance that triggers a swing
 	AttackCooldown  = 1.25,  -- seconds between attacks on same player
-	ChaseInterval   = 0.5,
+	ChaseInterval   = 0.2,   -- re-evaluate target every 0.2s (was 0.5)
+	-- Lunge: speed burst when player is within LungeRange studs
+	LungeRange      = 12,    -- studs: triggers lunge
+	LungeCooldown   = 3.0,   -- seconds between lunges
+	LungeSpeed      = 55,    -- WalkSpeed during lunge burst
+	LungeDuration   = 0.6,   -- seconds lunge lasts
+	-- Contact damage: applied when a player physically touches the NPC body
+	ContactDamage   = 30,    -- damage per body-touch event
+	ContactCooldown = 0.8,   -- cooldown per player to prevent rapid stacking
 	-- Arm-swing phases (seconds): total = ArmWindup + ArmSwing + ArmRecovery
-	ArmWindup       = 0.10,  -- raise arm (wind-up)
-	ArmSwing        = 0.12,  -- swing arm down to impact
-	ArmRecovery     = 0.20,  -- return arm to rest, then restart walk
+	ArmWindup       = 0.10,
+	ArmSwing        = 0.12,
+	ArmRecovery     = 0.20,
 	WalkAnimId      = "rbxassetid://507777826",
 	NpcFolderName   = "TungTungSahurNPC",
 	RemoteName      = "TungTungSahurEvent",
@@ -77,13 +85,17 @@ local initialized  = false
 local active       = false
 local frozen       = false
 local spawnRound   = 0
-local currentRound = 0  -- updated each OnRoundStart so eliminations record correctly
-local npcModel:    Model?                 = nil
-local chaseThread: thread?               = nil
-local timerThread: thread?               = nil
-local healthConn:  RBXScriptConnection?  = nil
-local walkTrack:   AnimationTrack?       = nil
-local hitDebounce: {[number]: number}    = {}  -- [userId] = lastHitTick
+local currentRound = 0
+local npcModel:    Model?                  = nil
+local chaseThread: thread?                = nil
+local timerThread: thread?                = nil
+local healthConn:  RBXScriptConnection?   = nil
+local moveToConn:  RBXScriptConnection?   = nil
+local walkTrack:   AnimationTrack?        = nil
+local hitDebounce:     {[number]: number} = {}
+local contactDebounce: {[number]: number} = {}
+local contactConns:    {RBXScriptConnection} = {}
+local lastLungeTick:   number = 0
 local npcFolder:   Folder?               = nil
 local eventRemote: RemoteEvent?          = nil
 local killFeedRemote: RemoteEvent?       = nil
@@ -333,7 +345,9 @@ local function despawn(reason: string)
 
 	disconnectAll()
 	stopWalkAnim()
-	hitDebounce = {}
+	hitDebounce    = {}
+	contactDebounce = {}
+	lastLungeTick  = 0
 
 	if npcModel and npcModel.Parent then
 		npcModel:Destroy()
@@ -412,57 +426,142 @@ local function setupSwordImmunity()
 	log("Sword immunity active (MaxHealth=10000)")
 end
 
+-- --- CONTACT DAMAGE (anti-cheese: touching NPC body deals damage) --------------
+local function setupContactDamage()
+	if not npcModel then return end
+	for _, c in ipairs(contactConns) do pcall(function() c:Disconnect() end) end
+	contactConns = {}
+	contactDebounce = {}
+	local partCount = 0
+	for _, part in ipairs(npcModel:GetDescendants()) do
+		if part:IsA("BasePart") then
+			partCount += 1
+			local conn = part.Touched:Connect(function(hit)
+				if not active or frozen then return end
+				local char = hit.Parent
+				if not char or char == npcModel then return end
+				local player = Players:GetPlayerFromCharacter(char)
+				if not player then return end
+				local ok2, state = pcall(function() return PlayerStateService.GetState(player) end)
+				if not ok2 or state ~= PlayerState.States.InMatch then return end
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if not hum or hum.Health <= 0 then return end
+				local uid = player.UserId
+				local now = tick()
+				if contactDebounce[uid] and (now - contactDebounce[uid]) < Config.ContactCooldown then return end
+				contactDebounce[uid] = now
+				hum:TakeDamage(Config.ContactDamage)
+				if hum.Health <= 0 then
+					local et = getEliminationTracker()
+					if et then
+						et.RecordElimination(player, currentRound, "TungTungSahur")
+					elseif killFeedRemote then
+						killFeedRemote:FireAllClients(player.Name, "TungTungSahur")
+					end
+					PlayerStateService.SetState(player, PlayerState.States.Lobby)
+					log(string.format("[TTS Contact] eliminated %s (round %d)", player.Name, currentRound))
+				else
+					log(string.format("[TTS Contact] hit %s — %.0f HP remaining", player.Name, hum.Health))
+				end
+			end)
+			table.insert(contactConns, conn)
+		end
+	end
+	log(string.format("Contact damage wired to %d parts (cooldown=%.1fs dmg=%d)", partCount, Config.ContactCooldown, Config.ContactDamage))
+end
+
 -- --- CHASE + ATTACK LOOP ------------------------------------------------------
 local function startChaseLoop()
 	cancelThread(chaseThread)
+	if moveToConn then
+		pcall(function() moveToConn:Disconnect() end)
+		moveToConn = nil
+	end
+	lastLungeTick = 0
+
 	chaseThread = task.spawn(function()
+		local lunging = false
+
+		-- Wire MoveToFinished so the NPC immediately re-paths when it reaches
+		-- the target's last known position (prevents standing still after old MoveTo)
+		local function reconnectMoveToFinished(hum)
+			if moveToConn then
+				pcall(function() moveToConn:Disconnect() end)
+				moveToConn = nil
+			end
+			if not hum or not hum.Parent then return end
+			moveToConn = hum.MoveToFinished:Connect(function()
+				if not active or frozen or not npcModel then return end
+				local t = getNearestPlayer()
+				if t and t.Character then
+					local h = t.Character:FindFirstChild("HumanoidRootPart")
+					if h then
+						local humNow = npcModel:FindFirstChildOfClass("Humanoid")
+						if humNow then humNow:MoveTo(h.Position) end
+					end
+				end
+			end)
+		end
+
+		local hum = npcModel and npcModel:FindFirstChildOfClass("Humanoid")
+		if hum then reconnectMoveToFinished(hum) end
+
 		while active and npcModel and npcModel.Parent do
 			if not frozen then
 				local target = getNearestPlayer()
 				if target and target.Character and npcModel and npcModel.PrimaryPart then
 					local hrp = target.Character:FindFirstChild("HumanoidRootPart")
 					if hrp then
-						local hum = npcModel:FindFirstChildOfClass("Humanoid")
+						hum = npcModel:FindFirstChildOfClass("Humanoid")
 						if hum and hum.Health > 0 then
 							local dist = (hrp.Position - npcModel.PrimaryPart.Position).Magnitude
 
 							if dist <= Config.AttackRange then
-								local uid = target.UserId
-								local now = tick()
-								local lastHit = hitDebounce[uid]
-								if not lastHit or (now - lastHit) >= Config.AttackCooldown then
+								-- Melee attack
+								lunging = false
+								local uid  = target.UserId
+								local now  = tick()
+								local last = hitDebounce[uid]
+								if not last or (now - last) >= Config.AttackCooldown then
 									hitDebounce[uid] = now
-									hum.WalkSpeed = 0    -- freeze NPC during swing
-									playAttackAnim()     -- Motor6D arm swing (async)
-
-									-- Wait until the arm reaches the impact point
+									hum.WalkSpeed = 0
+									playAttackAnim()
 									task.wait(Config.ArmWindup + Config.ArmSwing)
-
-									-- Re-verify: still active, not frozen, target still close
-									if active and not frozen
-										and target.Character
-										and npcModel and npcModel.PrimaryPart
-									then
+									if active and not frozen and target.Character and npcModel and npcModel.PrimaryPart then
 										local hrp2 = target.Character:FindFirstChild("HumanoidRootPart")
 										local hum2 = target.Character:FindFirstChildOfClass("Humanoid")
 										if hrp2 and hum2 and hum2.Health > 0 then
-											local dist2 = (hrp2.Position - npcModel.PrimaryPart.Position).Magnitude
-											if dist2 <= Config.AttackRange * 1.5 then
+											if (hrp2.Position - npcModel.PrimaryPart.Position).Magnitude <= Config.AttackRange * 1.5 then
 												applyHit(target, hum2)
 											end
 										end
 									end
-
-									-- Restore WalkSpeed — walk animation restarts
-									-- automatically at end of ArmRecovery phase
 									if active and not frozen and npcModel then
 										local hum3 = npcModel:FindFirstChildOfClass("Humanoid")
 										if hum3 then hum3.WalkSpeed = Config.WalkSpeed end
 									end
 								end
 							else
-								-- Chase: close in on target
-								hum.WalkSpeed = Config.WalkSpeed
+								-- Chase — trigger lunge when player is within LungeRange
+								local now = tick()
+								if not lunging
+									and dist <= Config.LungeRange
+									and (now - lastLungeTick) >= Config.LungeCooldown
+								then
+									lastLungeTick = now
+									lunging = true
+									hum.WalkSpeed = Config.LungeSpeed
+									log(string.format("[TTS] Lunge! dist=%.1f studs", dist))
+									task.delay(Config.LungeDuration, function()
+										lunging = false
+										if active and not frozen and npcModel then
+											local h = npcModel:FindFirstChildOfClass("Humanoid")
+											if h then h.WalkSpeed = Config.WalkSpeed end
+										end
+									end)
+								elseif not lunging then
+									hum.WalkSpeed = Config.WalkSpeed
+								end
 								hum:MoveTo(hrp.Position)
 							end
 						end

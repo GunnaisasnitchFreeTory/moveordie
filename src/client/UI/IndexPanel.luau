@@ -126,7 +126,7 @@ local function applyLockOverlay(vpFrame: ViewportFrame)
 	lockIcon.Position = UDim2.fromScale(0.5, 0.5)
 	lockIcon.BackgroundTransparency = 1
 	lockIcon.Font = Enum.Font.GothamBold
-	lockIcon.Text = "\240\159\148\146"
+	lockIcon.Text = ""
 	lockIcon.TextColor3 = Color3.fromRGB(160, 165, 190)
 	lockIcon.TextSize = 28
 	lockIcon.ZIndex = 3
@@ -157,7 +157,7 @@ local function populateCrowns()
 			rarity = crown.rarity,
 			iconColor = crown.iconColor,
 			thumbnailBgColor = crown.thumbnailBgColor,
-			iconText = crown.iconText or "\240\159\145\145",
+			iconText = crown.iconText or "",
 			image = ItemCatalog.GetImage(crown),
 			modelPath = crown.modelPath,
 			locked = not isOwned,
@@ -200,7 +200,7 @@ local function populatePets()
 			rarity = pet.rarity,
 			iconColor = pet.iconColor,
 			thumbnailBgColor = pet.thumbnailBgColor,
-			iconText = pet.iconText or "\240\159\144\190",
+			iconText = pet.iconText or "",
 			image = ItemCatalog.GetImage(pet),
 			modelPath = pet.modelPath,
 			locked = not isOwned,
@@ -245,7 +245,7 @@ local function populateIconImages()
 			name = iconImg.name,
 			rarity = iconImg.rarity,
 			iconColor = iconImg.iconColor,
-			iconText = iconImg.iconText or "\240\159\150\188",
+			iconText = iconImg.iconText or "",
 			image = ItemCatalog.GetImage(iconImg),
 			modelPath = iconImg.modelPath,
 			locked = not isOwned,
