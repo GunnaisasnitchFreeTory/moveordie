@@ -370,12 +370,12 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	sGrid.SortOrder = Enum.SortOrder.LayoutOrder
 	sGrid.Parent = sidebar
 
-	Components.CreateSideButton(sidebar, "Shop",     "💎", C.SideShop,     1, function() if callbacks.onShop then callbacks.onShop() end end)
-	Components.CreateSideButton(sidebar, "Crowns",   "👑", C.SideCrowns,   2, function() if callbacks.onCrowns then callbacks.onCrowns() end end)
-	Components.CreateSideButton(sidebar, "Pets",     "🐾", C.SidePets,     3, function() if callbacks.onPets then callbacks.onPets() end end)
-	Components.CreateSideButton(sidebar, "Index",    "📖", C.SideIndex,    4, function() if callbacks.onIndex then callbacks.onIndex() end end)
-	Components.CreateSideButton(sidebar, "Spectate", "👁", C.SideSpectate, 5, function() if callbacks.onSpectate then callbacks.onSpectate() end end)
-	Components.CreateSideButton(sidebar, "Settings", "⚙",  C.SideSettings, 6, function() if callbacks.onSettings then callbacks.onSettings() end end)
+	Components.CreateSideButton(sidebar, "Shop",     "", C.SideShop,     1, function() if callbacks.onShop then callbacks.onShop() end end, "rbxassetid://76222720040195")
+	Components.CreateSideButton(sidebar, "Crowns",   "", C.SideCrowns,   2, function() if callbacks.onCrowns then callbacks.onCrowns() end end, "rbxassetid://71138927931452")
+	Components.CreateSideButton(sidebar, "Pets",     "", C.SidePets,     3, function() if callbacks.onPets then callbacks.onPets() end end, "rbxassetid://104698501592471")
+	Components.CreateSideButton(sidebar, "Index",    "", C.SideIndex,    4, function() if callbacks.onIndex then callbacks.onIndex() end end, "rbxassetid://113701401947593")
+	Components.CreateSideButton(sidebar, "Spectate", "", C.SideSpectate, 5, function() if callbacks.onSpectate then callbacks.onSpectate() end end, "rbxassetid://132423664388523")
+	Components.CreateSideButton(sidebar, "Settings", "",  C.SideSettings, 6, function() if callbacks.onSettings then callbacks.onSettings() end end, "rbxassetid://121220698644847")
 
 	local afkBtn = Components.CreateSideButton(sidebar, "Go AFK", "", C.SideAFK, 7, function()
 		if callbacks.onAFK then callbacks.onAFK() end
@@ -422,7 +422,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	updateAFKVisual()
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(updateAFKVisual)
 
-	Components.CreateSideButton(sidebar, "Icons", "🖼", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end)
+	Components.CreateSideButton(sidebar, "Icons", "", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end, "rbxassetid://119836949404900")
 
 	-- TOP-RIGHT BUTTON HELPER
 	local function createTopRightPill(name, yOffset, text, bgColor, gradTop, gradBot, onClick)

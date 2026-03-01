@@ -25,6 +25,27 @@ local BundleCatalog = {}
 
 local _bundles = {
 	{
+		id           = "fnaf_pets_bundle",
+		displayName  = "FNAF Pets",
+		coverImage   = "rbxassetid://72168519670720",
+		isAvailable  = true,
+		isLimited    = false,
+		priceRobux   = 600,
+		gamepassId   = 1885101090,
+		productId    = nil,
+		tag          = "NEW",
+		rarity       = "Epic",
+		includes     = {
+			{ category = "Pets", itemId = "pet_freddy_fazbear" },
+			{ category = "Pets", itemId = "pet_bonnie" },
+			{ category = "Pets", itemId = "pet_chica" },
+			{ category = "Pets", itemId = "pet_foxy" },
+			{ category = "Pets", itemId = "pet_golden_freddy" },
+			{ category = "Pets", itemId = "pet_the_puppet" },
+			{ category = "Pets", itemId = "pet_cupcake" },
+		},
+	},
+	{
 		id           = "brainrot_bundle",
 		displayName  = "Brainrot Bundle",
 		coverImage   = "rbxassetid://137027689618122",

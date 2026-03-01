@@ -201,6 +201,13 @@ local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 	[1717772785] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_winged_dragon",  label = "Dark Winged Dragon" },
 	[1716864887] = { type = "Pet",   category = "Pets",   itemId = "pet_pink_butterfly",      label = "Pink Butterfly" },
 	[1718832641] = { type = "Pet",   category = "Pets",   itemId = "pet_glitched_dragon",     label = "Glitched Dragon" },
+	[1885101001] = { type = "Pet",   category = "Pets",   itemId = "pet_freddy_fazbear",      label = "Freddy Fazbear" },
+	[1885101002] = { type = "Pet",   category = "Pets",   itemId = "pet_bonnie",              label = "Bonnie" },
+	[1885101003] = { type = "Pet",   category = "Pets",   itemId = "pet_chica",               label = "Chica" },
+	[1885101004] = { type = "Pet",   category = "Pets",   itemId = "pet_foxy",                label = "Foxy" },
+	[1885101005] = { type = "Pet",   category = "Pets",   itemId = "pet_golden_freddy",       label = "Golden Freddy" },
+	[1885101006] = { type = "Pet",   category = "Pets",   itemId = "pet_the_puppet",          label = "ThePuppet" },
+	[1885101007] = { type = "Pet",   category = "Pets",   itemId = "pet_cupcake",             label = "Cupcake" },
 
 	-- Exclusive Crowns
 	[1717864767] = { type = "Crown", category = "Crowns", itemId = "crown_ultra",             label = "Ultra Crown" },
@@ -228,6 +235,20 @@ local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 			{ category = "Crowns",     itemId = "crown_67" },
 			{ category = "IconImages", itemId = "icon_67_kid" },
 			{ category = "IconImages", itemId = "icon_steve_harrington" },
+		},
+	},
+	[1885101090] = {
+		type = "Bundle",
+		bundleId = "FNAF_PETS_BUNDLE",
+		label = "FNAF Pets Bundle",
+		items = {
+			{ category = "Pets", itemId = "pet_freddy_fazbear" },
+			{ category = "Pets", itemId = "pet_bonnie" },
+			{ category = "Pets", itemId = "pet_chica" },
+			{ category = "Pets", itemId = "pet_foxy" },
+			{ category = "Pets", itemId = "pet_golden_freddy" },
+			{ category = "Pets", itemId = "pet_the_puppet" },
+			{ category = "Pets", itemId = "pet_cupcake" },
 		},
 	},
 }

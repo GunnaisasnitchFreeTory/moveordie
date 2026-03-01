@@ -35,6 +35,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared            = ReplicatedStorage:WaitForChild("Shared")
 local ItemCatalog       = require(Shared:WaitForChild("ItemCatalog"))
 local ItemModelRegistry = require(Shared:WaitForChild("ItemModelRegistry"))
+local PetVisualConfig   = require(Shared:WaitForChild("PetVisualConfig"))
 
 local TAG = "[PetFollower]"
 local PET_INSTANCE_NAME = "_EquippedPet"
@@ -72,6 +73,18 @@ local PET_YAW_OFFSET_DEG: { [string]: number } = {
 	pet_bat              = 180,
 	pet_dolphin          = 180,
 	pet_pink_butterfly   = -90,  -- faces along X-axis, not Z
+	-- NOTE: pet_steve and pet_the_puppet rotation handled via PetVisualConfig.OVERRIDES
+}
+
+-- Pets that should not receive roll wobble (keeps large/rigged models visually stable).
+local PET_NO_ROLL_WOBBLE: { [string]: boolean } = {
+	pet_chica            = true,
+	pet_foxy             = true,
+	pet_bonnie           = true,
+	pet_freddy_fazbear   = true,
+	pet_golden_freddy    = true,
+	pet_the_puppet       = true,
+	pet_cupcake          = true,
 }
 
 -- Scale override: bypasses auto-scaling for models that need special treatment.
@@ -95,7 +108,7 @@ local SCALE_CEIL     = 1.0   -- never scale above original size
 local _activePets: { [Player]: {
 	pet: Instance,
 	conn: RBXScriptConnection?,
-	cf: CFrame,
+	pos: Vector3,
 	t0: number,
 } } = {}
 
@@ -216,9 +229,34 @@ local function spawnPetFor(player: Player, petId: string)
 
 	local sourceModel = ItemModelRegistry.Get(modelPath)
 	if not sourceModel then
-		warn(TAG, "modelPath exists but model NOT FOUND in registry:", modelPath,
-			"| petId:", petId, "| Try checking ReplicatedStorage.ItemModels hierarchy")
-		return
+		-- Fallback: try ReplicatedStorage/Pets/{subpath} directly
+		-- (some FNAF models live under Pets/ not ItemModels/)
+		local modelName = petDef.modelName or string.match(modelPath, "[^%.]+$") or ""
+		local directFallback = ReplicatedStorage:FindFirstChild("Pets")
+		if directFallback then
+			for _, folder in ipairs({ "Epic/FNAF", "FNAF", "Epic" }) do
+				local f = directFallback
+				for seg in string.gmatch(folder, "[^/]+") do
+					f = f and f:FindFirstChild(seg)
+				end
+				if f then
+					sourceModel = f:FindFirstChild(modelName)
+					if sourceModel then
+						print(string.format("[PetEquip] %s found via fallback Pets/%s/%s",
+							petId, folder, modelName))
+						break
+					end
+				end
+			end
+		end
+		if not sourceModel then
+			warn(TAG, "modelPath exists but model NOT FOUND in registry:", modelPath,
+				"| petId:", petId, "| modelName:", modelName,
+				"| Try checking ReplicatedStorage.ItemModels/Pets/Epic/FNAF/")
+			print(string.format("[PetEquip ERROR] petId=%s resolvedPath=%s modelMissing=true",
+				petId, modelPath))
+			return
+		end
 	end
 
 	local character = player.Character
@@ -325,6 +363,24 @@ local function spawnPetFor(player: Player, petId: string)
 	log("Scaled pet", petId, string.format("%.3fx", petScale),
 		preBBox and string.format("(pre-bbox: %.1f x %.1f x %.1f)", preBBox.X, preBBox.Y, preBBox.Z) or "(no bbox)")
 
+	local visual = PetVisualConfig.Get(petId, petDef)
+
+	-- Apply visual scale ONCE per spawn (never in follow loop).
+	if visual.scale ~= 1 then
+		applyScale(clone, visual.scale)
+		petScale = petScale * visual.scale
+	end
+
+	if RunService:IsStudio() and visual.debugTag then
+		print(string.format(
+			"[PetVisualFix] pet=%s appliedRot=<%.1f,%.1f,%.1f>",
+			petId,
+			visual.rotDeg.X,
+			visual.rotDeg.Y,
+			visual.rotDeg.Z
+		))
+	end
+
 	-- ── FOLLOW OFFSET (scaled to pet size) ─────────────────────────
 	local offsetMul = 0.4 + 0.6 * petScale
 	local petOffset = CFrame.new(
@@ -334,13 +390,25 @@ local function spawnPetFor(player: Player, petId: string)
 	)
 	local petBobbleAmp = BOBBLE_AMPLITUDE * math.max(petScale, 0.4)
 
-	-- Per-pet yaw correction (radians)
+	-- Per-pet yaw offset in radians (from table + PetVisualConfig rotation).
+	-- PetVisualConfig.rotation is a pure-yaw CFrame for backwards-facing models.
 	local petYawRad = math.rad(PET_YAW_OFFSET_DEG[petId] or 0)
+	do
+		-- Extract additional yaw from visual.rotation (ignore any pitch/roll).
+		local _, vy, _ = visual.rotation:ToEulerAnglesYXZ()
+		petYawRad = petYawRad + vy
+	end
+
+	if RunService:IsStudio() then
+		print(string.format("[PetUpright] petId=%s yawOffsetDeg=%.0f",
+			petId, math.deg(petYawRad)))
+	end
 
 	-- ── INITIAL POSITION ───────────────────────────────────────────
-	local hrpYaw = yawOnly(rootPart.CFrame)
 	local startPos = (rootPart.CFrame * petOffset).Position
-	local startCF = CFrame.new(startPos) * CFrame.Angles(0, hrpYaw + petYawRad, 0)
+	local look0 = rootPart.CFrame.LookVector
+	local yaw0  = math.atan2(-look0.X, -look0.Z) + petYawRad
+	local startCF = CFrame.new(startPos) * CFrame.Angles(0, yaw0, 0)
 
 	if clone:IsA("Model") then
 		clone:PivotTo(startCF)
@@ -354,7 +422,9 @@ local function spawnPetFor(player: Player, petId: string)
 	clone.Parent = workspace
 
 	-- ── FOLLOW + BOBBLE LOOP ───────────────────────────────────────
-	local currentCF = startCF
+	-- Position is lerped for smooth motion; orientation is rebuilt fresh
+	-- every frame from the player's LookVector so pitch/roll are ALWAYS 0.
+	local currentPos = startPos
 	local t0 = tick()
 
 	local followConn = RunService.Heartbeat:Connect(function()
@@ -369,37 +439,35 @@ local function spawnPetFor(player: Player, petId: string)
 
 		local t = tick() - t0
 
-		-- 1) Position: offset from player + vertical bobble
-		local targetPos = (hrp.CFrame * petOffset).Position
-		local bobbleY = math.sin(t * BOBBLE_SPEED) * petBobbleAmp
-		targetPos = targetPos + Vector3.new(0, bobbleY, 0)
+		-- 1) Target position: offset from HRP + vertical bobble (position only, no rotation)
+		local rawTarget = (hrp.CFrame * petOffset).Position
+		local bobbleY   = math.sin(t * BOBBLE_SPEED) * petBobbleAmp
+		local targetPos = Vector3.new(rawTarget.X, rawTarget.Y + bobbleY, rawTarget.Z)
 
-		-- 2) Orientation: match player HRP yaw (so pet faces same way as player)
-		local playerYaw = yawOnly(hrp.CFrame)
+		-- 2) Lerp position only (no lerp on rotation — orientation is always fresh)
+		currentPos = currentPos:Lerp(targetPos, LERP_ALPHA)
 
-		-- 3) Per-pet yaw correction + subtle wobble
-		local yawW = math.sin(t * YAW_WOBBLE_SPEED) * math.rad(YAW_WOBBLE_AMP)
-		local rollW = math.sin(t * ROLL_WOBBLE_SPEED) * math.rad(ROLL_WOBBLE_AMP)
-		local finalYaw = playerYaw + petYawRad + yawW
+		-- 3) Compute yaw from player LookVector — guaranteed pitch=0, roll=0
+		local lookVec = hrp.CFrame.LookVector
+		local yaw = math.atan2(-lookVec.X, -lookVec.Z) + petYawRad
+		-- Small yaw wobble (wobble is yaw-only, no tilt introduced)
+		yaw = yaw + math.sin(t * YAW_WOBBLE_SPEED) * math.rad(YAW_WOBBLE_AMP)
 
-		-- 4) Build CFrame: position + yaw-only rotation + wobble roll
-		local targetCF = CFrame.new(targetPos) * CFrame.Angles(0, finalYaw, rollW)
+		-- 4) Upright CFrame: ONLY yaw rotation, pitch=0, roll=0 always
+		local uprightCF = CFrame.new(currentPos) * CFrame.Angles(0, yaw, 0)
 
-		-- 5) Smooth interpolation
-		currentCF = currentCF:Lerp(targetCF, LERP_ALPHA)
-
-		-- 6) Apply
+		-- 5) Apply
 		if clone:IsA("Model") then
-			clone:PivotTo(currentCF)
+			clone:PivotTo(uprightCF)
 		elseif clone:IsA("BasePart") then
-			clone.CFrame = currentCF
+			clone.CFrame = uprightCF
 		end
 	end)
 
 	_activePets[player] = {
 		pet = clone,
 		conn = followConn,
-		cf = currentCF,
+		pos = currentPos,
 		t0 = t0,
 	}
 

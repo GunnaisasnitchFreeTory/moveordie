@@ -56,13 +56,17 @@ end
 local Config = {
 	Enabled         = true,
 	SpawnChance     = 0.70,
+	SpawnChanceAfterFirstMultiplier = 0.4, -- reduce re-spawn odds after first spawn in a match
 	DurationSeconds = 30,
 	RoundsAllowed   = {2, 3, 4, 5, 6},
 	Damage          = 55,    -- per hit; two hits to kill a 100-HP player
 	WalkSpeed       = 26,    -- noticeably faster than a running player (default 16)
 	AttackRange     = 5,     -- studs: distance that triggers a swing
 	AttackCooldown  = 1.25,  -- seconds between attacks on same player
-	ChaseInterval   = 0.2,   -- re-evaluate target every 0.2s (was 0.5)
+	ChaseInterval   = 0.2,   -- re-evaluate target every 0.2s (logic still throttles MoveTo calls)
+	RepathInterval  = 0.45,  -- minimum interval between MoveTo updates
+	RepathTargetMoveDelta = 4.0, -- or when target moved this far since last MoveTo
+	AttackDisengageRange = 6.5, -- hysteresis to avoid rapid chase/attack flipping
 	-- Lunge: speed burst when player is within LungeRange studs
 	LungeRange      = 12,    -- studs: triggers lunge
 	LungeCooldown   = 3.0,   -- seconds between lunges
@@ -99,6 +103,8 @@ local lastLungeTick:   number = 0
 local npcFolder:   Folder?               = nil
 local eventRemote: RemoteEvent?          = nil
 local killFeedRemote: RemoteEvent?       = nil
+local hasSpawnedThisMatch: boolean       = false
+local spawnCountThisMatch: number        = 0
 
 local TungTungSahurService = {}
 
@@ -323,6 +329,10 @@ local function disconnectAll()
 	cancelThread(timerThread)
 	chaseThread = nil
 	timerThread = nil
+	if moveToConn then
+		pcall(function() moveToConn:Disconnect() end)
+		moveToConn = nil
+	end
 	if healthConn then
 		pcall(function() healthConn:Disconnect() end)
 		healthConn = nil
@@ -358,8 +368,8 @@ local function despawn(reason: string)
 		eventRemote:FireAllClients("Despawn", reason == "timer")
 	end
 
-	-- Quest: reward all alive InMatch players when TTS timer naturally expires
-	if reason == "timer" then
+	-- Quest: reward all alive InMatch players when TTS ends due timer OR round-6 cleanup.
+	if reason == "timer" or reason == "round6" then
 		local dqs = getDQS()
 		if dqs and dqs.OnTTSSurvive then
 			for _, player in ipairs(Players:GetPlayers()) do
@@ -481,30 +491,11 @@ local function startChaseLoop()
 
 	chaseThread = task.spawn(function()
 		local lunging = false
-
-		-- Wire MoveToFinished so the NPC immediately re-paths when it reaches
-		-- the target's last known position (prevents standing still after old MoveTo)
-		local function reconnectMoveToFinished(hum)
-			if moveToConn then
-				pcall(function() moveToConn:Disconnect() end)
-				moveToConn = nil
-			end
-			if not hum or not hum.Parent then return end
-			moveToConn = hum.MoveToFinished:Connect(function()
-				if not active or frozen or not npcModel then return end
-				local t = getNearestPlayer()
-				if t and t.Character then
-					local h = t.Character:FindFirstChild("HumanoidRootPart")
-					if h then
-						local humNow = npcModel:FindFirstChildOfClass("Humanoid")
-						if humNow then humNow:MoveTo(h.Position) end
-					end
-				end
-			end)
-		end
+		local lastMoveToAt = 0
+		local lastMoveToTargetPos: Vector3? = nil
+		local inAttackRange = false
 
 		local hum = npcModel and npcModel:FindFirstChildOfClass("Humanoid")
-		if hum then reconnectMoveToFinished(hum) end
 
 		while active and npcModel and npcModel.Parent do
 			if not frozen then
@@ -517,6 +508,12 @@ local function startChaseLoop()
 							local dist = (hrp.Position - npcModel.PrimaryPart.Position).Magnitude
 
 							if dist <= Config.AttackRange then
+								inAttackRange = true
+							elseif dist >= Config.AttackDisengageRange then
+								inAttackRange = false
+							end
+
+							if inAttackRange then
 								-- Melee attack
 								lunging = false
 								local uid  = target.UserId
@@ -562,7 +559,20 @@ local function startChaseLoop()
 								elseif not lunging then
 									hum.WalkSpeed = Config.WalkSpeed
 								end
-								hum:MoveTo(hrp.Position)
+								local shouldRepath = false
+								if (now - lastMoveToAt) >= Config.RepathInterval then
+									shouldRepath = true
+								elseif lastMoveToTargetPos and (hrp.Position - lastMoveToTargetPos).Magnitude >= Config.RepathTargetMoveDelta then
+									shouldRepath = true
+								elseif not lastMoveToTargetPos then
+									shouldRepath = true
+								end
+
+								if shouldRepath then
+									hum:MoveTo(hrp.Position)
+									lastMoveToAt = now
+									lastMoveToTargetPos = hrp.Position
+								end
 							end
 						end
 					end
@@ -689,6 +699,11 @@ end
 function TungTungSahurService.OnRoundStart(roundNumber: number, mode: string)
 	if not initialized then return end
 	currentRound = roundNumber  -- always track, even when TTS doesn't spawn
+	if roundNumber <= 1 then
+		-- Safety reset in case match teardown callback was skipped.
+		hasSpawnedThisMatch = false
+		spawnCountThisMatch = 0
+	end
 	if not Config.Enabled then return end
 	if mode ~= "Brainrot" then return end
 	if not isRoundAllowed(roundNumber) then
@@ -696,13 +711,34 @@ function TungTungSahurService.OnRoundStart(roundNumber: number, mode: string)
 		return
 	end
 
+	local spawnChance = Config.SpawnChance
+	if hasSpawnedThisMatch then
+		spawnChance = spawnChance * Config.SpawnChanceAfterFirstMultiplier
+	end
+
 	local roll = math.random()
-	if roll >= Config.SpawnChance then
-		log(string.format("Round %d: roll %.2f >= %.2f -- spawn skipped", roundNumber, roll, Config.SpawnChance))
+	if roll >= spawnChance then
+		log(string.format(
+			"Round %d: roll %.2f >= %.2f -- spawn skipped (spawnedBefore=%s count=%d)",
+			roundNumber,
+			roll,
+			spawnChance,
+			tostring(hasSpawnedThisMatch),
+			spawnCountThisMatch
+		))
 		return
 	end
 
-	log(string.format("Round %d: roll %.2f < %.2f -- spawning!", roundNumber, roll, Config.SpawnChance))
+	log(string.format(
+		"Round %d: roll %.2f < %.2f -- spawning! (spawnedBefore=%s count=%d)",
+		roundNumber,
+		roll,
+		spawnChance,
+		tostring(hasSpawnedThisMatch),
+		spawnCountThisMatch
+	))
+	hasSpawnedThisMatch = true
+	spawnCountThisMatch += 1
 	spawnNpc(roundNumber)
 end
 
@@ -725,6 +761,8 @@ end
 function TungTungSahurService.OnMatchEnd()
 	if not initialized then return end
 	if active then despawn("match") end
+	hasSpawnedThisMatch = false
+	spawnCountThisMatch = 0
 end
 
 function TungTungSahurService.OnFreezeBegin()

@@ -1178,7 +1178,7 @@ end
 -- SIDEBAR BUTTON  (dark, chunky, glossy — refined strokes)
 -- ═══════════════════════════════════════════════════════════════════
 
-function Components.CreateSideButton(parent: Instance, label: string, iconText: string, bgColor: Color3, layoutOrder: number, onClick: () -> ()): TextButton
+function Components.CreateSideButton(parent: Instance, label: string, iconText: string, bgColor: Color3, layoutOrder: number, onClick: () -> (), iconImage: string?): TextButton
 	local btn = Instance.new("TextButton")
 	btn.Name = "Side_" .. label
 	btn.Size = UDim2.fromOffset(S.SideBtnW, S.SideBtnH)
@@ -1234,22 +1234,40 @@ function Components.CreateSideButton(parent: Instance, label: string, iconText: 
 	shc.CornerRadius = UDim.new(0, S.SideBtnCorner + 4)
 	shc.Parent = shadow
 
-	local icon = Instance.new("TextLabel")
-	icon.Name = "Icon"
-	icon.Size = UDim2.new(1, 0, 0, 40)
-	icon.Position = UDim2.fromOffset(0, 6)
-	icon.BackgroundTransparency = 1
-	icon.Font = Enum.Font.GothamBold
-	icon.TextColor3 = C.TextWhite
-	icon.TextSize = 36
-	icon.Text = iconText
-	icon.ZIndex = 2
-	icon.Parent = btn
-	local is = Instance.new("UIStroke")
-	is.Color = Color3.fromRGB(0, 0, 0)
-	is.Thickness = 2
-	is.Transparency = 0.15
-	is.Parent = icon
+	if iconImage and iconImage ~= "" then
+		local icon = Instance.new("ImageLabel")
+		icon.Name = "Icon"
+		icon.AnchorPoint = Vector2.new(0.5, 0.5)
+		icon.Size = UDim2.fromOffset(math.floor(S.SideBtnW * 0.68), math.floor(S.SideBtnH * 0.68))
+		icon.Position = UDim2.fromScale(0.5, 0.45)
+		icon.BackgroundTransparency = 1
+		icon.Image = iconImage
+		icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+		icon.ScaleType = Enum.ScaleType.Fit
+		icon.ResampleMode = Enum.ResamplerMode.Default
+		icon.ZIndex = 2
+		icon.Parent = btn
+		local ar = Instance.new("UIAspectRatioConstraint")
+		ar.AspectRatio = 1
+		ar.Parent = icon
+	else
+		local icon = Instance.new("TextLabel")
+		icon.Name = "Icon"
+		icon.Size = UDim2.new(1, 0, 0, 40)
+		icon.Position = UDim2.fromOffset(0, 6)
+		icon.BackgroundTransparency = 1
+		icon.Font = Enum.Font.GothamBold
+		icon.TextColor3 = C.TextWhite
+		icon.TextSize = 36
+		icon.Text = iconText
+		icon.ZIndex = 2
+		icon.Parent = btn
+		local is = Instance.new("UIStroke")
+		is.Color = Color3.fromRGB(0, 0, 0)
+		is.Thickness = 2
+		is.Transparency = 0.15
+		is.Parent = icon
+	end
 
 	local lbl = Instance.new("TextLabel")
 	lbl.Name = "Label"

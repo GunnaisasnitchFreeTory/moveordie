@@ -15,7 +15,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 local TweenService       = game:GetService("TweenService")
-local Players = game:GetService("Players")
+local Players            = game:GetService("Players")
+local HttpService        = game:GetService("HttpService")
+local RunService         = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
@@ -111,6 +113,7 @@ do
 end
 
 local crownBgFrame: Frame? = nil            -- container Frame, created in Init
+local petsBgFrame: Frame? = nil             -- pets tab background matching crown panel color
 local _crownSlots: {ImageLabel} = {}        -- 3 reusable ImageLabel slots
 local _crownBgThread: thread? = nil         -- single animation coroutine
 local _crownBgRunning = false               -- guard: prevents duplicate loops
@@ -449,16 +452,275 @@ local function checkGamepassOwned(gamepassId: number): boolean
 	return ok and owns == true
 end
 
+local function getOwnedSet(attrKey: string): {[string]: boolean}
+	local out = {}
+	local raw = LocalPlayer:GetAttribute(attrKey)
+	if type(raw) ~= "string" or raw == "" then
+		return out
+	end
+	local okDec, list = pcall(HttpService.JSONDecode, HttpService, raw)
+	if okDec and type(list) == "table" then
+		for _, id in ipairs(list) do
+			out[id] = true
+		end
+	end
+	return out
+end
+
+local function ensureGridLayout()
+	for _, child in ipairs(contentFrame:GetChildren()) do
+		if child:IsA("UIListLayout") then
+			child:Destroy()
+		end
+	end
+	if not contentFrame:FindFirstChildOfClass("UIGridLayout") then
+		Components.AddGridLayout(contentFrame)
+	end
+end
+
+local function setPetsBgVisible(visible_: boolean)
+	if petsBgFrame then
+		petsBgFrame.Visible = visible_
+	end
+end
+
+local function resolvePremiumVisual(item, filterType: string)
+	local catEntry = ItemCatalog.Get("Premium", item.id)
+	if not catEntry and not _warnedMissing[item.id] then
+		_warnedMissing[item.id] = true
+		warn(string.format("[ShopPanel] No ItemCatalog.Premium entry for '%s' -- using placeholder", item.id))
+	end
+
+	local catalogImage: string
+	local modelPath: string? = catEntry and catEntry.modelPath or nil
+	local catalogIconText = catEntry and catEntry.iconText or nil
+	if filterType == "Currency" then
+		catalogImage = _fateCoinImage
+	else
+		local resolved = nil
+		if (filterType == "ExclusiveCrown" or filterType == "ExclusivePet")
+			and ItemCatalog.ResolveCrownOrPetImage
+		then
+			local kind = if filterType == "ExclusiveCrown" then "CROWN" else "PET"
+			resolved = ItemCatalog.ResolveCrownOrPetImage(item.id, kind)
+		end
+		if resolved and resolved.mode == "STATIC" then
+			catalogImage = resolved.image or ""
+			modelPath = nil
+		else
+			catalogImage = catEntry and ItemCatalog.GetImage(catEntry) or ""
+			if resolved and resolved.mode == "RENDERER" then
+				modelPath = resolved.rendererKey
+			end
+		end
+	end
+	return catEntry, catalogImage, modelPath, catalogIconText
+end
+
+local FNAF_BUNDLE_GAMEPASS_ID = 1885101090
+local FNAF_BANNER_IMAGE = "rbxassetid://72168519670720"
+local FNAF_SINGLE_PRICE = 75000
+
+local function populatePetsTab()
+	clearCards()
+	setCoinsBgVisible(false)
+	setCrownBgVisible(false)
+	setPetsBgVisible(true)
+
+	-- Wipe contentFrame completely — no UIListLayout, no UIPadding, nothing.
+	-- We use absolute Position for each child so the gap is always exactly
+	-- what we specify, with zero influence from layout objects.
+	for _, child in ipairs(contentFrame:GetChildren()) do
+		child:Destroy()
+	end
+
+	-- Absolute-position constants (all in pixels)
+	local H_PAD        = 8    -- horizontal inset on each side
+	local TOP_PAD      = 10   -- space above first section
+	local SECTION_GAP  = 10   -- gap between top-4 section and FNAF section
+	local BOTTOM_PAD   = 12   -- space below FNAF section
+	local FNAF_H       = 280  -- tall enough for cover art + buttons
+
+	-- ── Build item data ─────────────────────────────────────────────
+	local allPets = ItemCatalog.GetAllPetsSorted and ItemCatalog.GetAllPetsSorted() or {}
+	local fnafSet: {[string]: boolean} = {}
+	for _, pet in ipairs(allPets) do
+		if pet.collection == "FNAF" then fnafSet[pet.id] = true end
+	end
+
+	local topPets = {}
+	for _, item in ipairs(UIConfig.MockPremiumItems) do
+		if item.type == "ExclusivePet" and not fnafSet[item.id] and #topPets < 4 then
+			table.insert(topPets, item)
+		end
+	end
+
+	local ownedPets = getOwnedSet("OwnedPets")
+
+	local function createPetCard(parent: Instance, item, layoutOrder: number)
+		local isGamepass = item.gamepassId and item.gamepassId > 0
+		local isFateCoins = item.fateCoins and item.fateCoins > 0
+		local isOwned = false
+		if isGamepass then
+			isOwned = checkGamepassOwned(item.gamepassId)
+		else
+			isOwned = _locallyOwned[item.id] == true or ownedPets[item.id] == true
+		end
+
+		local actionText, actionColor
+		if isOwned then
+			actionText = "OWNED"
+			actionColor = C.DisabledBtn
+		elseif isFateCoins then
+			actionText = string.format("%dK F", math.floor(FNAF_SINGLE_PRICE / 1000))
+			actionColor = Color3.fromRGB(255, 200, 30)
+		else
+			actionText = string.format("%d ROBUX", item.robux or 0)
+			actionColor = C.RobuxButton
+		end
+
+		local _, catalogImage, modelPath, catalogIconText = resolvePremiumVisual(item, "ExclusivePet")
+		local card = Components.CreateItemCard(parent, {
+			name       = item.name,
+			rarity     = item.rarity or "Rare",
+			iconColor  = item.iconColor,
+			iconText   = catalogIconText,
+			image      = catalogImage,
+			modelPath  = modelPath,
+			tag        = item.tag,
+			actionText = actionText,
+			actionColor= actionColor,
+			onAction = function()
+				if isOwned then return end
+				if isGamepass then
+					MarketplaceService:PromptGamePassPurchase(LocalPlayer, item.gamepassId)
+					return
+				end
+				local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+				local buyRF   = remotes and remotes:FindFirstChild("Shop_BuyWithCoins")
+				if not buyRF then return end
+				local ok, result = pcall(buyRF.InvokeServer, buyRF, item.id, "ExclusivePet")
+				if ok and result and result.success then
+					_locallyOwned[item.id] = true
+					local btn = card:FindFirstChild("ActionBtn")
+					if btn and btn:IsA("TextButton") then
+						btn.Text = "OWNED"
+						btn.BackgroundColor3 = C.DisabledBtn
+						btn.Active = false
+					end
+				end
+			end,
+		})
+		card.Name = "ItemCard_" .. item.id
+		card.LayoutOrder = layoutOrder
+
+		if modelPath and catalogImage == "" then
+			local vpFrame = ensureViewportInCard(card, item.iconColor)
+			if vpFrame then
+				ThumbnailRenderer.RenderItemToViewport(vpFrame, {
+					modelPath = modelPath, id = item.id,
+					name = item.name, type = "ExclusivePet",
+				})
+			end
+		end
+	end
+
+	-- ── Top-4 section (UIGridLayout for 2-column card grid) ─────────
+	-- Height = rows * CardHeight + (rows-1) * cellPad  (no UIPadding inside,
+	-- we handle insets via Position/Size so the math is 100% predictable).
+	local topRows    = math.max(1, math.ceil(#topPets / 2))
+	local topH       = topRows * S.CardHeight + math.max(0, topRows - 1) * S.CardPad
+	local topSection = Instance.new("Frame")
+	topSection.Name             = "TopPetsSection"
+	topSection.Size             = UDim2.new(1, -H_PAD * 2, 0, topH)
+	topSection.Position         = UDim2.fromOffset(H_PAD, TOP_PAD)
+	topSection.BackgroundTransparency = 1
+	topSection.Parent           = contentFrame
+
+	local grid = Instance.new("UIGridLayout")
+	grid.CellSize              = UDim2.fromOffset(S.CardWidth, S.CardHeight)
+	grid.CellPadding           = UDim2.fromOffset(S.CardPad, S.CardPad)
+	grid.SortOrder             = Enum.SortOrder.LayoutOrder
+	grid.HorizontalAlignment   = Enum.HorizontalAlignment.Center
+	grid.Parent                = topSection
+
+	for i, item in ipairs(topPets) do
+		createPetCard(topSection, item, i)
+	end
+
+	-- ── FNAF bundle section (absolute, exactly SECTION_GAP below top) ─
+	local fnafYPos   = TOP_PAD + topH + SECTION_GAP
+	local fnafSection = Instance.new("Frame")
+	fnafSection.Name             = "FNAFSection"
+	fnafSection.Size             = UDim2.new(1, -H_PAD * 2, 0, FNAF_H)
+	fnafSection.Position         = UDim2.fromOffset(H_PAD, fnafYPos)
+	fnafSection.BackgroundTransparency = 1
+	fnafSection.ClipsDescendants = false
+	fnafSection.Parent           = contentFrame
+
+	if _BundlePanel and _BundlePanel.PopulateInto then
+		local fnafPanelHost = Instance.new("ScrollingFrame")
+		fnafPanelHost.Name                 = "FNAFBundlePanelHost"
+		fnafPanelHost.Size                 = UDim2.fromScale(1, 1)
+		fnafPanelHost.BackgroundTransparency = 1
+		fnafPanelHost.BorderSizePixel      = 0
+		fnafPanelHost.ScrollBarThickness   = 0
+		fnafPanelHost.CanvasSize           = UDim2.fromScale(0, 0)
+		fnafPanelHost.AutomaticCanvasSize  = Enum.AutomaticSize.None
+		fnafPanelHost.ScrollingDirection   = Enum.ScrollingDirection.XY
+		fnafPanelHost.Parent               = fnafSection
+		_BundlePanel.PopulateInto(fnafPanelHost, {
+			bundleIds    = { "fnaf_pets_bundle" },
+			itemType     = "ExclusivePet",
+			itemCoinPrice= FNAF_SINGLE_PRICE,
+		})
+		if _BundlePanel.SelectBundle then
+			_BundlePanel.SelectBundle("fnaf_pets_bundle")
+		end
+	end
+
+	-- Set the canvas size explicitly — no AutomaticCanvasSize, no mystery extra height.
+	local totalH = fnafYPos + FNAF_H + BOTTOM_PAD
+	contentFrame.AutomaticCanvasSize = Enum.AutomaticSize.None
+	contentFrame.CanvasSize          = UDim2.fromOffset(0, totalH)
+	contentFrame.CanvasPosition      = Vector2.zero
+	contentFrame.ScrollBarThickness  = 6
+	contentFrame.ScrollingDirection  = Enum.ScrollingDirection.Y
+
+	-- ── Layout diagnostics (Studio only) ──────────────────────────
+	if RunService:IsStudio() then
+		task.defer(function()
+			local topS  = contentFrame:FindFirstChild("TopPetsSection")
+			local fnafS = contentFrame:FindFirstChild("FNAFSection")
+			if topS and fnafS then
+				local topAbsY  = topS.AbsolutePosition.Y
+				local topAbsH  = topS.AbsoluteSize.Y
+				local fnafAbsY = fnafS.AbsolutePosition.Y
+				local gap      = fnafAbsY - (topAbsY + topAbsH)
+				print(string.format(
+					"[PetsTabLayout] topY=%.0f topH=%.0f fnafY=%.0f gap=%.0f canvasH=%.0f",
+					topAbsY, topAbsH, fnafAbsY, gap, totalH
+				))
+			end
+		end)
+	end
+end
+
 local function populateCards(filterType: string)
 	if _isPopulating then return end
 	_isPopulating = true
 	clearCards()
 	setCoinsBgVisible(filterType == "Currency")
 	setCrownBgVisible(filterType == "ExclusiveCrown")
+	setPetsBgVisible(filterType == "ExclusivePet")
 
-	if not contentFrame:FindFirstChildOfClass("UIGridLayout") then
-		Components.AddGridLayout(contentFrame)
+	if filterType == "ExclusivePet" then
+		populatePetsTab()
+		_isPopulating = false
+		return
 	end
+
+	ensureGridLayout()
 
 	print(string.format("[PremiumShop] populateCards called -- filterType=%s", filterType))
 
@@ -507,21 +769,7 @@ local function populateCards(filterType: string)
 				actionColor = C.RobuxButton
 			end
 
-			local catEntry = ItemCatalog.Get("Premium", item.id)
-			if not catEntry and not _warnedMissing[item.id] then
-				_warnedMissing[item.id] = true
-				warn(string.format("[ShopPanel] No ItemCatalog.Premium entry for '%s' -- using placeholder", item.id))
-			end
-
-			local catalogImage: string
-			if filterType == "Currency" then
-				catalogImage = _fateCoinImage
-			else
-				catalogImage = catEntry and ItemCatalog.GetImage(catEntry) or ""
-			end
-
-			local modelPath = catEntry and catEntry.modelPath or nil
-			local catalogIconText = catEntry and catEntry.iconText or nil
+			local catEntry, catalogImage, modelPath, catalogIconText = resolvePremiumVisual(item, filterType)
 
 			local hasExplicitImage = (catalogImage ~= "")
 			local wantsThumbnail = (not hasExplicitImage) and modelPath
@@ -648,6 +896,7 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 			clearCards()
 			setCoinsBgVisible(false)
 			setCrownBgVisible(false)
+			setPetsBgVisible(false)
 			if _BundlePanel and _BundlePanel.PopulateInto then
 				_BundlePanel.PopulateInto(contentFrame)
 			end
@@ -715,6 +964,24 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 			lbl.Parent             = cbf
 			table.insert(_crownSlots, lbl)
 		end
+	end
+
+	-- Pets tab background (matches Crowns panel styling)
+	do
+		local pbf = Instance.new("Frame")
+		pbf.Name                  = "PetsBackground"
+		pbf.AnchorPoint           = Vector2.new(0, 0)
+		pbf.Position              = UDim2.fromScale(0, 0)
+		pbf.Size                  = UDim2.fromScale(1, 1)
+		pbf.BackgroundColor3      = Color3.fromRGB(5, 3, 18)
+		pbf.BackgroundTransparency = 0.35
+		pbf.BorderSizePixel       = 0
+		pbf.ZIndex                = 4
+		pbf.Active                = false
+		pbf.Selectable            = false
+		pbf.Visible               = false
+		pbf.Parent                = canvas
+		petsBgFrame               = pbf
 	end
 
 	_setActiveTab = setActiveTab

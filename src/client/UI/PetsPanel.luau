@@ -113,6 +113,7 @@ local function refresh()
 	for i, pet in ipairs(allPets) do
 		local isOwned = ownedSet[pet.id] == true
 		local isEquipped = isOwned and (pet.id == equippedId)
+		local resolved = ItemCatalog.ResolveCrownOrPetImage and ItemCatalog.ResolveCrownOrPetImage(pet.id, "PET") or nil
 		local actionText = nil
 		local actionColor = nil
 		local subLabel = nil
@@ -131,8 +132,8 @@ local function refresh()
 			iconColor = pet.iconColor,
 			thumbnailBgColor = pet.thumbnailBgColor,
 			iconText = pet.iconText or "",
-			image = ItemCatalog.GetImage(pet),
-			modelPath = pet.modelPath,
+			image = (resolved and resolved.image) or ItemCatalog.GetImage(pet),
+			modelPath = (resolved and resolved.rendererKey) or pet.modelPath,
 			locked = not isOwned,
 			equipped = isEquipped,
 			owned = isOwned,

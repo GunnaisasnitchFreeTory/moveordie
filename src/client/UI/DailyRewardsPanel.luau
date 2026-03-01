@@ -415,6 +415,11 @@ local function buildDayCard(parent, dayNum)
 		iconLbl.AnchorPoint = Vector2.new(0.5, 0.5)
 		iconLbl.Position = UDim2.new(0.5, 0, 0.48, 0)
 		iconLbl.Size = UDim2.new(0.6, 0, 0.45, 0)
+		if reward.type == "Spins" then
+			-- Slightly larger icon box keeps spins artwork legible without changing card layout.
+			iconLbl.Position = UDim2.new(0.5, 0, 0.47, 0)
+			iconLbl.Size = UDim2.new(0.72, 0, 0.52, 0)
+		end
 		iconLbl.ZIndex = 7
 		iconLbl.Parent = card
 

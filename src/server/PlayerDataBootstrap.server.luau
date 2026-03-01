@@ -64,8 +64,79 @@ end
 -- STUDIO DEBUG: Grant all crowns + pets on join  (set to false to disable)
 -- STUDIO_RESET_STATS: Reset ALL stats to 0 on join so testing starts fresh
 -- =====================================================================
-local STUDIO_GRANT_ALL   = IS_STUDIO
-local STUDIO_RESET_STATS = IS_STUDIO
+local STUDIO_GRANT_ALL   = false
+local STUDIO_RESET_STATS = false
+
+local function stripFNAFRigging()
+	local function getOrCreateRoot(model: Model): BasePart?
+		local root = model:FindFirstChild("Root")
+		if root and root:IsA("BasePart") then
+			model.PrimaryPart = root
+			return root
+		end
+		local primary = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+		if not primary then
+			return nil
+		end
+		primary.Name = "Root"
+		model.PrimaryPart = primary
+		return primary
+	end
+
+	local function ensureUnifiedAssembly(model: Model, root: BasePart)
+		local connected = { [root] = true }
+		for _, part in ipairs(root:GetConnectedParts(true)) do
+			connected[part] = true
+		end
+		for _, d in ipairs(model:GetDescendants()) do
+			if d:IsA("BasePart") then
+				if not connected[d] and d ~= root then
+					local weld = Instance.new("WeldConstraint")
+					weld.Part0 = root
+					weld.Part1 = d
+					weld.Parent = d
+				end
+				d.CanCollide = false
+				d.CanQuery = false
+				d.CanTouch = false
+				d.Massless = true
+			end
+		end
+	end
+
+	local function cleanupContainer(container: Instance?)
+		if not container then return end
+		for _, model in ipairs(container:GetChildren()) do
+			if model:IsA("Model") then
+				local root = getOrCreateRoot(model)
+				for _, d in ipairs(model:GetDescendants()) do
+					if d:IsA("Motor6D")
+						or d:IsA("AnimationController")
+						or d:IsA("Animator")
+						or (d:IsA("Folder") and (d.Name == "Rig" or d.Name == "Motors"))
+						or (d:IsA("Script") and string.find(string.lower(d.Name), "rig", 1, true))
+					then
+						d:Destroy()
+					end
+				end
+				if root then
+					ensureUnifiedAssembly(model, root)
+				end
+			end
+		end
+	end
+
+	local petsRoot = ReplicatedStorage:FindFirstChild("Pets")
+	local fnafDirect = petsRoot and petsRoot:FindFirstChild("Epic") and petsRoot.Epic:FindFirstChild("FNAF")
+	cleanupContainer(fnafDirect)
+
+	local itemModels = ReplicatedStorage:FindFirstChild("ItemModels")
+	local fnafCatalog = itemModels
+		and itemModels:FindFirstChild("Pets")
+		and itemModels.Pets:FindFirstChild("Epic")
+		and itemModels.Pets.Epic:FindFirstChild("FNAF")
+	cleanupContainer(fnafCatalog)
+end
 
 -- Initialize services
 PlayerDataService.Init()
@@ -75,6 +146,7 @@ CrateService.Init()
 LevelCrownService.Init()
 CrownAttachService.Init()
 DailyRewardService.Init()
+stripFNAFRigging()
 
 -- =====================================================================
 -- LAZY-LOAD GLBS (avoid circular require; GLBS may not be init yet)

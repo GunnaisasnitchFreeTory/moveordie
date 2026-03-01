@@ -25,6 +25,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ContentProvider = game:GetService("ContentProvider")
+local HttpService = game:GetService("HttpService")
 
 local STUB = {
 	Init = function() end,
@@ -101,6 +102,26 @@ local selectorEntries: { [string]: Frame } = {}
 
 local previewOverlay: Frame? = nil
 local previewRotConn: RBXScriptConnection? = nil
+local externalPreviewHost: Instance? = nil
+local panelOptions: {[string]: any}? = nil
+
+local function getBundlesForPanel()
+	local bundles = BundleCatalog.GetAll()
+	if not panelOptions or not panelOptions.bundleIds then
+		return bundles
+	end
+	local allow = {}
+	for _, id in ipairs(panelOptions.bundleIds) do
+		allow[id] = true
+	end
+	local filtered = {}
+	for _, bundle in ipairs(bundles) do
+		if allow[bundle.id] then
+			table.insert(filtered, bundle)
+		end
+	end
+	return filtered
+end
 
 local function createStyledButton(parent: Instance, text: string, color: Color3, size: UDim2, position: UDim2): TextButton
 	local btn = Instance.new("TextButton")
@@ -364,7 +385,8 @@ end
 
 local function showItemPreview(itemData)
 	closeItemPreview()
-	if not bundleContainer then return end
+	local previewHost = bundleContainer or externalPreviewHost
+	if not previewHost then return end
 
 	local itemName = itemData.name or "unknown"
 	local modelPath = itemData.modelPath
@@ -390,7 +412,7 @@ local function showItemPreview(itemData)
 	previewOverlay.BackgroundTransparency = 0.35
 	previewOverlay.BorderSizePixel = 0
 	previewOverlay.ZIndex = 50
-	previewOverlay.Parent = bundleContainer
+	previewOverlay.Parent = previewHost
 
 	local dimBtn = Instance.new("TextButton")
 	dimBtn.Name = "DimClose"
@@ -467,6 +489,64 @@ local function showItemPreview(itemData)
 		closeItemPreview()
 	end)
 
+	local hasCoinPurchase = panelOptions
+		and panelOptions.itemCoinPrice
+		and itemData.itemId
+		and itemData.itemType
+
+	local purchaseBtn: TextButton? = nil
+	if hasCoinPurchase then
+		purchaseBtn = createStyledButton(
+			card,
+			string.format("BUY - %dK F", math.floor(panelOptions.itemCoinPrice / 1000)),
+			Color3.fromRGB(255, 200, 30),
+			UDim2.new(1, -20, 0, 42),
+			UDim2.new(0, 10, 1, -50)
+		)
+		purchaseBtn.ZIndex = 55
+
+		local function isOwned(): boolean
+			local attrKey = (itemData.itemType == "ExclusivePet") and "OwnedPets" or "OwnedCrowns"
+			local raw = LocalPlayer:GetAttribute(attrKey)
+			if type(raw) ~= "string" or raw == "" then return false end
+			local okDec, list = pcall(HttpService.JSONDecode, HttpService, raw)
+			if not okDec or type(list) ~= "table" then return false end
+			for _, id in ipairs(list) do
+				if id == itemData.itemId then return true end
+			end
+			return false
+		end
+
+		local function refreshPurchaseState()
+			if not purchaseBtn then return end
+			if isOwned() then
+				purchaseBtn.Text = "OWNED"
+				purchaseBtn.BackgroundColor3 = C.DisabledBtn
+				purchaseBtn.Active = false
+			else
+				purchaseBtn.Text = string.format("BUY - %dK F", math.floor(panelOptions.itemCoinPrice / 1000))
+				purchaseBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 30)
+				purchaseBtn.Active = true
+			end
+		end
+
+		refreshPurchaseState()
+		AnimUtil.WireButton(purchaseBtn, function()
+			if not purchaseBtn or not purchaseBtn.Active then return end
+			SoundUtil.Click()
+			local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+			local buyRF = remotes and remotes:FindFirstChild("Shop_BuyWithCoins")
+			if not buyRF then return end
+			local okBuy, result = pcall(buyRF.InvokeServer, buyRF, itemData.itemId, itemData.itemType)
+			if okBuy and result and result.success then
+				refreshPurchaseState()
+				if panelOptions and panelOptions.onItemPurchased then
+					pcall(panelOptions.onItemPurchased, itemData.itemId)
+				end
+			end
+		end)
+	end
+
 	if not modelInstance then
 		warn("[BundlePanel:Preview] No model — showing fallback for", itemName)
 		showFallbackPreview(card, itemData)
@@ -505,7 +585,7 @@ local function showItemPreview(itemData)
 
 	local vpFrame = Instance.new("ViewportFrame")
 	vpFrame.Name = "ModelPreview"
-	vpFrame.Size = UDim2.new(1, -20, 1, -54)
+	vpFrame.Size = hasCoinPurchase and UDim2.new(1, -20, 1, -110) or UDim2.new(1, -20, 1, -54)
 	vpFrame.Position = UDim2.fromOffset(10, 48)
 	vpFrame.BackgroundColor3 = Color3.fromRGB(14, 16, 32)
 	vpFrame.BackgroundTransparency = 0
@@ -593,6 +673,9 @@ local function showDetailView()
 			iconText = itemData.iconText,
 			image = ItemCatalog.GetImage and ItemCatalog.GetImage(itemData) or itemData.image or "",
 			modelPath = itemData.modelPath,
+			itemId = inc.itemId,
+			itemType = panelOptions and panelOptions.itemType or nil,
+			coinPrice = panelOptions and panelOptions.itemCoinPrice or nil,
 		}
 
 		local card = Components.CreateItemCard(gridFrame, cardData)
@@ -623,9 +706,10 @@ local BundlePanel = {}
 function BundlePanel.Init()
 end
 
-function BundlePanel.PopulateInto(parent: ScrollingFrame)
+function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 	BundlePanel.ClearContent()
 	contentParent = parent
+	panelOptions = options or nil
 
 	for _, child in ipairs(parent:GetChildren()) do
 		if child:IsA("UIGridLayout") then
@@ -694,7 +778,7 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame)
 	coverImage.Size = UDim2.fromScale(1, 1)
 	coverImage.Position = UDim2.fromScale(0, 0)
 	coverImage.BackgroundTransparency = 1
-	coverImage.ScaleType = Enum.ScaleType.Crop  -- Revert to Enum.ScaleType.Fit if crop looks bad
+	coverImage.ScaleType = Enum.ScaleType.Fit
 	coverImage.ZIndex = 6
 	coverImage.Parent = coverContainer
 
@@ -870,7 +954,7 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame)
 	ssLayout.Parent = selectorStrip
 
 	selectorEntries = {}
-	local allBundles = BundleCatalog.GetAll()
+	local allBundles = getBundlesForPanel()
 	for i, bundle in ipairs(allBundles) do
 		local entry = Instance.new("Frame")
 		entry.Name = "Entry_" .. bundle.id
@@ -1019,6 +1103,11 @@ function BundlePanel.SelectBundle(bundleId: string)
 	selectBundle(bundleId)
 end
 
+function BundlePanel.ShowItemPreviewIn(parent: Instance, itemData)
+	externalPreviewHost = parent
+	showItemPreview(itemData)
+end
+
 function BundlePanel.ClearContent()
 	closeItemPreview()
 
@@ -1045,6 +1134,8 @@ function BundlePanel.ClearContent()
 		contentParent.ScrollingDirection = Enum.ScrollingDirection.Y
 	end
 	contentParent = nil
+	panelOptions = nil
+	externalPreviewHost = nil
 end
 
 function BundlePanel.Show() end

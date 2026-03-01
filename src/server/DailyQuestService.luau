@@ -77,6 +77,7 @@ local function log(...) print("[DailyQuestService]", ...) end
 local _cachedDay:    string = ""
 local _cachedQuests: { { [string]: any } } = {}
 local _cachedById:   { [string]: { [string]: any } } = {}
+local _sessionJoinTimeByUserId: { [number]: number } = {}
 
 local function getCurrentDay(): string
 	return os.date("!%Y_%m_%d")
@@ -104,6 +105,15 @@ end
 local function getTodayQuestById(id: string): { [string]: any }?
 	getTodayQuests()
 	return _cachedById[id]
+end
+
+local function getSessionPlayedSeconds(player: Player): number
+	local joinTime = _sessionJoinTimeByUserId[player.UserId]
+	if not joinTime then
+		joinTime = os.time()
+		_sessionJoinTimeByUserId[player.UserId] = joinTime
+	end
+	return math.max(0, os.time() - joinTime)
 end
 
 -- Player data helpers
@@ -158,7 +168,6 @@ function DailyQuestService.GetStatus(player: Player)
 	end
 
 	local data       = ensureQuestData(player)
-	local timePlayed = PDS.GetField(player, "TimePlayedSeconds") or 0
 	local quests     = getTodayQuests()
 
 	local questList = {}
@@ -167,7 +176,7 @@ function DailyQuestService.GetStatus(player: Player)
 
 		local progress = p.progress
 		if questDef.type == "TimePlayed" then
-			progress = math.min(timePlayed, questDef.target)
+			progress = math.min(getSessionPlayedSeconds(player), questDef.target)
 		end
 
 		table.insert(questList, {
@@ -275,7 +284,7 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 
 	local progress = p.progress
 	if questDef.type == "TimePlayed" then
-		progress = math.min(PDS.GetField(player, "TimePlayedSeconds") or 0, questDef.target)
+		progress = math.min(getSessionPlayedSeconds(player), questDef.target)
 	end
 
 	if progress < questDef.target then
@@ -471,6 +480,7 @@ function DailyQuestService.Init()
 	end
 
 	Players.PlayerAdded:Connect(function(player)
+		_sessionJoinTimeByUserId[player.UserId] = os.time()
 		task.spawn(function()
 			local PDS = getPDS()
 			if PDS then
@@ -485,6 +495,35 @@ function DailyQuestService.Init()
 			end
 		end)
 	end)
+
+	Players.PlayerRemoving:Connect(function(player)
+		local PDS = getPDS()
+		if PDS and PDS.IsLoaded(player) then
+			local data = ensureQuestData(player)
+			local quests = getTodayQuests()
+			local sessionPlayed = getSessionPlayedSeconds(player)
+			local changed = false
+
+			for _, questDef in ipairs(quests) do
+				if questDef.type == "TimePlayed" then
+					local p = data.progress[questDef.id]
+					if p and not p.claimed and sessionPlayed < questDef.target and p.progress ~= 0 then
+						p.progress = 0
+						changed = true
+					end
+				end
+			end
+
+			if changed then
+				saveQuestData(player, data)
+			end
+		end
+		_sessionJoinTimeByUserId[player.UserId] = nil
+	end)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		_sessionJoinTimeByUserId[player.UserId] = os.time()
+	end
 
 	log("Initialized -- " .. #getTodayQuests() .. " quests active today")
 end

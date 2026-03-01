@@ -232,6 +232,154 @@ ItemCatalog.Pets = {
 		iconColor = Color3.fromRGB(78, 168, 218),
 		stats     = { WalkSpeed = 3, CoinMultiplier = 1.07 },
 	},
+	pet_unicorn = {
+		id        = "pet_unicorn",
+		name      = "Unicorn",
+		modelName = "Unicorn",
+		type      = "Pet",
+		rarity    = "Epic",
+		modelPath = "ItemModels.Pets.Epic.Unicorn",
+		image     = "",
+		iconText = "",
+		iconColor = Color3.fromRGB(240, 180, 255),
+		stats     = { CoinMultiplier = 1.08, JumpPower = 4 },
+		source    = "CRATE",
+		crateId   = "crate_pet_epic",
+	},
+	pet_steve = {
+		id        = "pet_steve",
+		name      = "Steve",
+		modelName = "Steve",
+		type      = "Pet",
+		rarity    = "Epic",
+		modelPath = "ItemModels.Pets.Epic.Steve",
+		image     = "",
+		iconText = "",
+		iconColor = Color3.fromRGB(88, 188, 255),
+		stats     = { WalkSpeed = 2, CoinMultiplier = 1.08 },
+		source    = "CRATE",
+		crateId   = "crate_pet_epic",
+	},
+	pet_zombie = {
+		id        = "pet_zombie",
+		name      = "Zombie",
+		modelName = "Zombie",
+		type      = "Pet",
+		rarity    = "Epic",
+		modelPath = "ItemModels.Pets.Epic.Zombie",
+		image     = "",
+		iconText = "",
+		iconColor = Color3.fromRGB(90, 170, 90),
+		stats     = { CoinMultiplier = 1.08, WalkSpeed = 2 },
+		source    = "CRATE",
+		crateId   = "crate_pet_epic",
+	},
+	-- ── Epic (FNAF Collection) ──
+	pet_freddy_fazbear = {
+		id         = "pet_freddy_fazbear",
+		name       = "Freddy Fazbear",
+		modelName  = "FreddyFazbear",
+		type       = "Pet",
+		rarity     = "Epic",
+		collection = "FNAF",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.FreddyFazbear",
+		image      = "rbxassetid://84840145874928",
+		iconText   = "",
+		iconColor  = Color3.fromRGB(165, 108, 72),
+		stats      = { CoinMultiplier = 1.08, WalkSpeed = 2 },
+		shopOnly   = true,
+		source     = "Shop",
+	},
+	pet_bonnie = {
+		id         = "pet_bonnie",
+		name       = "Bonnie",
+		modelName  = "Bonnie",
+		type       = "Pet",
+		rarity     = "Epic",
+		collection = "FNAF",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.Bonnie",
+		image      = "rbxassetid://82413653261556",
+		iconText   = "",
+		iconColor  = Color3.fromRGB(118, 88, 228),
+		stats      = { CoinMultiplier = 1.08, JumpPower = 4 },
+		shopOnly   = true,
+		source     = "Shop",
+	},
+	pet_chica = {
+		id         = "pet_chica",
+		name       = "Chica",
+		modelName  = "Chica",
+		type       = "Pet",
+		rarity     = "Epic",
+		collection = "FNAF",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.Chica",
+		image      = "rbxassetid://85911772941715",
+		iconText   = "",
+		iconColor  = Color3.fromRGB(238, 198, 78),
+		stats      = { CoinMultiplier = 1.09, WalkSpeed = 2 },
+		shopOnly   = true,
+		source     = "Shop",
+	},
+	pet_foxy = {
+		id         = "pet_foxy",
+		name       = "Foxy",
+		modelName  = "Foxy",
+		type       = "Pet",
+		rarity     = "Epic",
+		collection = "FNAF",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.Foxy",
+		image      = "rbxassetid://124130935674613",
+		iconText   = "",
+		iconColor  = Color3.fromRGB(212, 78, 58),
+		stats      = { WalkSpeed = 3, CoinMultiplier = 1.08 },
+		shopOnly   = true,
+		source     = "Shop",
+	},
+	pet_golden_freddy = {
+		id         = "pet_golden_freddy",
+		name       = "Golden Freddy",
+		modelName  = "GoldenFreddy",
+		type       = "Pet",
+		rarity     = "Epic",
+		collection = "FNAF",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.GoldenFreddy",
+		image      = "rbxassetid://131523893063613",
+		iconText   = "",
+		iconColor  = Color3.fromRGB(238, 188, 58),
+		stats      = { CoinMultiplier = 1.10, WalkSpeed = 2, JumpPower = 4 },
+		shopOnly   = true,
+		source     = "Shop",
+	},
+	pet_the_puppet = {
+		id         = "pet_the_puppet",
+		name       = "ThePuppet",
+		modelName  = "ThePuppet",
+		type       = "Pet",
+		rarity     = "Epic",
+		collection = "FNAF",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.ThePuppet",
+		image      = "rbxassetid://140133655398485",
+		iconText   = "",
+		iconColor  = Color3.fromRGB(220, 220, 220),
+		stats      = { CoinMultiplier = 1.08, JumpPower = 4 },
+		shopOnly   = true,
+		source     = "Shop",
+	},
+	pet_cupcake = {
+		id         = "pet_cupcake",
+		name       = "Cupcake",
+		modelName  = "Cupcake",
+		type       = "Pet",
+		rarity     = "Epic",
+		collection = "FNAF",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.Cupcake",
+		image      = "rbxassetid://90262618148713",
+		iconText   = "",
+		iconColor  = Color3.fromRGB(255, 148, 188),
+		stats      = { CoinMultiplier = 1.08, WalkSpeed = 2 },
+		shopOnly   = true,
+		source     = "Shop",
+	},
 
 	-- ── Legendary (6) — Shop-only / Exclusive ──
 	pet_rbhp = {
@@ -1024,6 +1172,38 @@ ItemCatalog.Crowns = {
 		shopOnly  = true,
 		fateCoins = 75000,
 	},
+	crown_freddy_mask = {
+		id        = "crown_freddy_mask",
+		name      = "FreddyMaskCrown",
+		modelName = "FreddyMaskCrown",
+		type      = "Crown",
+		rarity    = "Legendary",
+		source    = "CROWN_SHOP",
+		modelPath = "ItemModels.Crowns.Exclusive.FreddyMaskCrown",
+		image     = "rbxassetid://73872999924845",
+		iconText = "",
+		iconColor = Color3.fromRGB(186, 132, 92),
+		thumbnailBgColor = Color3.fromRGB(30, 20, 14),
+		stats     = { CoinMultiplier = 1.11, WalkSpeed = 2 },
+		shopOnly  = true,
+		fateCoins = 80000,
+	},
+	crown_6am = {
+		id        = "crown_6am",
+		name      = "6AMCrown",
+		modelName = "6AMCrown",
+		type      = "Crown",
+		rarity    = "Epic",
+		source    = "CROWN_SHOP",
+		modelPath = "ItemModels.Crowns.Exclusive.6AMCrown",
+		image     = "rbxassetid://123607214574977",
+		iconText = "",
+		iconColor = Color3.fromRGB(120, 185, 255),
+		thumbnailBgColor = Color3.fromRGB(12, 20, 32),
+		stats     = { CoinMultiplier = 1.08, JumpPower = 3 },
+		shopOnly  = true,
+		fateCoins = 5000,
+	},
 	crown_fire_circle = {
 		id         = "crown_fire_circle",
 		name       = "Fire Circle Crown",
@@ -1238,10 +1418,20 @@ ItemCatalog.Premium = {
 	pet_dark_winged_dragon = { id = "pet_dark_winged_dragon", name = "D.W.D", type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://72226943594824",  iconText = "", iconColor = Color3.fromRGB(48, 28, 68),    thumbnailBgColor = Color3.fromRGB(15, 10, 25), robux = 300, gamepassId = 1717772785, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Dark Winged Dragon" },
 	pet_pink_butterfly     = { id = "pet_pink_butterfly",     name = "Pink Butterfly",     type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://82261955048760",  iconText = "", iconColor = Color3.fromRGB(255, 148, 208), thumbnailBgColor = Color3.fromRGB(35, 15, 28), robux = 200, gamepassId = 1716864887, tag = "NEW",       modelPath = "ItemModels.Pets.Legendary.Pink Butterfly" },
 	pet_dark_falcon        = { id = "pet_dark_falcon",        name = "Dark Falcon",        type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://138265402881761", iconText = "", iconColor = Color3.fromRGB(38, 28, 48),    thumbnailBgColor = Color3.fromRGB(12, 10, 18), robux = 250, gamepassId = 1716313058, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Dark Falcon" },
+	-- FNAF Epic Pets (temporary Robux pricing)
+	pet_freddy_fazbear     = { id = "pet_freddy_fazbear",     name = "Freddy Fazbear",      type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://84840145874928",  iconText = "", iconColor = Color3.fromRGB(165, 108, 72), thumbnailBgColor = Color3.fromRGB(30, 22, 16), robux = 400, gamepassId = 1885101001, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.FreddyFazbear" },
+	pet_bonnie             = { id = "pet_bonnie",             name = "Bonnie",              type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://82413653261556",  iconText = "", iconColor = Color3.fromRGB(118, 88, 228), thumbnailBgColor = Color3.fromRGB(20, 16, 34), robux = 400, gamepassId = 1885101002, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Bonnie" },
+	pet_chica              = { id = "pet_chica",              name = "Chica",               type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://85911772941715",  iconText = "", iconColor = Color3.fromRGB(238, 198, 78), thumbnailBgColor = Color3.fromRGB(34, 28, 12), robux = 400, gamepassId = 1885101003, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Chica" },
+	pet_foxy               = { id = "pet_foxy",               name = "Foxy",                type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://124130935674613", iconText = "", iconColor = Color3.fromRGB(212, 78, 58),  thumbnailBgColor = Color3.fromRGB(36, 14, 12), robux = 400, gamepassId = 1885101004, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Foxy" },
+	pet_golden_freddy      = { id = "pet_golden_freddy",      name = "Golden Freddy",       type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://131523893063613", iconText = "", iconColor = Color3.fromRGB(238, 188, 58), thumbnailBgColor = Color3.fromRGB(38, 30, 10), robux = 400, gamepassId = 1885101005, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.GoldenFreddy" },
+	pet_the_puppet         = { id = "pet_the_puppet",         name = "ThePuppet",           type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://140133655398485", iconText = "", iconColor = Color3.fromRGB(220, 220, 220), thumbnailBgColor = Color3.fromRGB(20, 20, 24), robux = 400, gamepassId = 1885101006, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.ThePuppet" },
+	pet_cupcake            = { id = "pet_cupcake",            name = "Cupcake",             type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://90262618148713", iconText = "", iconColor = Color3.fromRGB(255, 148, 188), thumbnailBgColor = Color3.fromRGB(30, 14, 22), robux = 400, gamepassId = 1885101007, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Cupcake" },
 
 	-- Exclusive Crowns (Gamepasses + FateCoins)
 	crown_electric      = { id = "crown_electric",      name = "Electric Crown",      type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://76259359648400",  iconText = "", iconColor = Color3.fromRGB(48, 198, 255),  thumbnailBgColor = Color3.fromRGB(18, 25, 42), fateCoins = 40000, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Electric Crown" },
 	crown_portal        = { id = "crown_portal",        name = "Portal Crown",        type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://81166013366597",  iconText = "", iconColor = Color3.fromRGB(88, 255, 200),  thumbnailBgColor = Color3.fromRGB(8, 30, 25),  fateCoins = 75000, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Portal Crown" },
+	crown_freddy_mask   = { id = "crown_freddy_mask",   name = "FreddyMaskCrown",     type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://73872999924845", iconText = "", iconColor = Color3.fromRGB(186, 132, 92), thumbnailBgColor = Color3.fromRGB(30, 20, 14), fateCoins = 80000, tag = "NEW", modelPath = "ItemModels.Crowns.Exclusive.FreddyMaskCrown" },
+	crown_6am           = { id = "crown_6am",           name = "6AMCrown",             type = "ExclusiveCrown", rarity = "Epic",      image = "rbxassetid://123607214574977", iconText = "", iconColor = Color3.fromRGB(120, 185, 255), thumbnailBgColor = Color3.fromRGB(12, 20, 32), fateCoins = 5000, tag = "NEW", modelPath = "ItemModels.Crowns.Exclusive.6AMCrown" },
 	crown_fire_circle   = { id = "crown_fire_circle",   name = "Fire Circle Crown",   type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://121758348091203", iconText = "", iconColor = Color3.fromRGB(255, 90, 30),   thumbnailBgColor = Color3.fromRGB(38, 15, 5),  robux = 450, gamepassId = 1728155288, tag = "NEW",       modelPath = "ItemModels.Crowns.Exclusive.Fire Circle Crown" },
 	crown_nen_x_killua  = { id = "crown_nen_x_killua",  name = "Nen X Killua Crown",  type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://111628191491649", iconText = "", iconColor = Color3.fromRGB(140, 200, 255), thumbnailBgColor = Color3.fromRGB(10, 18, 38), robux = 400, gamepassId = 1728821173, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Nen X Killua Crown" },
 	crown_slashes       = { id = "crown_slashes",       name = "Slashes Crown",       type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://132744048265245", iconText = "", iconColor = Color3.fromRGB(255, 215, 255), thumbnailBgColor = Color3.fromRGB(28, 18, 38), robux = 300, gamepassId = 1727051517, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Slashes Crown" },
@@ -1351,6 +1541,46 @@ do
 	end
 end
 
+-- Startup visibility for renderer-only FNAF pets.
+do
+	local fnafIds = {
+		"pet_freddy_fazbear",
+		"pet_bonnie",
+		"pet_chica",
+		"pet_foxy",
+		"pet_golden_freddy",
+		"pet_the_puppet",
+		"pet_cupcake",
+	}
+	for _, id in ipairs(fnafIds) do
+		local pet = ItemCatalog.Pets[id]
+		if pet then
+			if pet.image and pet.image ~= "" then
+				print(string.format("[ImageRules] STATIC: %s -> %s", id, pet.image))
+			elseif pet.modelPath and pet.modelPath ~= "" then
+				print(string.format("[ImageRules] RENDERER: %s -> %s", id, pet.modelPath))
+			end
+		end
+	end
+
+	-- Renderer-only items requested for crate/crown shop expansion.
+	local rendererNameLogs = {
+		{ name = "Unicorn", item = ItemCatalog.Pets["pet_unicorn"] },
+		{ name = "Steve", item = ItemCatalog.Pets["pet_steve"] },
+		{ name = "Zombie", item = ItemCatalog.Pets["pet_zombie"] },
+		{ name = "ThePuppet", item = ItemCatalog.Pets["pet_the_puppet"] },
+		{ name = "Cupcake", item = ItemCatalog.Pets["pet_cupcake"] },
+		{ name = "FreddyMaskCrown", item = ItemCatalog.Crowns["crown_freddy_mask"] },
+		{ name = "6AMCrown", item = ItemCatalog.Crowns["crown_6am"] },
+	}
+	for _, entry in ipairs(rendererNameLogs) do
+		local item = entry.item
+		if item and (item.image == nil or item.image == "") and item.modelPath and item.modelPath ~= "" then
+			print(string.format("[ImageRules] RENDERER: %s", entry.name))
+		end
+	end
+end
+
 -- ═══════════════════════════════════════════════════════════════════
 -- HELPER FUNCTIONS
 -- ═══════════════════════════════════════════════════════════════════
@@ -1399,6 +1629,44 @@ end
 function ItemCatalog.GetImageById(category: string, id: string): string
 	local entry = ItemCatalog.Get(category, id)
 	return ItemCatalog.GetImage(entry)
+end
+
+-- Resolves whether an item should use a static image or ThumbnailRenderer.
+-- Rule: explicit catalog image always wins and MUST skip renderer.
+function ItemCatalog.ResolveCrownOrPetImage(itemId: string, itemType: string)
+	local normalized = string.upper(itemType or "")
+	local item = nil
+	if normalized == "PET" or normalized == "PETS" then
+		item = ItemCatalog.Pets[itemId]
+	elseif normalized == "CROWN" or normalized == "CROWNS" then
+		item = ItemCatalog.Crowns[itemId]
+	end
+
+	if not item then
+		return { mode = "MISSING", image = "", rendererKey = nil, item = nil }
+	end
+
+	local explicitImage = (type(item.image) == "string" and item.image ~= "") and item.image or ""
+	if explicitImage ~= "" then
+		return {
+			mode = "STATIC",
+			image = explicitImage,
+			rendererKey = nil,
+			item = item,
+		}
+	end
+
+	local modelPath = (type(item.modelPath) == "string" and item.modelPath ~= "") and item.modelPath or nil
+	if modelPath then
+		return {
+			mode = "RENDERER",
+			image = "",
+			rendererKey = modelPath,
+			item = item,
+		}
+	end
+
+	return { mode = "MISSING", image = "", rendererKey = nil, item = item }
 end
 
 function ItemCatalog.GetByName(displayName: string)
@@ -1553,6 +1821,8 @@ function ItemCatalog.GetCrownAcquisitionLabel(crownId: string): string?
 			return "Crown Crate / Spin Wheel"
 		end
 		return "Crown Crate"
+	elseif crown.source == "CROWN_SHOP" then
+		return "Crown Shop"
 	elseif crown.source == "Exclusive" then
 		return "Shop"
 	elseif crown.source == "DailyReward" then
@@ -1576,6 +1846,11 @@ function ItemCatalog.GetPetAcquisitionLabel(petId: string): string?
 		return "Save the Brainrot Mode"
 	elseif pet.source == "bundle_future" then
 		return "Coming Soon"
+	elseif pet.source == "CRATE" then
+		if pet.crateId == "crate_pet_epic" then
+			return "Epic Pet Crate"
+		end
+		return "Pet Crate"
 	elseif pet.shopOnly then
 		return "Shop"
 	else
@@ -1628,7 +1903,7 @@ function ItemCatalog.GetItemAcquisitionInfo(itemType: string, itemId: string): (
 		badgeType = "EXCLUSIVE_BUNDLE"
 	elseif label == "Save the Brainrot Mode" then
 		badgeType = "SAVE_BRAINROT_MODE"
-	elseif label == "Shop" then
+	elseif label == "Shop" or label == "Crown Shop" then
 		badgeType = "SHOP"
 	end
 

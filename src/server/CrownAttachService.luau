@@ -21,6 +21,7 @@
 
 local Players            = game:GetService("Players")
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local RunService         = game:GetService("RunService")
 
 local Shared             = ReplicatedStorage:WaitForChild("Shared")
 local ItemCatalog        = require(Shared:WaitForChild("ItemCatalog"))
@@ -28,6 +29,10 @@ local ItemModelRegistry  = require(Shared:WaitForChild("ItemModelRegistry"))
 
 local TAG = "[CrownAttachService]"
 local CROWN_TAG = "_EquippedCrown"   -- Accessory.Name so we can find/remove it
+local CROWN_VISUAL_OFFSETS: { [string]: CFrame } = {
+	crown_freddy_mask = CFrame.Angles(0, math.rad(180), 0),
+	crown_6am = CFrame.Angles(0, math.rad(180), 0),
+}
 
 local CrownAttachService = {}
 local _connections: { [Player]: { RBXScriptConnection } } = {}
@@ -151,10 +156,20 @@ local function attachCrown(character: Model, crownId: string)
 
 	-- Ensure HatAttachment exists on Handle for auto-weld
 	local handle = accessory:FindFirstChild("Handle")
-	if handle and not handle:FindFirstChild("HatAttachment") then
-		local att = Instance.new("Attachment")
-		att.Name = "HatAttachment"
-		att.Parent = handle
+	if handle then
+		local att = handle:FindFirstChild("HatAttachment")
+		if not att then
+			att = Instance.new("Attachment")
+			att.Name = "HatAttachment"
+			att.Parent = handle
+		end
+		local offset = CROWN_VISUAL_OFFSETS[crownId]
+		if offset then
+			att.CFrame = att.CFrame * offset
+			if RunService:IsStudio() then
+				print(string.format("[CrownOffset] Applied offset for %s", crownId))
+			end
+		end
 	end
 
 	-- Parent to character — Roblox Accessory system auto-welds via matching Attachment
