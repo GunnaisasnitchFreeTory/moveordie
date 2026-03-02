@@ -72,6 +72,16 @@ local THUMBNAIL_YAW_OFFSETS: { [string]: number } = {
 	pet_dog = 180, -- Blender model faces +Z; thumbnail camera is on +Z side → flip
 }
 
+-- Explicit per-pet thumbnail offsets for plush/huggy set.
+local THUMBNAIL_OFFSET_CFRAME: { [string]: CFrame } = {
+	pet_foxy_plush = CFrame.Angles(0, math.rad(180), 0),
+	pet_chica_plush = CFrame.Angles(0, math.rad(180), 0),
+	pet_freddy_plush = CFrame.Angles(0, math.rad(180), 0),
+	pet_bonnie_plush = CFrame.Angles(0, math.rad(180), 0),
+	pet_fredbear_plush = CFrame.Angles(0, math.rad(180), 0),
+	pet_huggy_wuggy = CFrame.Angles(0, math.rad(180), 0),
+}
+
 local KEEP_CLASSES = {
 	UICorner = true,
 	UIStroke = true,
@@ -272,6 +282,19 @@ function ThumbnailRenderer.RenderItemToViewport(
 			end
 		elseif clone:IsA("BasePart") then
 			clone.CFrame = rot * clone.CFrame
+		end
+	end
+
+	local thumbOffset = THUMBNAIL_OFFSET_CFRAME[itemDef.id or ""]
+	if thumbOffset then
+		if clone:IsA("Model") then
+			for _, d in ipairs(clone:GetDescendants()) do
+				if d:IsA("BasePart") then
+					d.CFrame = thumbOffset * d.CFrame
+				end
+			end
+		elseif clone:IsA("BasePart") then
+			clone.CFrame = thumbOffset * clone.CFrame
 		end
 	end
 

@@ -162,6 +162,7 @@ local function populateRewardCard(card, reward)
 	else
 		local itemDef   = getItemDef(reward)
 		local staticImg = itemDef and itemDef.image
+		local isFNAFPet = itemDef and itemDef.collection == "FNAF"
 
 		if staticImg and staticImg ~= "" then
 			local img = Instance.new("ImageLabel")
@@ -173,7 +174,7 @@ local function populateRewardCard(card, reward)
 			img.ScaleType           = Enum.ScaleType.Crop
 			img.ZIndex              = 9
 			img.Parent              = card
-		elseif itemDef then
+		elseif itemDef and not isFNAFPet then
 			local vp = Instance.new("ViewportFrame")
 			vp.AnchorPoint         = Vector2.new(0.5, 0.5)
 			vp.Position            = UDim2.fromScale(0.5, 0.5)
@@ -483,7 +484,8 @@ local function buildOneRow(sf, questData, rowIndex)
 							RewardPopup.Show({
 								title      = "QUEST COMPLETE!",
 								name       = "1 " .. crateName .. " Opened!",
-								itemType   = "Coins",
+								itemId     = rw.crateId or "crate_crown",
+								itemType   = "Crate",
 								rarityText = "Common",
 								okText     = "CLAIM!",
 							})

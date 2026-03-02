@@ -237,7 +237,7 @@ local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 			{ category = "IconImages", itemId = "icon_steve_harrington" },
 		},
 	},
-	[1885101090] = {
+	[1732407562] = {
 		type = "Bundle",
 		bundleId = "FNAF_PETS_BUNDLE",
 		label = "FNAF Pets Bundle",

@@ -90,6 +90,21 @@ local function log(...)
 	print("[WorldIndicators]", ...)
 end
 
+local function findTargetByNameHint(targetName: string): Instance?
+	local exact = workspace:FindFirstChild(targetName, true)
+	if exact then return exact end
+	local lowerTarget = string.lower(targetName)
+	if string.find(lowerTarget, "fnaf", 1, true) and string.find(lowerTarget, "bun", 1, true) then
+		for _, d in ipairs(workspace:GetDescendants()) do
+			local n = string.lower(d.Name)
+			if string.find(n, "fnaf", 1, true) and string.find(n, "bun", 1, true) then
+				return d
+			end
+		end
+	end
+	return nil
+end
+
 --- Compute axis-aligned bounding box from ALL descendant BaseParts.
 --- Returns centerX, centerZ, topY, bboxSize  OR  nil x4 if no parts found.
 local function computeBounds(instance: Instance): (number?, number?, number?, Vector3?)
@@ -262,7 +277,7 @@ function WorldIndicators.Init()
 			local target = nil
 			local retries = cfg.retries or 12
 			for attempt = 1, retries do
-				target = workspace:FindFirstChild(cfg.targetName, true)
+				target = findTargetByNameHint(cfg.targetName)
 				if target then break end
 				log(cfg.targetName .. " not ready — retrying...")
 				task.wait(1)

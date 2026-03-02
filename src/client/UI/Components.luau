@@ -22,6 +22,7 @@ local Players = game:GetService("Players")
 
 local Shared = ReplicatedStorage:FindFirstChild("Shared") or ReplicatedStorage:WaitForChild("Shared", 5)
 local UIConfig = require(Shared:WaitForChild("UIConfig"))
+local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 local ItemModelRegistry = require(Shared:WaitForChild("ItemModelRegistry"))
 
 local Client = script.Parent
@@ -75,6 +76,23 @@ end
 
 local C = UIConfig.Colors
 local S = UIConfig.Sizes
+local DEBUG_LOGS = RunService:IsStudio() and UIConfig.DebugLogs == true
+local LOG_RATE_SECONDS = tonumber(UIConfig.LogRateSeconds) or 20
+local _lastLogByKey: {[string]: number} = {}
+
+local function shouldLog(key: string, minInterval: number?): boolean
+	if not DEBUG_LOGS then
+		return false
+	end
+	local now = tick()
+	local interval = minInterval or LOG_RATE_SECONDS
+	local last = _lastLogByKey[key] or 0
+	if now - last >= interval then
+		_lastLogByKey[key] = now
+		return true
+	end
+	return false
+end
 
 local Components = {}
 
@@ -1443,14 +1461,43 @@ local CARD_THUMBNAIL_YAW: { [string]: number } = {
 	pet_dog = 180,
 }
 
+-- Keep card thumbnails aligned with ThumbnailRenderer behavior.
+local CARD_THUMBNAIL_OFFSET_CFRAME: { [string]: CFrame } = {
+	pet_foxy_plush = CFrame.Angles(0, math.rad(180), 0),
+	pet_chica_plush = CFrame.Angles(0, math.rad(180), 0),
+	pet_freddy_plush = CFrame.Angles(0, math.rad(180), 0),
+	pet_bonnie_plush = CFrame.Angles(0, math.rad(180), 0),
+	pet_fredbear_plush = CFrame.Angles(0, math.rad(180), 0),
+	pet_huggy_wuggy = CFrame.Angles(0, math.rad(180), 0),
+}
+
 function Components.CreateViewportItemCard(parent: Instance, data): Frame
+	local petEntry = (data and data.id and ItemCatalog.GetPet) and ItemCatalog.GetPet(data.id) or nil
+	local isFNAFPet = petEntry and petEntry.collection == "FNAF"
+	-- Hard rule: FNAF pets are always static-image cards (no ThumbnailRenderer).
+	if isFNAFPet then
+		local staticImage = data.image
+		if staticImage == nil or staticImage == "" then
+			staticImage = ItemCatalog.GetImage(petEntry)
+		end
+		local safeData = table.clone(data)
+		safeData.image = staticImage or ""
+		safeData.modelPath = nil
+		if shouldLog("fnaf_static_components", 20) then
+			print("[FNAFImages] Using static images (ThumbnailRenderer disabled for FNAF).")
+		end
+		return Components.CreateItemCard(parent, safeData)
+	end
+
 	-- ── Prefer explicit image (static screenshots with VFX baked in) ──
 	-- If the catalog entry has an image, use CreateItemCard (ImageLabel) instead
 	-- of the heavier 3D viewport path. This gives the best visual fidelity and
 	-- eliminates the need for VFX proxy hacks.
 	local hasExplicitImage = data.image and data.image ~= ""
 	if hasExplicitImage then
-		print(string.format("[Components] STATIC image for %s: %s", data.name or data.id or "?", tostring(data.image)))
+		if shouldLog("components_static_image", 20) then
+			print(string.format("[Components] STATIC image for %s", data.name or data.id or "?"))
+		end
 		return Components.CreateItemCard(parent, data)
 	end
 
@@ -1521,6 +1568,19 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 				end
 			elseif clone:IsA("BasePart") then
 				clone.CFrame = rot * clone.CFrame
+			end
+		end
+
+		local thumbOffset = CARD_THUMBNAIL_OFFSET_CFRAME[data.id or ""]
+		if thumbOffset then
+			if clone:IsA("Model") then
+				for _, d in ipairs(clone:GetDescendants()) do
+					if d:IsA("BasePart") then
+						d.CFrame = thumbOffset * d.CFrame
+					end
+				end
+			elseif clone:IsA("BasePart") then
+				clone.CFrame = thumbOffset * clone.CFrame
 			end
 		end
 

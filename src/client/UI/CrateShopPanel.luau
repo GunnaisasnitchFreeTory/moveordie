@@ -274,12 +274,25 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 		thumbContainer.Parent = thumbRow
 		Instance.new("UICorner", thumbContainer).CornerRadius = UDim.new(0, 6)
 
-		-- Thumbnail: prefer static image from ItemCatalog if available
+		-- THUMBNAIL_RENDERER_RULES:
+		-- 1) explicit image -> STATIC
+		-- 2) no explicit image -> ThumbnailRenderer
 		local staticImage = ""
-		if item.itemId then
-			local catEntry = ItemCatalog.Crowns and ItemCatalog.Crowns[item.itemId]
-			if not catEntry then catEntry = ItemCatalog.Pets and ItemCatalog.Pets[item.itemId] end
-			if catEntry then staticImage = ItemCatalog.GetImage(catEntry) end
+		local rendererKey = item.modelPath
+		local itemType = if crateData.id == "crate_crown" then "CROWN" else "PET"
+		if item.itemId and type(item.itemId) == "string" and string.match(item.itemId, "^crown_") then
+			itemType = "CROWN"
+		end
+		if ItemCatalog.ResolveCrownOrPetImage and item.itemId then
+			local resolved = ItemCatalog.ResolveCrownOrPetImage(item.itemId, itemType)
+			if resolved and resolved.mode == "STATIC" then
+				staticImage = resolved.image or ""
+			elseif resolved and resolved.mode == "RENDERER" then
+				rendererKey = resolved.rendererKey or rendererKey
+			end
+		end
+		if staticImage == "" and type(item.image) == "string" and item.image ~= "" then
+			staticImage = item.image
 		end
 
 		if staticImage ~= "" then
@@ -295,16 +308,22 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 			imgLbl.ZIndex = 3
 			imgLbl.Parent = thumbContainer
 			Instance.new("UICorner", imgLbl).CornerRadius = UDim.new(0, 6)
-		elseif item.modelPath and item.modelPath ~= "" then
+		elseif rendererKey and rendererKey ~= "" then
 			local vp = Components.CreateViewportThumbnail(
 				thumbContainer,
-				item.modelPath,
+				rendererKey,
 				UDim2.fromOffset(60, 52),
 				Color3.fromRGB(0, 0, 0),
 				item.name and string.sub(item.name, 1, 2) or "?"
 			)
 			vp.Position = UDim2.fromOffset(4, 0)
-			ThumbnailRenderer.RenderItemToViewport(vp, item)
+			ThumbnailRenderer.RenderItemToViewport(vp, {
+				id = item.itemId,
+				name = item.name,
+				type = itemType,
+				modelPath = rendererKey,
+				rarity = item.rarity,
+			})
 		end
 
 		-- Item name label (truncated)
@@ -379,8 +398,8 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 		pBtn.Name = "Price" .. pi
 		pBtn.Size = UDim2.fromOffset(105, 50)
 		pBtn.BackgroundColor3 = btnColor
-		pBtn.Font = Enum.Font.GothamBold
-		pBtn.TextColor3 = C.TextWhite
+		pBtn.Font = Enum.Font.GothamBlack
+		pBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		pBtn.TextSize = 14
 		pBtn.Text = priceText .. "\n" .. price.label
 		pBtn.TextYAlignment = Enum.TextYAlignment.Center
@@ -405,10 +424,10 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 		pbGrad.Parent = pBtn
 
 		local pbs = Instance.new("UIStroke")
-		pbs.Color = Color3.fromRGB(255, 255, 255)
-		pbs.Thickness = 1.5
-		pbs.Transparency = 0.4
-		pbs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		pbs.Color = Color3.fromRGB(0, 0, 0)
+		pbs.Thickness = 1.75
+		pbs.Transparency = 0.05
+		pbs.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
 		pbs.Parent = pBtn
 
 		-- Determine quantity from label

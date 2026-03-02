@@ -7,12 +7,30 @@
       "Shared": {
         "$path": "src/shared"
       },
+      "NPC": {
+        "$path": "src/NPC"
+      },
+      "Pets": {
+        "$path": "src/Pets"
+      },
       "Remotes": {
         "$className": "Folder",
         "SpectateTarget": {
           "$className": "RemoteEvent"
         },
         "OpenCrateShop": {
+          "$className": "RemoteEvent"
+        },
+        "EquipWalkerPet": {
+          "$className": "RemoteEvent"
+        },
+        "UnequipWalkerPet": {
+          "$className": "RemoteEvent"
+        },
+        "EquipFreddyPet": {
+          "$className": "RemoteEvent"
+        },
+        "UnequipFreddyPet": {
           "$className": "RemoteEvent"
         }
       }

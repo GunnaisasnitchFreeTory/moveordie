@@ -99,9 +99,18 @@ local REWARD_TABLES = {
 		{ itemId = "pet_eagle",     category = "Pets", weight = 20 },
 	},
 	crate_pet_epic = {
-		{ itemId = "pet_axolotl", category = "Pets", weight = 34 },
-		{ itemId = "pet_bat",     category = "Pets", weight = 33 },
-		{ itemId = "pet_dolphin", category = "Pets", weight = 33 },
+		{ itemId = "pet_axolotl",       category = "Pets", weight = 10 },
+		{ itemId = "pet_bat",           category = "Pets", weight = 10 },
+		{ itemId = "pet_dolphin",       category = "Pets", weight = 10 },
+		{ itemId = "pet_unicorn",       category = "Pets", weight = 10 },
+		{ itemId = "pet_steve",         category = "Pets", weight = 10 },
+		{ itemId = "pet_zombie",        category = "Pets", weight = 10 },
+		{ itemId = "pet_foxy_plush",    category = "Pets", weight = 10 },
+		{ itemId = "pet_chica_plush",   category = "Pets", weight = 10 },
+		{ itemId = "pet_freddy_plush",  category = "Pets", weight = 7 },
+		{ itemId = "pet_bonnie_plush",  category = "Pets", weight = 7 },
+		{ itemId = "pet_fredbear_plush", category = "Pets", weight = 3 },
+		{ itemId = "pet_huggy_wuggy",   category = "Pets", weight = 3 },
 	},
 }
 
@@ -183,11 +192,23 @@ local UNIFIED_PRICES = {
 	{ quantity = 6, cost = 400, currency = "Robux" },
 }
 
+local RARE_PET_PRICES = {
+	{ quantity = 1, cost = 800, currency = "Coins" },
+	{ quantity = 3, cost = 1400, currency = "Coins" },
+	{ quantity = 6, cost = 400, currency = "Robux" },
+}
+
+local EPIC_PET_PRICES = {
+	{ quantity = 1, cost = 1400, currency = "Coins" },
+	{ quantity = 3, cost = 1950, currency = "Coins" },
+	{ quantity = 6, cost = 400, currency = "Robux" },
+}
+
 local CRATE_PRICES = {
 	crate_crown      = UNIFIED_PRICES,
 	crate_pet_common = UNIFIED_PRICES,
-	crate_pet_rare   = UNIFIED_PRICES,
-	crate_pet_epic   = UNIFIED_PRICES,
+	crate_pet_rare   = RARE_PET_PRICES,
+	crate_pet_epic   = EPIC_PET_PRICES,
 }
 
 local function findPrice(crateId: string, quantity: number): { cost: number, currency: string }?

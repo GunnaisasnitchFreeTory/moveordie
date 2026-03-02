@@ -33,9 +33,16 @@ local RunService        = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared            = ReplicatedStorage:WaitForChild("Shared")
+local UIConfig          = require(Shared:WaitForChild("UIConfig"))
 local ItemCatalog       = require(Shared:WaitForChild("ItemCatalog"))
 local ItemModelRegistry = require(Shared:WaitForChild("ItemModelRegistry"))
 local PetVisualConfig   = require(Shared:WaitForChild("PetVisualConfig"))
+local ItemModelsFolder  = ReplicatedStorage:WaitForChild("ItemModels")
+
+-- Walker pet remotes — server owns all physics/animation for walkers.
+local _remotes       = ReplicatedStorage:WaitForChild("Remotes")
+local _equipRemote   = _remotes:WaitForChild("EquipWalkerPet")
+local _unequipRemote = _remotes:WaitForChild("UnequipWalkerPet")
 
 local TAG = "[PetFollower]"
 local PET_INSTANCE_NAME = "_EquippedPet"
@@ -73,7 +80,11 @@ local PET_YAW_OFFSET_DEG: { [string]: number } = {
 	pet_bat              = 180,
 	pet_dolphin          = 180,
 	pet_pink_butterfly   = -90,  -- faces along X-axis, not Z
-	-- NOTE: pet_steve and pet_the_puppet rotation handled via PetVisualConfig.OVERRIDES
+	-- Steve rig forward axis requires inverse yaw to face forward in float mode.
+	pet_steve            = -90,
+	-- Chica float rig forward axis differs; lock with explicit yaw correction.
+	pet_chica            = -90,
+	-- NOTE: pet_the_puppet rotation handled via PetVisualConfig.OVERRIDES
 }
 
 -- Pets that should not receive roll wobble (keeps large/rigged models visually stable).
@@ -93,6 +104,42 @@ local PET_SCALE_OVERRIDES: { [string]: number } = {
 	pet_glitched_dragon = 0.10,  -- model is enormous; tuned to match other pets (~3 studs)
 }
 
+local MOVEMENT_HOVER = "HOVER"
+local MOVEMENT_WALKER = "WALKER_R15"
+
+local PET_MOVEMENT_TYPE: { [string]: string } = {
+	-- Reverted to floating/bobble path
+	Bonnie = MOVEMENT_HOVER,
+	Chica = MOVEMENT_HOVER,
+	Foxy = MOVEMENT_HOVER,
+	FreddyFazbear = MOVEMENT_HOVER,
+
+	-- HOVERS (must remain existing bobble path)
+	GoldenFreddy = MOVEMENT_HOVER,
+	ThePuppet = MOVEMENT_HOVER,
+	Cupcake = MOVEMENT_HOVER,
+}
+
+-- FNAF pets explicitly reverted to floating companions.
+local FNAF_REVERTED_FLOAT_IDS: { [string]: boolean } = {
+	pet_bonnie = true,
+	pet_chica = true,
+	pet_foxy = true,
+}
+
+-- Final follow-transform rotation fixes for hover-only path.
+local PET_ROTATION_FIX: { [string]: CFrame } = {
+	-- Chica tilt is lateral in float mode; correct on roll axis.
+	pet_chica = CFrame.Angles(0, 0, math.rad(14)),
+}
+
+-- Explicit equip offsets for outlier models only.
+-- Mirrors the existing "finalCF = uprightCF * perPetOffset" pattern.
+local PET_EQUIP_OFFSET_CFRAME: { [string]: CFrame } = {
+	-- Huggy also needs a small vertical settle to avoid appearing offset.
+	pet_huggy_wuggy = CFrame.new(0, -0.35, 0) * CFrame.Angles(0, math.rad(180), 0),
+}
+
 -- =====================================================================
 -- SIZE NORMALIZATION
 -- =====================================================================
@@ -106,16 +153,49 @@ local SCALE_CEIL     = 1.0   -- never scale above original size
 -- =====================================================================
 
 local _activePets: { [Player]: {
-	pet: Instance,
+	pet: Instance?,
 	conn: RBXScriptConnection?,
 	pos: Vector3,
 	t0: number,
+	mover: any?,
+	_isWalker: boolean?,
+	_walkerPetId: string?,
 } } = {}
 
 local _playerConns: { [Player]: { RBXScriptConnection } } = {}
 
-local function log(...)
-	print(TAG, ...)
+local DEBUG_LOGS = RunService:IsStudio() and UIConfig.DebugLogs == true
+local LOG_RATE_SECONDS = tonumber(UIConfig.LogRateSeconds) or 20
+local _lastLogByKey: { [string]: number } = {}
+local _countByKey: { [string]: number } = {}
+
+local function shouldLog(key: string, everySeconds: number?, everyN: number?): boolean
+	if not DEBUG_LOGS then
+		return false
+	end
+	local now = tick()
+	local minInterval = everySeconds or LOG_RATE_SECONDS
+	local last = _lastLogByKey[key] or 0
+	if now - last >= minInterval then
+		_lastLogByKey[key] = now
+		_countByKey[key] = (_countByKey[key] or 0) + 1
+		return true
+	end
+	if everyN and everyN > 0 then
+		local count = (_countByKey[key] or 0) + 1
+		_countByKey[key] = count
+		if count % everyN == 0 then
+			_lastLogByKey[key] = now
+			return true
+		end
+	end
+	return false
+end
+
+local function log(key: string, ...)
+	if shouldLog(key) then
+		print(TAG, ...)
+	end
 end
 
 -- =====================================================================
@@ -194,19 +274,158 @@ local function getPetDef(petId: string)
 	return ItemCatalog.Pets and ItemCatalog.Pets[petId]
 end
 
+local function getConfiguredPetModelName(petId: string, petDef): string
+	if petDef and typeof(petDef.modelName) == "string" and petDef.modelName ~= "" then
+		return petDef.modelName
+	end
+	if petDef and typeof(petDef.name) == "string" and petDef.name ~= "" then
+		return petDef.name
+	end
+	return petId
+end
+
+local function getMovementType(petId: string, petDef): string
+	local modelName = getConfiguredPetModelName(petId, petDef)
+	local explicit = PET_MOVEMENT_TYPE[modelName]
+	if explicit then return explicit end
+	if petDef and petDef.collection == "FNAF" then
+		-- Explicit safety: unspecified FNAF defaults to hover, not walker.
+		return MOVEMENT_HOVER
+	end
+	return MOVEMENT_HOVER
+end
+
+local function useWalkingFollower(petId: string, petDef): boolean
+	return getMovementType(petId, petDef) == MOVEMENT_WALKER
+end
+
+local function shouldUseExactNameLookup(modelName: string): boolean
+	-- Reverted FNAF float pets must resolve via explicit modelPath to avoid
+	-- exact-name collisions with unrelated large world/NPC assets.
+	if modelName == "Bonnie"
+		or modelName == "Chica"
+		or modelName == "Foxy"
+		or modelName == "FreddyFazbear"
+	then
+		return false
+	end
+	return PET_MOVEMENT_TYPE[modelName] ~= nil
+end
+
+local function findHumanoidInModel(model: Model): Humanoid?
+	local direct = model:FindFirstChildOfClass("Humanoid")
+	if direct then
+		return direct
+	end
+	local nested = model:FindFirstChild("Humanoid", true)
+	if nested and nested:IsA("Humanoid") then
+		return nested
+	end
+	return nil
+end
+
+local function findHrpInModel(model: Model): BasePart?
+	local hrp = model:FindFirstChild("HumanoidRootPart", true)
+	if hrp and hrp:IsA("BasePart") then
+		return hrp
+	end
+	return nil
+end
+
+local function findWalkerRootPart(model: Model, humanoid: Humanoid?): (BasePart?, boolean)
+	local hrp = findHrpInModel(model)
+	if hrp then
+		return hrp, true
+	end
+	if humanoid and humanoid.RootPart then
+		return humanoid.RootPart, false
+	end
+	if model.PrimaryPart then
+		return model.PrimaryPart, false
+	end
+	local anyPart = model:FindFirstChildWhichIsA("BasePart", true)
+	if anyPart then
+		return anyPart, false
+	end
+	return nil, false
+end
+
+local function ensureWalkerHumanoid(model: Model): Humanoid
+	local hum = findHumanoidInModel(model)
+	if hum then
+		return hum
+	end
+	hum = Instance.new("Humanoid")
+	hum.Name = "Humanoid"
+	hum.Parent = model
+	return hum
+end
+
+local function ensureWalkerHrp(model: Model, humanoid: Humanoid?): BasePart?
+	local existing = findHrpInModel(model)
+	if existing then
+		return existing
+	end
+
+	local base = nil :: BasePart?
+	if humanoid and humanoid.RootPart then
+		base = humanoid.RootPart
+	elseif model.PrimaryPart then
+		base = model.PrimaryPart
+	else
+		base = model:FindFirstChildWhichIsA("BasePart", true)
+	end
+	if not base then
+		return nil
+	end
+
+	local hrp = Instance.new("Part")
+	hrp.Name = "HumanoidRootPart"
+	hrp.Size = Vector3.new(2, 2, 1)
+	hrp.Transparency = 1
+	hrp.CanCollide = true
+	hrp.CanQuery = false
+	hrp.CanTouch = false
+	hrp.Massless = false
+	hrp.Anchored = false
+	hrp.CFrame = base.CFrame
+	hrp.Parent = model
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = hrp
+	weld.Part1 = base
+	weld.Parent = hrp
+
+	model.PrimaryPart = hrp
+	return hrp
+end
+
 local function destroyPetFor(player: Player)
 	local entry = _activePets[player]
 	if not entry then return end
+
+	-- Walker pets live on the server; notify it to clean up.
+	if entry._isWalker then
+		pcall(function() _unequipRemote:FireServer() end)
+		_activePets[player] = nil
+		return
+	end
+
 	if entry.conn then entry.conn:Disconnect() end
+	if entry.mover and entry.mover.Destroy then
+		pcall(function() entry.mover:Destroy() end)
+	end
 	if entry.pet and entry.pet.Parent then entry.pet:Destroy() end
 	_activePets[player] = nil
 end
 
 local function spawnPetFor(player: Player, petId: string)
-	-- Already showing this pet? Skip.
+	-- Already tracking this pet? Skip (handles both hover model and walker sentinel).
 	local existing = _activePets[player]
-	if existing and existing.pet and existing.pet.Parent then
-		if existing.pet:GetAttribute("_petId") == petId then return end
+	if existing then
+		if existing._isWalker and existing._walkerPetId == petId then return end
+		if not existing._isWalker and existing.pet and existing.pet.Parent
+			and existing.pet:GetAttribute("_petId") == petId then return end
 	end
 
 	destroyPetFor(player)
@@ -219,56 +438,59 @@ local function spawnPetFor(player: Player, petId: string)
 		return
 	end
 
-	local modelPath = petDef.modelPath
-	if not modelPath or modelPath == "" then
-		warn(TAG, "No modelPath for pet:", petId,
-			"| catalogEntry:", petDef.name or "?", "rarity:", petDef.rarity or "?",
-			"| image:", petDef.image or "nil", "| modelName:", petDef.modelName or "nil")
+	local movementType = getMovementType(petId, petDef)
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
 		return
 	end
 
-	local sourceModel = ItemModelRegistry.Get(modelPath)
-	if not sourceModel then
-		-- Fallback: try ReplicatedStorage/Pets/{subpath} directly
-		-- (some FNAF models live under Pets/ not ItemModels/)
-		local modelName = petDef.modelName or string.match(modelPath, "[^%.]+$") or ""
-		local directFallback = ReplicatedStorage:FindFirstChild("Pets")
-		if directFallback then
-			for _, folder in ipairs({ "Epic/FNAF", "FNAF", "Epic" }) do
-				local f = directFallback
-				for seg in string.gmatch(folder, "[^/]+") do
-					f = f and f:FindFirstChild(seg)
-				end
-				if f then
-					sourceModel = f:FindFirstChild(modelName)
-					if sourceModel then
-						print(string.format("[PetEquip] %s found via fallback Pets/%s/%s",
-							petId, folder, modelName))
-						break
-					end
-				end
-			end
+	local modelName = getConfiguredPetModelName(petId, petDef)
+	local sourceModel: Instance? = nil
+	if shouldUseExactNameLookup(modelName) then
+		sourceModel = ItemModelRegistry.GetByExactName(modelName)
+	else
+		if petDef.modelPath and petDef.modelPath ~= "" then
+			sourceModel = ItemModelRegistry.Get(petDef.modelPath)
 		end
-		if not sourceModel then
-			warn(TAG, "modelPath exists but model NOT FOUND in registry:", modelPath,
-				"| petId:", petId, "| modelName:", modelName,
-				"| Try checking ReplicatedStorage.ItemModels/Pets/Epic/FNAF/")
-			print(string.format("[PetEquip ERROR] petId=%s resolvedPath=%s modelMissing=true",
-				petId, modelPath))
-			return
+		if not sourceModel and modelName ~= "" then
+			sourceModel = ItemModelRegistry.Get(modelName)
 		end
 	end
+	if DEBUG_LOGS and shouldLog("pet_spawn_lookup_" .. petId, 20) then
+		local registryPath = sourceModel and sourceModel:GetFullName() or ItemModelsFolder:GetFullName()
+		print(string.format("[PetSpawn] petName=%s modelFound=%s registry=%s", modelName, tostring(sourceModel ~= nil), registryPath))
+	end
+	if not sourceModel then
+		warn(TAG, "Model not found for pet:", petId, "| modelName:", modelName, "| modelPath:", tostring(petDef.modelPath))
+		return
+	end
 
-	local character = player.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then return end
+	log("spawn_begin", "Spawning pet for", player.Name .. ":", petId, "modelName:", modelName)
+	local movementType = getMovementType(petId, petDef)
 
-	log("Spawning pet for", player.Name .. ":", petId, "path:", modelPath)
+	-- ── WALKER PETS ────────────────────────────────────────────────────────────
+	if movementType == MOVEMENT_WALKER then
+		-- Non-Freddy walker fallback (currently unused): server-owned path.
+		if DEBUG_LOGS and shouldLog("walker_pet_client_equip_" .. petId, 20) then
+			print(string.format("[WalkerPetCL] equip petId=%s modelName=%s → firing server", petId, modelName))
+		end
+		_equipRemote:FireServer(petId)
+		_activePets[player] = {
+			pet          = nil,
+			conn         = nil,
+			pos          = rootPart.Position,
+			t0           = tick(),
+			mover        = nil,
+			_isWalker    = true,
+			_walkerPetId = petId,
+		}
+		return
+	end
 
 	local clone = sourceModel:Clone()
 
 	-- Unwrap Accessory → extract children into a Model wrapper
-	-- (Accessories have a Handle BasePart that we want to use as PrimaryPart)
 	if clone:IsA("Accessory") then
 		local wrapper = Instance.new("Model")
 		wrapper.Name = clone.Name
@@ -286,8 +508,7 @@ local function spawnPetFor(player: Player, petId: string)
 		clone = wrapper
 	end
 
-	-- Wrap bare BaseParts (e.g. Glitched Dragon is a Part, not a Model) into a
-	-- Model so ScaleTo / GetBoundingBox / PivotTo all work uniformly.
+	-- Wrap bare BaseParts into a Model so ScaleTo / PivotTo work uniformly.
 	if clone:IsA("BasePart") and not clone:IsA("Model") then
 		local wrapper = Instance.new("Model")
 		wrapper.Name = clone.Name
@@ -296,13 +517,28 @@ local function spawnPetFor(player: Player, petId: string)
 		clone = wrapper
 	end
 
-	-- Make all parts non-interactive and anchored (we position via CFrame)
+	-- Ensure consistent pivot behavior for per-pet offsets.
+	if clone:IsA("Model") and not clone.PrimaryPart then
+		local preferredRoot = clone:FindFirstChild("HumanoidRootPart", true)
+		if preferredRoot and preferredRoot:IsA("BasePart") then
+			clone.PrimaryPart = preferredRoot
+		else
+			local firstPart = clone:FindFirstChildWhichIsA("BasePart", true)
+			if firstPart then
+				clone.PrimaryPart = firstPart
+			end
+		end
+	end
+
+	local useUnanchoredFloat = FNAF_REVERTED_FLOAT_IDS[petId] == true
+
+	-- Hover pets: default anchored; reverted FNAF floats are unanchored.
 	local function prepPart(part: BasePart)
-		part.Anchored = true
+		part.Anchored   = not useUnanchoredFloat
 		part.CanCollide = false
-		part.CanQuery = false
-		part.CanTouch = false
-		part.Massless = true
+		part.CanQuery   = false
+		part.CanTouch   = false
+		part.Massless   = true
 	end
 
 	if clone:IsA("BasePart") then prepPart(clone) end
@@ -310,7 +546,7 @@ local function spawnPetFor(player: Player, petId: string)
 		if d:IsA("BasePart") then prepPart(d) end
 	end
 
-	-- Enable VFX (they work in Workspace, unlike ViewportFrame)
+	-- Enable VFX; destroy embedded scripts (hover pets need no scripting).
 	for _, d in ipairs(clone:GetDescendants()) do
 		if d:IsA("ParticleEmitter") or d:IsA("Fire") or d:IsA("Sparkles")
 			or d:IsA("Smoke") or d:IsA("Beam") or d:IsA("Trail") then
@@ -354,13 +590,13 @@ local function spawnPetFor(player: Player, petId: string)
 				correction = math.max(correction, SCALE_FLOOR)
 				applyScale(clone, correction)
 				petScale = petScale * correction
-				log("Post-scale correction for", petId,
+				log("post_scale", "Post-scale correction for", petId,
 					string.format("extra %.3fx (was %.1f studs)", correction, postMax))
 			end
 		end
 	end
 
-	log("Scaled pet", petId, string.format("%.3fx", petScale),
+	log("scaled_pet", "Scaled pet", petId, string.format("%.3fx", petScale),
 		preBBox and string.format("(pre-bbox: %.1f x %.1f x %.1f)", preBBox.X, preBBox.Y, preBBox.Z) or "(no bbox)")
 
 	local visual = PetVisualConfig.Get(petId, petDef)
@@ -371,7 +607,7 @@ local function spawnPetFor(player: Player, petId: string)
 		petScale = petScale * visual.scale
 	end
 
-	if RunService:IsStudio() and visual.debugTag then
+	if RunService:IsStudio() and visual.debugTag and shouldLog("pet_visual_fix_" .. petId, 20) then
 		print(string.format(
 			"[PetVisualFix] pet=%s appliedRot=<%.1f,%.1f,%.1f>",
 			petId,
@@ -399,7 +635,7 @@ local function spawnPetFor(player: Player, petId: string)
 		petYawRad = petYawRad + vy
 	end
 
-	if RunService:IsStudio() then
+	if RunService:IsStudio() and shouldLog("pet_upright_" .. petId, 20) then
 		print(string.format("[PetUpright] petId=%s yawOffsetDeg=%.0f",
 			petId, math.deg(petYawRad)))
 	end
@@ -417,6 +653,7 @@ local function spawnPetFor(player: Player, petId: string)
 	end
 
 	clone.Name = PET_INSTANCE_NAME
+	clone:SetAttribute("IsPet", true)
 	clone:SetAttribute("_petId", petId)
 	clone:SetAttribute("_owner", player.Name)
 	clone.Parent = workspace
@@ -455,12 +692,15 @@ local function spawnPetFor(player: Player, petId: string)
 
 		-- 4) Upright CFrame: ONLY yaw rotation, pitch=0, roll=0 always
 		local uprightCF = CFrame.new(currentPos) * CFrame.Angles(0, yaw, 0)
+		local finalCF = uprightCF
+			* (PET_EQUIP_OFFSET_CFRAME[petId] or CFrame.new())
+			* (PET_ROTATION_FIX[petId] or CFrame.new())
 
 		-- 5) Apply
 		if clone:IsA("Model") then
-			clone:PivotTo(uprightCF)
+			clone:PivotTo(finalCF)
 		elseif clone:IsA("BasePart") then
-			clone.CFrame = uprightCF
+			clone.CFrame = finalCF
 		end
 	end)
 
@@ -469,9 +709,10 @@ local function spawnPetFor(player: Player, petId: string)
 		conn = followConn,
 		pos = currentPos,
 		t0 = t0,
+		mover = nil,
 	}
 
-	log("Pet spawned for", player.Name .. ":", petId)
+	log("spawn_done", "Pet spawned for", player.Name .. ":", petId)
 end
 
 -- =====================================================================
@@ -529,7 +770,7 @@ end
 -- =====================================================================
 
 function PetFollowerController.Init()
-	log("Initializing...")
+	log("init", "Initializing...")
 
 	Players.PlayerAdded:Connect(setupPlayer)
 	Players.PlayerRemoving:Connect(cleanupPlayer)
@@ -538,7 +779,7 @@ function PetFollowerController.Init()
 		task.spawn(setupPlayer, player)
 	end
 
-	log("Ready — tracking pets for all players")
+	log("ready", "Ready — tracking pets for all players")
 end
 
 return PetFollowerController

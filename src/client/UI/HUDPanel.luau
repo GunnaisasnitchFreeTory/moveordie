@@ -377,9 +377,17 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	Components.CreateSideButton(sidebar, "Spectate", "", C.SideSpectate, 5, function() if callbacks.onSpectate then callbacks.onSpectate() end end, "rbxassetid://132423664388523")
 	Components.CreateSideButton(sidebar, "Settings", "",  C.SideSettings, 6, function() if callbacks.onSettings then callbacks.onSettings() end end, "rbxassetid://121220698644847")
 
-	local afkBtn = Components.CreateSideButton(sidebar, "Go AFK", "", C.SideAFK, 7, function()
-		if callbacks.onAFK then callbacks.onAFK() end
-	end)
+	local afkBtn = Components.CreateSideButton(
+		sidebar,
+		"Go AFK",
+		"",
+		C.SideAFK,
+		7,
+		function()
+			if callbacks.onAFK then callbacks.onAFK() end
+		end,
+		"rbxassetid://94572633578005"
+	)
 
 	local afkLabel = afkBtn:FindFirstChild("Label")
 	local afkIcon = afkBtn:FindFirstChild("Icon")
@@ -415,14 +423,29 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 			afkLabel.Text = isAFK and "Return" or "Go AFK"
 		end
 		if afkIcon then
-			afkIcon.Text = isAFK and "🏃" or "💤"
+			if afkIcon:IsA("ImageLabel") then
+				afkIcon.Image = isAFK and "rbxassetid://94572633578005" or "rbxassetid://135444718943556"
+				afkIcon.BackgroundTransparency = 1
+				afkIcon.ScaleType = Enum.ScaleType.Fit
+				afkIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+				afkIcon.Position = UDim2.fromScale(0.5, 0.45)
+				afkIcon.Size = UDim2.fromScale(0.55, 0.55)
+				if not afkIcon:FindFirstChildOfClass("UIAspectRatioConstraint") then
+					local ar = Instance.new("UIAspectRatioConstraint")
+					ar.AspectRatio = 1
+					ar.Parent = afkIcon
+				end
+			elseif afkIcon:IsA("TextLabel") then
+				afkIcon.Text = ""
+				afkIcon.Visible = false
+			end
 		end
 		setSideButtonColor(afkBtn, isAFK and C.Green or C.SideAFK)
 	end
 	updateAFKVisual()
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(updateAFKVisual)
 
-	Components.CreateSideButton(sidebar, "Icons", "", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end, "rbxassetid://119836949404900")
+	Components.CreateSideButton(sidebar, "Icons", "", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end, "rbxassetid://93004565620109")
 
 	-- TOP-RIGHT BUTTON HELPER
 	local function createTopRightPill(name, yOffset, text, bgColor, gradTop, gradBot, onClick)

@@ -70,19 +70,25 @@ local function lookupCatalogEntry(data)
 	local IC = getItemCatalog()
 	if not IC then return nil end
 	if not data.itemId or data.itemId == "" then return nil end
+	local t = string.lower(data.itemType or "")
 
 	local entry = nil
 	if data.category and data.category ~= "" then
 		if IC.Get then entry = IC.Get(data.category, data.itemId) end
 	end
 	if not entry then
-		local t = data.itemType or ""
-		if t == "Pet" and IC.Pets then entry = IC.Pets[data.itemId]
-		elseif t == "Crown" and IC.Crowns then entry = IC.Crowns[data.itemId] end
+		if t == "pet" and IC.Pets then
+			entry = IC.Pets[data.itemId]
+		elseif t == "crown" and IC.Crowns then
+			entry = IC.Crowns[data.itemId]
+		elseif (t == "crate" or t == "crates") and IC.Crates then
+			entry = IC.Crates[data.itemId]
+		end
 	end
 	if not entry then
 		if IC.Pets and IC.Pets[data.itemId] then entry = IC.Pets[data.itemId]
-		elseif IC.Crowns and IC.Crowns[data.itemId] then entry = IC.Crowns[data.itemId] end
+		elseif IC.Crowns and IC.Crowns[data.itemId] then entry = IC.Crowns[data.itemId]
+		elseif IC.Crates and IC.Crates[data.itemId] then entry = IC.Crates[data.itemId] end
 	end
 	return entry
 end
@@ -128,6 +134,7 @@ end
 -- BRAINROT PLACEHOLDER (used when no image asset set for brainrot items)
 -- ═══════════════════════════════════════════
 local BRAINROT_PLACEHOLDER_IMAGE = "rbxassetid://85473787445447"
+local CRATE_FALLBACK_IMAGE = "rbxassetid://108812530080296"
 
 -- ═══════════════════════════════════════════
 -- RESOLVE ICON (multi-level fallback + ThumbnailRenderer)
@@ -142,11 +149,16 @@ local function resolveIcon(data)
 		return data.icon, nil, nil, nil
 	end
 
+	local t = string.lower(data.itemType or "")
 	local entry = lookupCatalogEntry(data)
 	if entry then
 		-- If catalog has a non-empty static image, use it
 		if entry.image and entry.image ~= "" then
 			return entry.image, nil, nil, entry
+		end
+		-- Crates should never render blank icon in popup.
+		if t == "crate" or t == "crates" then
+			return CRATE_FALLBACK_IMAGE, nil, nil, entry
 		end
 		-- No static image but has modelPath → allow ThumbnailRenderer (works for all items)
 		if entry.modelPath and entry.modelPath ~= "" then
@@ -164,7 +176,7 @@ local function resolveIcon(data)
 		return nil, data.iconText, data.iconColor, nil
 	end
 	warn("[RewardPopup] Missing icon for", data.itemType or "?", data.itemId or "?", data.name or "?")
-	return nil, nil, nil, nil
+	return CRATE_FALLBACK_IMAGE, nil, nil, nil
 end
 
 -- ═══════════════════════════════════════════

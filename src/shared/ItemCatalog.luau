@@ -23,6 +23,12 @@
 ]]
 
 local ItemCatalog = {}
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Shared = ReplicatedStorage:FindFirstChild("Shared") or ReplicatedStorage:WaitForChild("Shared", 5)
+local UIConfig = Shared and require(Shared:WaitForChild("UIConfig")) or { DebugLogs = false }
+local DEBUG_LOGS = UIConfig.DebugLogs == true
+local _fnafStaticLogPrinted = false
 
 -- ═══════════════════════════════════════════════════════════════════
 -- FALLBACK
@@ -274,6 +280,90 @@ ItemCatalog.Pets = {
 		source    = "CRATE",
 		crateId   = "crate_pet_epic",
 	},
+	pet_foxy_plush = {
+		id        = "pet_foxy_plush",
+		name      = "FoxyPlush",
+		modelName = "FoxyPlush",
+		type      = "Pet",
+		rarity    = "Epic",
+		modelPath = "ItemModels.Pets.Epic.FoxyPlush",
+		image     = "",
+		iconText = "",
+		iconColor = Color3.fromRGB(212, 78, 58),
+		stats     = { CoinMultiplier = 1.08, WalkSpeed = 2 },
+		source    = "CRATE",
+		crateId   = "crate_pet_epic",
+	},
+	pet_chica_plush = {
+		id        = "pet_chica_plush",
+		name      = "ChicaPlush",
+		modelName = "ChicaPlush",
+		type      = "Pet",
+		rarity    = "Epic",
+		modelPath = "ItemModels.Pets.Epic.ChicaPlush",
+		image     = "",
+		iconText = "",
+		iconColor = Color3.fromRGB(238, 198, 78),
+		stats     = { CoinMultiplier = 1.08, WalkSpeed = 2 },
+		source    = "CRATE",
+		crateId   = "crate_pet_epic",
+	},
+	pet_freddy_plush = {
+		id        = "pet_freddy_plush",
+		name      = "FreddyPlush",
+		modelName = "FreddyPlush",
+		type      = "Pet",
+		rarity    = "Epic",
+		modelPath = "ItemModels.Pets.Epic.FreddyPlush",
+		image     = "",
+		iconText = "",
+		iconColor = Color3.fromRGB(165, 108, 72),
+		stats     = { CoinMultiplier = 1.08, WalkSpeed = 2 },
+		source    = "CRATE",
+		crateId   = "crate_pet_epic",
+	},
+	pet_bonnie_plush = {
+		id        = "pet_bonnie_plush",
+		name      = "BonniePlush",
+		modelName = "BonniePlush",
+		type      = "Pet",
+		rarity    = "Epic",
+		modelPath = "ItemModels.Pets.Epic.BonniePlush",
+		image     = "",
+		iconText = "",
+		iconColor = Color3.fromRGB(118, 88, 228),
+		stats     = { CoinMultiplier = 1.08, WalkSpeed = 2 },
+		source    = "CRATE",
+		crateId   = "crate_pet_epic",
+	},
+	pet_fredbear_plush = {
+		id        = "pet_fredbear_plush",
+		name      = "FredbearPlush",
+		modelName = "FredbearPlush",
+		type      = "Pet",
+		rarity    = "Epic",
+		modelPath = "ItemModels.Pets.Epic.FredbearPlush",
+		image     = "",
+		iconText = "",
+		iconColor = Color3.fromRGB(238, 188, 58),
+		stats     = { CoinMultiplier = 1.08, WalkSpeed = 2 },
+		source    = "CRATE",
+		crateId   = "crate_pet_epic",
+	},
+	pet_huggy_wuggy = {
+		id        = "pet_huggy_wuggy",
+		name      = "HuggyWuggy",
+		modelName = "HuggyWuggy",
+		type      = "Pet",
+		rarity    = "Epic",
+		modelPath = "ItemModels.Pets.Epic.HuggyWuggy",
+		image     = "",
+		iconText = "",
+		iconColor = Color3.fromRGB(88, 188, 255),
+		stats     = { CoinMultiplier = 1.08, WalkSpeed = 2 },
+		source    = "CRATE",
+		crateId   = "crate_pet_epic",
+	},
 	-- ── Epic (FNAF Collection) ──
 	pet_freddy_fazbear = {
 		id         = "pet_freddy_fazbear",
@@ -328,7 +418,7 @@ ItemCatalog.Pets = {
 		rarity     = "Epic",
 		collection = "FNAF",
 		modelPath  = "ItemModels.Pets.Epic.FNAF.Foxy",
-		image      = "rbxassetid://124130935674613",
+		image      = "rbxassetid://71660947006015",
 		iconText   = "",
 		iconColor  = Color3.fromRGB(212, 78, 58),
 		stats      = { WalkSpeed = 3, CoinMultiplier = 1.08 },
@@ -358,7 +448,7 @@ ItemCatalog.Pets = {
 		rarity     = "Epic",
 		collection = "FNAF",
 		modelPath  = "ItemModels.Pets.Epic.FNAF.ThePuppet",
-		image      = "rbxassetid://140133655398485",
+		image      = "rbxassetid://131311210371413",
 		iconText   = "",
 		iconColor  = Color3.fromRGB(220, 220, 220),
 		stats      = { CoinMultiplier = 1.08, JumpPower = 4 },
@@ -1334,28 +1424,28 @@ ItemCatalog.Crates = {
 	crate_crown = {
 		id        = "crate_crown",
 		name      = "Crown Crate",
-		image     = "",
+		image     = "rbxassetid://108812530080296",
 		iconText = "",
 		iconColor = Color3.fromRGB(185, 68, 235),
 	},
 	crate_pet_common = {
 		id        = "crate_pet_common",
 		name      = "Common Pet Crate",
-		image     = "",
+		image     = "rbxassetid://108812530080296",
 		iconText = "",
 		iconColor = Color3.fromRGB(68, 198, 68),
 	},
 	crate_pet_rare = {
 		id        = "crate_pet_rare",
 		name      = "Rare Pet Crate",
-		image     = "",
+		image     = "rbxassetid://108812530080296",
 		iconText = "",
 		iconColor = Color3.fromRGB(38, 150, 255),
 	},
 	crate_pet_epic = {
 		id        = "crate_pet_epic",
 		name      = "Epic Pet Crate",
-		image     = "",
+		image     = "rbxassetid://108812530080296",
 		iconText = "",
 		iconColor = Color3.fromRGB(178, 42, 255),
 	},
@@ -1422,9 +1512,9 @@ ItemCatalog.Premium = {
 	pet_freddy_fazbear     = { id = "pet_freddy_fazbear",     name = "Freddy Fazbear",      type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://84840145874928",  iconText = "", iconColor = Color3.fromRGB(165, 108, 72), thumbnailBgColor = Color3.fromRGB(30, 22, 16), robux = 400, gamepassId = 1885101001, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.FreddyFazbear" },
 	pet_bonnie             = { id = "pet_bonnie",             name = "Bonnie",              type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://82413653261556",  iconText = "", iconColor = Color3.fromRGB(118, 88, 228), thumbnailBgColor = Color3.fromRGB(20, 16, 34), robux = 400, gamepassId = 1885101002, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Bonnie" },
 	pet_chica              = { id = "pet_chica",              name = "Chica",               type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://85911772941715",  iconText = "", iconColor = Color3.fromRGB(238, 198, 78), thumbnailBgColor = Color3.fromRGB(34, 28, 12), robux = 400, gamepassId = 1885101003, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Chica" },
-	pet_foxy               = { id = "pet_foxy",               name = "Foxy",                type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://124130935674613", iconText = "", iconColor = Color3.fromRGB(212, 78, 58),  thumbnailBgColor = Color3.fromRGB(36, 14, 12), robux = 400, gamepassId = 1885101004, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Foxy" },
+	pet_foxy               = { id = "pet_foxy",               name = "Foxy",                type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://71660947006015",  iconText = "", iconColor = Color3.fromRGB(212, 78, 58),  thumbnailBgColor = Color3.fromRGB(36, 14, 12), robux = 400, gamepassId = 1885101004, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Foxy" },
 	pet_golden_freddy      = { id = "pet_golden_freddy",      name = "Golden Freddy",       type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://131523893063613", iconText = "", iconColor = Color3.fromRGB(238, 188, 58), thumbnailBgColor = Color3.fromRGB(38, 30, 10), robux = 400, gamepassId = 1885101005, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.GoldenFreddy" },
-	pet_the_puppet         = { id = "pet_the_puppet",         name = "ThePuppet",           type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://140133655398485", iconText = "", iconColor = Color3.fromRGB(220, 220, 220), thumbnailBgColor = Color3.fromRGB(20, 20, 24), robux = 400, gamepassId = 1885101006, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.ThePuppet" },
+	pet_the_puppet         = { id = "pet_the_puppet",         name = "ThePuppet",           type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://131311210371413", iconText = "", iconColor = Color3.fromRGB(220, 220, 220), thumbnailBgColor = Color3.fromRGB(20, 20, 24), robux = 400, gamepassId = 1885101006, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.ThePuppet" },
 	pet_cupcake            = { id = "pet_cupcake",            name = "Cupcake",             type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://90262618148713", iconText = "", iconColor = Color3.fromRGB(255, 148, 188), thumbnailBgColor = Color3.fromRGB(30, 14, 22), robux = 400, gamepassId = 1885101007, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Cupcake" },
 
 	-- Exclusive Crowns (Gamepasses + FateCoins)
@@ -1552,31 +1642,43 @@ do
 		"pet_the_puppet",
 		"pet_cupcake",
 	}
-	for _, id in ipairs(fnafIds) do
-		local pet = ItemCatalog.Pets[id]
-		if pet then
-			if pet.image and pet.image ~= "" then
-				print(string.format("[ImageRules] STATIC: %s -> %s", id, pet.image))
-			elseif pet.modelPath and pet.modelPath ~= "" then
-				print(string.format("[ImageRules] RENDERER: %s -> %s", id, pet.modelPath))
+	if DEBUG_LOGS then
+		for _, id in ipairs(fnafIds) do
+			local pet = ItemCatalog.Pets[id]
+			if pet then
+				if pet.image and pet.image ~= "" then
+					print(string.format("[ImageRules] STATIC: %s -> %s", id, pet.image))
+				elseif pet.modelPath and pet.modelPath ~= "" then
+					print(string.format("[ImageRules] RENDERER: %s -> %s", id, pet.modelPath))
+				end
 			end
 		end
 	end
 
-	-- Renderer-only items requested for crate/crown shop expansion.
+	-- Startup scan for resolver rule verification.
 	local rendererNameLogs = {
-		{ name = "Unicorn", item = ItemCatalog.Pets["pet_unicorn"] },
-		{ name = "Steve", item = ItemCatalog.Pets["pet_steve"] },
-		{ name = "Zombie", item = ItemCatalog.Pets["pet_zombie"] },
-		{ name = "ThePuppet", item = ItemCatalog.Pets["pet_the_puppet"] },
-		{ name = "Cupcake", item = ItemCatalog.Pets["pet_cupcake"] },
-		{ name = "FreddyMaskCrown", item = ItemCatalog.Crowns["crown_freddy_mask"] },
-		{ name = "6AMCrown", item = ItemCatalog.Crowns["crown_6am"] },
+		{ id = "pet_unicorn", item = ItemCatalog.Pets["pet_unicorn"] },
+		{ id = "pet_steve", item = ItemCatalog.Pets["pet_steve"] },
+		{ id = "pet_zombie", item = ItemCatalog.Pets["pet_zombie"] },
+		{ id = "pet_foxy_plush", item = ItemCatalog.Pets["pet_foxy_plush"] },
+		{ id = "pet_chica_plush", item = ItemCatalog.Pets["pet_chica_plush"] },
+		{ id = "pet_freddy_plush", item = ItemCatalog.Pets["pet_freddy_plush"] },
+		{ id = "pet_bonnie_plush", item = ItemCatalog.Pets["pet_bonnie_plush"] },
+		{ id = "pet_fredbear_plush", item = ItemCatalog.Pets["pet_fredbear_plush"] },
+		{ id = "pet_huggy_wuggy", item = ItemCatalog.Pets["pet_huggy_wuggy"] },
+		{ id = "pet_the_puppet", item = ItemCatalog.Pets["pet_the_puppet"] },
+		{ id = "pet_cupcake", item = ItemCatalog.Pets["pet_cupcake"] },
+		{ id = "crown_freddy_mask", item = ItemCatalog.Crowns["crown_freddy_mask"] },
+		{ id = "crown_6am", item = ItemCatalog.Crowns["crown_6am"] },
 	}
-	for _, entry in ipairs(rendererNameLogs) do
-		local item = entry.item
-		if item and (item.image == nil or item.image == "") and item.modelPath and item.modelPath ~= "" then
-			print(string.format("[ImageRules] RENDERER: %s", entry.name))
+	if DEBUG_LOGS then
+		for _, entry in ipairs(rendererNameLogs) do
+			local item = entry.item
+			if item and item.image and item.image ~= "" then
+				print(string.format("[ImageRules] STATIC: %s -> %s", entry.id, item.image))
+			elseif item and (item.image == nil or item.image == "") and item.modelPath and item.modelPath ~= "" then
+				print(string.format("[ImageRules] RENDERER: %s", entry.id))
+			end
 		end
 	end
 end
@@ -1644,6 +1746,21 @@ function ItemCatalog.ResolveCrownOrPetImage(itemId: string, itemType: string)
 
 	if not item then
 		return { mode = "MISSING", image = "", rendererKey = nil, item = nil }
+	end
+
+	-- Hard rule: FNAF pets always use static images; never ThumbnailRenderer.
+	if normalized == "PET" and item.collection == "FNAF" then
+		if RunService:IsStudio() and not _fnafStaticLogPrinted then
+			_fnafStaticLogPrinted = true
+			print("[FNAFImages] Using static images (ThumbnailRenderer disabled for FNAF).")
+		end
+		local staticImage = (type(item.image) == "string" and item.image ~= "") and item.image or ItemCatalog.FALLBACK_IMAGE
+		return {
+			mode = "STATIC",
+			image = staticImage,
+			rendererKey = nil,
+			item = item,
+		}
 	end
 
 	local explicitImage = (type(item.image) == "string" and item.image ~= "") and item.image or ""

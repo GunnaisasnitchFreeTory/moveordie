@@ -17,6 +17,10 @@
 
 local UIConfig = {}
 
+-- Global debug logging controls (kept OFF by default to avoid output spam).
+UIConfig.DebugLogs = false
+UIConfig.LogRateSeconds = 20
+
 -- ═══════════════════════════════════════════════════════════════════
 -- COLOURS (brighter, more vivid accents)
 -- ═══════════════════════════════════════════════════════════════════
@@ -336,8 +340,8 @@ UIConfig.MockCrates = {
 			{ name = "Eagle",     chance = 20, rarity = "Rare", itemId = "pet_eagle",     modelPath = "ItemModels.Pets.Rare.Eagle" },
 		},
 		prices = {
-			{ label = "1 Crate",  cost = 500, currency = "Coins" },
-			{ label = "3 Crates", cost = 800, currency = "Coins" },
+			{ label = "1 Crate",  cost = 800, currency = "Coins" },
+			{ label = "3 Crates", cost = 1400, currency = "Coins" },
 			{ label = "6 Crates", cost = 400, currency = "Robux", productId = 3539710049 },
 		},
 	},
@@ -347,13 +351,22 @@ UIConfig.MockCrates = {
 		iconColor = Color3.fromRGB(178, 42, 255),
 		accentColor = Color3.fromRGB(218, 128, 255),
 		drops = {
-			{ name = "Axolotl",   chance = 34, rarity = "Epic", itemId = "pet_axolotl", modelPath = "ItemModels.Pets.Epic.Axolotl" },
-			{ name = "Bat",       chance = 33, rarity = "Epic", itemId = "pet_bat",     modelPath = "ItemModels.Pets.Epic.Bat" },
-			{ name = "Dolphin",   chance = 33, rarity = "Epic", itemId = "pet_dolphin", modelPath = "ItemModels.Pets.Epic.Dolphin" },
+			{ name = "Axolotl",       chance = 10, rarity = "Epic", itemId = "pet_axolotl",        modelPath = "ItemModels.Pets.Epic.Axolotl" },
+			{ name = "Bat",           chance = 10, rarity = "Epic", itemId = "pet_bat",            modelPath = "ItemModels.Pets.Epic.Bat" },
+			{ name = "Dolphin",       chance = 10, rarity = "Epic", itemId = "pet_dolphin",        modelPath = "ItemModels.Pets.Epic.Dolphin" },
+			{ name = "Unicorn",       chance = 10, rarity = "Epic", itemId = "pet_unicorn",        modelPath = "ItemModels.Pets.Epic.Unicorn" },
+			{ name = "Steve",         chance = 10, rarity = "Epic", itemId = "pet_steve",          modelPath = "ItemModels.Pets.Epic.Steve" },
+			{ name = "Zombie",        chance = 10, rarity = "Epic", itemId = "pet_zombie",         modelPath = "ItemModels.Pets.Epic.Zombie" },
+			{ name = "FoxyPlush",     chance = 10, rarity = "Epic", itemId = "pet_foxy_plush",     modelPath = "ItemModels.Pets.Epic.FoxyPlush" },
+			{ name = "ChicaPlush",    chance = 10, rarity = "Epic", itemId = "pet_chica_plush",    modelPath = "ItemModels.Pets.Epic.ChicaPlush" },
+			{ name = "FreddyPlush",   chance = 7,  rarity = "Epic", itemId = "pet_freddy_plush",   modelPath = "ItemModels.Pets.Epic.FreddyPlush" },
+			{ name = "BonniePlush",   chance = 7,  rarity = "Epic", itemId = "pet_bonnie_plush",   modelPath = "ItemModels.Pets.Epic.BonniePlush" },
+			{ name = "FredbearPlush", chance = 3,  rarity = "Epic", itemId = "pet_fredbear_plush", modelPath = "ItemModels.Pets.Epic.FredbearPlush" },
+			{ name = "HuggyWuggy",    chance = 3,  rarity = "Epic", itemId = "pet_huggy_wuggy",    modelPath = "ItemModels.Pets.Epic.HuggyWuggy" },
 		},
 		prices = {
-			{ label = "1 Crate",  cost = 500, currency = "Coins" },
-			{ label = "3 Crates", cost = 800, currency = "Coins" },
+			{ label = "1 Crate",  cost = 1400, currency = "Coins" },
+			{ label = "3 Crates", cost = 1950, currency = "Coins" },
 			{ label = "6 Crates", cost = 400, currency = "Robux", productId = 3539710471 },
 		},
 	},

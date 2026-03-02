@@ -738,9 +738,63 @@ function UIController.Init()
 		local BUNDLE_CLOSE_DISTANCE = 30
 		local bundleOpenTime = 0
 
+		local function findFnafFolder(): Instance?
+			local exact = workspace:FindFirstChild("FNAFGameBun") or workspace:FindFirstChild("FNAF Game Bun")
+			if exact then return exact end
+			for _, d in ipairs(workspace:GetDescendants()) do
+				local n = string.lower(d.Name)
+				if string.find(n, "fnaf", 1, true) and string.find(n, "bun", 1, true) then
+					return d
+				end
+			end
+			return nil
+		end
+
+		local function findPromptPart(folder: Instance): BasePart?
+			local preferredNames = { "FreddyFzber", "FreddyFazber", "FreddyFazbear" }
+			for _, name in ipairs(preferredNames) do
+				local node = folder:FindFirstChild(name, true)
+				if node then
+					if node:IsA("BasePart") then
+						return node
+					elseif node:IsA("Model") then
+						if not node.PrimaryPart then
+							local pp = node:FindFirstChildWhichIsA("BasePart", true)
+							if pp then node.PrimaryPart = pp end
+						end
+						return node.PrimaryPart or node:FindFirstChildWhichIsA("BasePart", true)
+					else
+						local bp = node:FindFirstChildWhichIsA("BasePart", true)
+						if bp then return bp end
+					end
+				end
+			end
+			for _, d in ipairs(folder:GetDescendants()) do
+				local n = string.lower(d.Name)
+				if string.find(n, "freddy", 1, true) then
+					if d:IsA("BasePart") then
+						return d
+					elseif d:IsA("Model") then
+						if not d.PrimaryPart then
+							local pp = d:FindFirstChildWhichIsA("BasePart", true)
+							if pp then d.PrimaryPart = pp end
+						end
+						local bp = d.PrimaryPart or d:FindFirstChildWhichIsA("BasePart", true)
+						if bp then return bp end
+					end
+				end
+			end
+			local posterModel = folder:FindFirstChild("Poster")
+			if posterModel then
+				local posterPart = posterModel:FindFirstChildWhichIsA("BasePart", true)
+				if posterPart then return posterPart end
+			end
+			return folder:FindFirstChildWhichIsA("BasePart", true)
+		end
+
 		local fnafFolder = nil
 		for attempt = 1, 300 do
-			fnafFolder = workspace:FindFirstChild("FNAFGameBun") or workspace:FindFirstChild("FNAF Game Bun")
+			fnafFolder = findFnafFolder()
 			if fnafFolder then break end
 			task.wait(1)
 		end
@@ -750,22 +804,7 @@ function UIController.Init()
 			return
 		end
 
-		local freddyNode = fnafFolder:FindFirstChild("FreddyFzber", true)
-		local promptPart: BasePart? = nil
-		if freddyNode and freddyNode:IsA("BasePart") then
-			promptPart = freddyNode
-		elseif freddyNode and freddyNode:IsA("Model") then
-			if not freddyNode.PrimaryPart then
-				local pp = freddyNode:FindFirstChildWhichIsA("BasePart", true)
-				if pp then
-					freddyNode.PrimaryPart = pp
-				end
-			end
-			promptPart = freddyNode.PrimaryPart
-				or freddyNode:FindFirstChildWhichIsA("BasePart", true)
-		elseif freddyNode then
-			promptPart = freddyNode:FindFirstChildWhichIsA("BasePart", true)
-		end
+		local promptPart: BasePart? = findPromptPart(fnafFolder)
 
 		if not promptPart then
 			log("[FNAFBundle] FreddyFzber BasePart missing -- walk-up disabled")

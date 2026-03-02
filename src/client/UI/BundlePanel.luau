@@ -778,7 +778,7 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 	coverImage.Size = UDim2.fromScale(1, 1)
 	coverImage.Position = UDim2.fromScale(0, 0)
 	coverImage.BackgroundTransparency = 1
-	coverImage.ScaleType = Enum.ScaleType.Fit
+	coverImage.ScaleType = Enum.ScaleType.Crop
 	coverImage.ZIndex = 6
 	coverImage.Parent = coverContainer
 

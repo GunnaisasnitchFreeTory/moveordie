@@ -17,14 +17,17 @@ type VisualOverride = {
 -- Add pitch/roll corrections here if a model is inherently tilted.
 local OVERRIDES: { [string]: VisualOverride } = {
 	pet_steve = {
-		rotation = CFrame.Angles(0, math.rad(180), 0),
-		rotDeg   = Vector3.new(0, 180, 0),
+		rotation = CFrame.new(),
+		rotDeg   = Vector3.zero,
 		debugTag = true,
 	},
 	pet_the_puppet = {
 		rotation = CFrame.Angles(0, math.rad(180), 0),
 		rotDeg   = Vector3.new(0, 180, 0),
 		debugTag = true,
+	},
+	pet_chica = {
+		scale = 2.9,
 	},
 }
 

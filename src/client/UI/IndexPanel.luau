@@ -192,6 +192,7 @@ local function populatePets()
 	for i, pet in ipairs(allPets) do
 		local isOwned = ownedSet[pet.id] == true
 		local resolved = ItemCatalog.ResolveCrownOrPetImage and ItemCatalog.ResolveCrownOrPetImage(pet.id, "PET") or nil
+		local isFNAFPet = pet.collection == "FNAF"
 		local subLabel = nil
 		if not isOwned then
 			subLabel = ItemCatalog.GetPetAcquisitionLabel(pet.id)
@@ -215,7 +216,7 @@ local function populatePets()
 		local hasStaticImage = ((resolved and resolved.mode == "STATIC") or ItemCatalog.GetImage(pet) ~= "")
 		if not hasStaticImage then
 			local vpFrame = card:FindFirstChild("ModelPreview", true)
-			if vpFrame and vpFrame:IsA("ViewportFrame") then
+			if vpFrame and vpFrame:IsA("ViewportFrame") and not isFNAFPet then
 				ThumbnailRenderer.RenderItemToViewport(vpFrame, pet)
 			end
 		end

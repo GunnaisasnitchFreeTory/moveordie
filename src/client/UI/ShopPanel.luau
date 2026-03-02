@@ -18,6 +18,7 @@ local TweenService       = game:GetService("TweenService")
 local Players            = game:GetService("Players")
 local HttpService        = game:GetService("HttpService")
 local RunService         = game:GetService("RunService")
+local ContentProvider    = game:GetService("ContentProvider")
 local LocalPlayer = Players.LocalPlayer
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
@@ -117,6 +118,19 @@ local petsBgFrame: Frame? = nil             -- pets tab background matching crow
 local _crownSlots: {ImageLabel} = {}        -- 3 reusable ImageLabel slots
 local _crownBgThread: thread? = nil         -- single animation coroutine
 local _crownBgRunning = false               -- guard: prevents duplicate loops
+local _petsBgImages: {string} = {
+	"rbxassetid://125284831618843",
+	"rbxassetid://134436052421277",
+	"rbxassetid://104828243058275",
+	"rbxassetid://91529728615582",
+	"rbxassetid://99697942325285",
+	"rbxassetid://110624123106515",
+	"rbxassetid://96775279467975",
+}
+local _petsBgSlidesRoot: Frame? = nil
+local _petsBgSlots: {ImageLabel} = {}
+local _petsBgThread: thread? = nil
+local _petsBgRunning = false
 
 local function clearCards()
 	for _, child in ipairs(contentFrame:GetChildren()) do
@@ -479,8 +493,95 @@ local function ensureGridLayout()
 end
 
 local function setPetsBgVisible(visible_: boolean)
-	if petsBgFrame then
-		petsBgFrame.Visible = visible_
+	if petsBgFrame then petsBgFrame.Visible = visible_ end
+	if visible_ then
+		if not petsBgFrame or not petsBgFrame.Parent then return end
+		if #_petsBgSlots == 0 or #_petsBgImages == 0 then return end
+		-- Preload once; safe to call repeatedly.
+		pcall(function()
+			ContentProvider:PreloadAsync(_petsBgImages)
+		end)
+
+		-- Idempotent restart.
+		_petsBgRunning = false
+		if _petsBgThread then
+			pcall(task.cancel, _petsBgThread)
+			_petsBgThread = nil
+		end
+		for _, slot in ipairs(_petsBgSlots) do
+			TweenService:Create(slot, TweenInfo.new(0), { ImageTransparency = 1 }):Play()
+		end
+
+		_petsBgRunning = true
+		local function shuffled(t: {string}): {string}
+			local copy = table.clone(t)
+			for i = #copy, 2, -1 do
+				local j = math.random(1, i)
+				copy[i], copy[j] = copy[j], copy[i]
+			end
+			return copy
+		end
+
+		_petsBgThread = task.spawn(function()
+			local slotIdx = 0
+			local imgQueue = shuffled(_petsBgImages)
+			local imgIdx = 0
+			while _petsBgRunning and petsBgFrame and petsBgFrame.Visible do
+				slotIdx = (slotIdx % #_petsBgSlots) + 1
+				imgIdx += 1
+				if imgIdx > #imgQueue then
+					imgQueue = shuffled(_petsBgImages)
+					imgIdx = 1
+				end
+
+				local slot = _petsBgSlots[slotIdx]
+				if slot then
+					slot.Image = imgQueue[imgIdx]
+					slot.ImageTransparency = 1
+					slot.Position = UDim2.fromScale(0.5, 0.5)
+					slot.Size = UDim2.fromScale(1, 1)
+					slot.Rotation = math.random(-2, 2)
+
+					local targetTrans = math.random(76, 86) / 100 -- visible but subtle
+					local fadeInDur = math.random(25, 45) / 10
+					local holdDur = math.random(30, 70) / 10
+					local fadeOutDur = math.random(25, 45) / 10
+
+					local tIn = TweenService:Create(
+						slot,
+						TweenInfo.new(fadeInDur, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+						{ ImageTransparency = targetTrans }
+					)
+					tIn:Play()
+					tIn.Completed:Wait()
+					if not _petsBgRunning then break end
+
+					task.wait(holdDur)
+					if not _petsBgRunning then break end
+
+					TweenService:Create(
+						slot,
+						TweenInfo.new(fadeOutDur, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+						{ ImageTransparency = 1 }
+					):Play()
+
+					-- Stagger starts so layers are unsynchronized.
+					task.wait(math.random(10, 30) / 10)
+				end
+			end
+			for _, s in ipairs(_petsBgSlots) do
+				TweenService:Create(s, TweenInfo.new(0.3), { ImageTransparency = 1 }):Play()
+			end
+		end)
+	else
+		_petsBgRunning = false
+		if _petsBgThread then
+			pcall(task.cancel, _petsBgThread)
+			_petsBgThread = nil
+		end
+		for _, s in ipairs(_petsBgSlots) do
+			TweenService:Create(s, TweenInfo.new(0.2), { ImageTransparency = 1 }):Play()
+		end
 	end
 end
 
@@ -517,9 +618,10 @@ local function resolvePremiumVisual(item, filterType: string)
 	return catEntry, catalogImage, modelPath, catalogIconText
 end
 
-local FNAF_BUNDLE_GAMEPASS_ID = 1885101090
+local FNAF_BUNDLE_GAMEPASS_ID = 1732407562
 local FNAF_BANNER_IMAGE = "rbxassetid://72168519670720"
-local FNAF_SINGLE_PRICE = 75000
+local FNAF_SINGLE_PRICE = 70000
+local FNAF_BUNDLE_PRICE_ROBUX = 500
 
 local function populatePetsTab()
 	clearCards()
@@ -527,19 +629,28 @@ local function populatePetsTab()
 	setCrownBgVisible(false)
 	setPetsBgVisible(true)
 
-	-- Wipe contentFrame completely — no UIListLayout, no UIPadding, nothing.
-	-- We use absolute Position for each child so the gap is always exactly
-	-- what we specify, with zero influence from layout objects.
+	-- Rebuild pets content with ONE vertical UIListLayout:
+	--   1) TopRow      (4 cards)
+	--   2) FNAFSection (banner + controls)
+	-- No spacer frames.
 	for _, child in ipairs(contentFrame:GetChildren()) do
 		child:Destroy()
 	end
 
-	-- Absolute-position constants (all in pixels)
-	local H_PAD        = 8    -- horizontal inset on each side
-	local TOP_PAD      = 10   -- space above first section
-	local SECTION_GAP  = 10   -- gap between top-4 section and FNAF section
-	local BOTTOM_PAD   = 12   -- space below FNAF section
-	local FNAF_H       = 280  -- tall enough for cover art + buttons
+	contentFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	contentFrame.CanvasSize = UDim2.fromScale(0, 0)
+	contentFrame.ScrollBarThickness = 6
+	contentFrame.ScrollingDirection = Enum.ScrollingDirection.Y
+
+	local list = Instance.new("UIListLayout")
+	list.Name = "PetsListLayout"
+	list.SortOrder = Enum.SortOrder.LayoutOrder
+	list.FillDirection = Enum.FillDirection.Vertical
+	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	list.Padding = UDim.new(0, 12)
+	list.Parent = contentFrame
+
+	local FNAF_H = 280
 
 	-- ── Build item data ─────────────────────────────────────────────
 	local allPets = ItemCatalog.GetAllPetsSorted and ItemCatalog.GetAllPetsSorted() or {}
@@ -557,9 +668,14 @@ local function populatePetsTab()
 
 	local ownedPets = getOwnedSet("OwnedPets")
 
-	local function createPetCard(parent: Instance, item, layoutOrder: number)
+	local function createPetCard(parent: Instance, item, layoutOrder: number, forceFateCoins: boolean, enablePreview: boolean)
+		local petEntry = ItemCatalog.GetPet and ItemCatalog.GetPet(item.id) or nil
+		local isFNAFPet = petEntry and petEntry.collection == "FNAF"
 		local isGamepass = item.gamepassId and item.gamepassId > 0
-		local isFateCoins = item.fateCoins and item.fateCoins > 0
+		if forceFateCoins then
+			isGamepass = false
+		end
+		local isFateCoins = forceFateCoins or (item.fateCoins and item.fateCoins > 0)
 		local isOwned = false
 		if isGamepass then
 			isOwned = checkGamepassOwned(item.gamepassId)
@@ -614,7 +730,7 @@ local function populatePetsTab()
 		card.Name = "ItemCard_" .. item.id
 		card.LayoutOrder = layoutOrder
 
-		if modelPath and catalogImage == "" then
+		if modelPath and catalogImage == "" and not isFNAFPet then
 			local vpFrame = ensureViewportInCard(card, item.iconColor)
 			if vpFrame then
 				ThumbnailRenderer.RenderItemToViewport(vpFrame, {
@@ -623,87 +739,292 @@ local function populatePetsTab()
 				})
 			end
 		end
+
+		if enablePreview and _BundlePanel and _BundlePanel.ShowItemPreviewIn then
+			local iconFrame = card:FindFirstChild("Icon")
+			if iconFrame and iconFrame:IsA("Frame") then
+				local click = Instance.new("TextButton")
+				click.Name = "PreviewClick"
+				click.Size = UDim2.fromScale(1, 1)
+				click.BackgroundTransparency = 1
+				click.Text = ""
+				click.ZIndex = 10
+				click.Parent = iconFrame
+				click.MouseButton1Click:Connect(function()
+					SoundUtil.Click()
+					_BundlePanel.ShowItemPreviewIn(canvas, {
+						name = item.name,
+						image = catalogImage,
+						modelPath = modelPath,
+					})
+				end)
+			end
+		end
 	end
 
-	-- ── Top-4 section (UIGridLayout for 2-column card grid) ─────────
-	-- Height = rows * CardHeight + (rows-1) * cellPad  (no UIPadding inside,
-	-- we handle insets via Position/Size so the math is 100% predictable).
-	local topRows    = math.max(1, math.ceil(#topPets / 2))
-	local topH       = topRows * S.CardHeight + math.max(0, topRows - 1) * S.CardPad
+	-- Top row section
+	-- IMPORTANT: do not hardcode 2 rows; on wider panels these 4 cards render as 1 row.
+	-- If we reserve 2-row height unconditionally, it creates a giant blank gap below cards.
+	local topH = S.CardHeight
 	local topSection = Instance.new("Frame")
-	topSection.Name             = "TopPetsSection"
-	topSection.Size             = UDim2.new(1, -H_PAD * 2, 0, topH)
-	topSection.Position         = UDim2.fromOffset(H_PAD, TOP_PAD)
+	topSection.Name             = "TopRow"
+	topSection.Size             = UDim2.new(1, 0, 0, topH)
+	topSection.AutomaticSize    = Enum.AutomaticSize.None
 	topSection.BackgroundTransparency = 1
+	topSection.LayoutOrder      = 1
 	topSection.Parent           = contentFrame
 
 	local grid = Instance.new("UIGridLayout")
 	grid.CellSize              = UDim2.fromOffset(S.CardWidth, S.CardHeight)
 	grid.CellPadding           = UDim2.fromOffset(S.CardPad, S.CardPad)
 	grid.SortOrder             = Enum.SortOrder.LayoutOrder
+	grid.FillDirection         = Enum.FillDirection.Horizontal
 	grid.HorizontalAlignment   = Enum.HorizontalAlignment.Center
 	grid.Parent                = topSection
 
 	for i, item in ipairs(topPets) do
-		createPetCard(topSection, item, i)
+		createPetCard(topSection, item, i, false, false)
 	end
 
-	-- ── FNAF bundle section (absolute, exactly SECTION_GAP below top) ─
-	local fnafYPos   = TOP_PAD + topH + SECTION_GAP
-	local fnafSection = Instance.new("Frame")
-	fnafSection.Name             = "FNAFSection"
-	fnafSection.Size             = UDim2.new(1, -H_PAD * 2, 0, FNAF_H)
-	fnafSection.Position         = UDim2.fromOffset(H_PAD, fnafYPos)
-	fnafSection.BackgroundTransparency = 1
-	fnafSection.ClipsDescendants = false
-	fnafSection.Parent           = contentFrame
+	-- Tighten TopRow height to the ACTUAL rendered grid content size.
+	task.defer(function()
+		if topSection.Parent and grid.Parent then
+			local contentY = grid.AbsoluteContentSize.Y
+			if contentY and contentY > 0 then
+				-- Add a small safety buffer so card strokes/shadows never overlap next section.
+				topSection.Size = UDim2.new(1, 0, 0, contentY + 8)
+			end
+		end
+	end)
 
-	if _BundlePanel and _BundlePanel.PopulateInto then
-		local fnafPanelHost = Instance.new("ScrollingFrame")
-		fnafPanelHost.Name                 = "FNAFBundlePanelHost"
-		fnafPanelHost.Size                 = UDim2.fromScale(1, 1)
-		fnafPanelHost.BackgroundTransparency = 1
-		fnafPanelHost.BorderSizePixel      = 0
-		fnafPanelHost.ScrollBarThickness   = 0
-		fnafPanelHost.CanvasSize           = UDim2.fromScale(0, 0)
-		fnafPanelHost.AutomaticCanvasSize  = Enum.AutomaticSize.None
-		fnafPanelHost.ScrollingDirection   = Enum.ScrollingDirection.XY
-		fnafPanelHost.Parent               = fnafSection
-		_BundlePanel.PopulateInto(fnafPanelHost, {
-			bundleIds    = { "fnaf_pets_bundle" },
-			itemType     = "ExclusivePet",
-			itemCoinPrice= FNAF_SINGLE_PRICE,
-		})
-		if _BundlePanel.SelectBundle then
-			_BundlePanel.SelectBundle("fnaf_pets_bundle")
+	local fnafHeader = Instance.new("Frame")
+	fnafHeader.Name = "FNAFHeader"
+	fnafHeader.Size = UDim2.new(1, -16, 0, 26)
+	fnafHeader.BackgroundColor3 = Color3.fromRGB(10, 12, 24)
+	fnafHeader.BackgroundTransparency = 0.25
+	fnafHeader.BorderSizePixel = 0
+	fnafHeader.LayoutOrder = 2
+	fnafHeader.Parent = contentFrame
+	Instance.new("UICorner", fnafHeader).CornerRadius = UDim.new(0, 8)
+	local headerStroke = Instance.new("UIStroke")
+	headerStroke.Color = Color3.fromRGB(255, 208, 40)
+	headerStroke.Thickness = 1.5
+	headerStroke.Transparency = 0.35
+	headerStroke.Parent = fnafHeader
+
+	local headerLabel = Instance.new("TextLabel")
+	headerLabel.Name = "Label"
+	headerLabel.BackgroundTransparency = 1
+	headerLabel.Position = UDim2.fromOffset(10, 0)
+	headerLabel.Size = UDim2.new(1, -20, 1, 0)
+	headerLabel.Font = Enum.Font.GothamBold
+	headerLabel.Text = "Limited FNAF Pets"
+	headerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	headerLabel.TextSize = 16
+	headerLabel.TextXAlignment = Enum.TextXAlignment.Left
+	headerLabel.Parent = fnafHeader
+	local headerTextStroke = Instance.new("UIStroke")
+	headerTextStroke.Color = Color3.fromRGB(0, 0, 0)
+	headerTextStroke.Thickness = 1.6
+	headerTextStroke.Transparency = 0.25
+	headerTextStroke.Parent = headerLabel
+
+	-- FNAF section: full-width banner, pet grid below, and buy-all button.
+	local fnafPets = {}
+	for _, pet in ipairs(allPets) do
+		if pet.collection == "FNAF" then
+			table.insert(fnafPets, pet)
 		end
 	end
 
-	-- Set the canvas size explicitly — no AutomaticCanvasSize, no mystery extra height.
-	local totalH = fnafYPos + FNAF_H + BOTTOM_PAD
-	contentFrame.AutomaticCanvasSize = Enum.AutomaticSize.None
-	contentFrame.CanvasSize          = UDim2.fromOffset(0, totalH)
-	contentFrame.CanvasPosition      = Vector2.zero
-	contentFrame.ScrollBarThickness  = 6
-	contentFrame.ScrollingDirection  = Enum.ScrollingDirection.Y
+	-- Slightly taller banner to reduce top-edge crop while keeping Crop fill.
+	local BANNER_H = 196
+	local GRID_COLS = 4
+	local TILE_W = 156
+	local TILE_H = 130
+	local TILE_PAD = 10
+	local GRID_ROWS = math.max(1, math.ceil(#fnafPets / GRID_COLS))
+	local GRID_H = GRID_ROWS * TILE_H + math.max(0, GRID_ROWS - 1) * TILE_PAD
+	local BUY_ALL_H = 42
+	local INNER_PAD = 8
+	local SECTION_GAP = 12
+	local fnafSectionH = BANNER_H + SECTION_GAP + GRID_H + SECTION_GAP + BUY_ALL_H + INNER_PAD
 
-	-- ── Layout diagnostics (Studio only) ──────────────────────────
-	if RunService:IsStudio() then
-		task.defer(function()
-			local topS  = contentFrame:FindFirstChild("TopPetsSection")
-			local fnafS = contentFrame:FindFirstChild("FNAFSection")
-			if topS and fnafS then
-				local topAbsY  = topS.AbsolutePosition.Y
-				local topAbsH  = topS.AbsoluteSize.Y
-				local fnafAbsY = fnafS.AbsolutePosition.Y
-				local gap      = fnafAbsY - (topAbsY + topAbsH)
-				print(string.format(
-					"[PetsTabLayout] topY=%.0f topH=%.0f fnafY=%.0f gap=%.0f canvasH=%.0f",
-					topAbsY, topAbsH, fnafAbsY, gap, totalH
-				))
+	local fnafSection = Instance.new("Frame")
+	fnafSection.Name = "FNAFSection"
+	fnafSection.Size = UDim2.new(1, 0, 0, fnafSectionH)
+	fnafSection.BackgroundTransparency = 1
+	fnafSection.LayoutOrder = 3
+	fnafSection.Parent = contentFrame
+
+	local bannerContainer = Instance.new("Frame")
+	bannerContainer.Name = "FNAFBanner"
+	bannerContainer.Size = UDim2.new(1, -16, 0, BANNER_H)
+	bannerContainer.Position = UDim2.fromOffset(8, 0)
+	bannerContainer.BackgroundColor3 = Color3.fromRGB(10, 12, 24)
+	bannerContainer.BorderSizePixel = 0
+	bannerContainer.ClipsDescendants = true
+	bannerContainer.Parent = fnafSection
+	Instance.new("UICorner", bannerContainer).CornerRadius = UDim.new(0, 10)
+	local bannerStroke = Instance.new("UIStroke")
+	bannerStroke.Color = Color3.fromRGB(255, 208, 40)
+	bannerStroke.Thickness = 2
+	bannerStroke.Transparency = 0.15
+	bannerStroke.Parent = bannerContainer
+
+	local bannerImage = Instance.new("ImageLabel")
+	bannerImage.Name = "CoverImage"
+	bannerImage.Size = UDim2.fromScale(1, 1)
+	bannerImage.Position = UDim2.fromScale(0, 0)
+	bannerImage.AnchorPoint = Vector2.new(0, 0)
+	bannerImage.BackgroundTransparency = 1
+	bannerImage.Image = FNAF_BANNER_IMAGE
+	bannerImage.ScaleType = Enum.ScaleType.Crop
+	bannerImage.Parent = bannerContainer
+
+	local bannerTitle = Instance.new("TextLabel")
+	bannerTitle.Name = "Title"
+	bannerTitle.BackgroundTransparency = 1
+	bannerTitle.Position = UDim2.fromOffset(12, 8)
+	bannerTitle.Size = UDim2.new(1, -24, 0, 28)
+	bannerTitle.Font = Enum.Font.GothamBold
+	bannerTitle.Text = "FNAF Pets"
+	bannerTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	bannerTitle.TextSize = 32
+	bannerTitle.TextXAlignment = Enum.TextXAlignment.Left
+	bannerTitle.ZIndex = 2
+	bannerTitle.Parent = bannerContainer
+	local titleStroke = Instance.new("UIStroke")
+	titleStroke.Color = Color3.fromRGB(0, 0, 0)
+	titleStroke.Thickness = 2
+	titleStroke.Transparency = 0.2
+	titleStroke.Parent = bannerTitle
+
+	local gridHost = Instance.new("Frame")
+	gridHost.Name = "FNAFPetGrid"
+	gridHost.BackgroundTransparency = 1
+	gridHost.Position = UDim2.fromOffset(8, BANNER_H + SECTION_GAP)
+	gridHost.Size = UDim2.new(1, -16, 0, GRID_H)
+	gridHost.Parent = fnafSection
+
+	local fnafGrid = Instance.new("UIGridLayout")
+	fnafGrid.CellSize = UDim2.fromOffset(TILE_W, TILE_H)
+	fnafGrid.CellPadding = UDim2.fromOffset(TILE_PAD, TILE_PAD)
+	fnafGrid.FillDirection = Enum.FillDirection.Horizontal
+	fnafGrid.SortOrder = Enum.SortOrder.LayoutOrder
+	fnafGrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	fnafGrid.Parent = gridHost
+
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	local buyRF = remotes and remotes:FindFirstChild("Shop_BuyWithCoins")
+	for i, pet in ipairs(fnafPets) do
+		local resolved = ItemCatalog.ResolveCrownOrPetImage and ItemCatalog.ResolveCrownOrPetImage(pet.id, "PET") or nil
+		local imageId = (resolved and resolved.image) or ItemCatalog.GetImage(pet)
+		local isOwned = _locallyOwned[pet.id] == true or ownedPets[pet.id] == true
+
+		local tile = Instance.new("Frame")
+		tile.Name = "FNAFTile_" .. pet.id
+		tile.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		tile.BorderSizePixel = 0
+		tile.LayoutOrder = i
+		tile.Parent = gridHost
+		Instance.new("UICorner", tile).CornerRadius = UDim.new(0, 8)
+		local tileStroke = Instance.new("UIStroke")
+		tileStroke.Color = Color3.fromRGB(255, 208, 40)
+		tileStroke.Thickness = 1.5
+		tileStroke.Transparency = 0.28
+		tileStroke.Parent = tile
+
+		local icon = Instance.new("ImageLabel")
+		icon.Name = "Icon"
+		icon.BackgroundTransparency = 1
+		icon.Position = UDim2.fromOffset(8, 6)
+		icon.Size = UDim2.new(1, -16, 0, 70)
+		icon.Image = imageId
+		icon.ScaleType = Enum.ScaleType.Fit
+		icon.Parent = tile
+		if _BundlePanel and _BundlePanel.ShowItemPreviewIn then
+			local previewClick = Instance.new("TextButton")
+			previewClick.Name = "PreviewClick"
+			previewClick.Size = UDim2.fromScale(1, 1)
+			previewClick.Position = UDim2.fromScale(0, 0)
+			previewClick.BackgroundTransparency = 1
+			previewClick.Text = ""
+			previewClick.ZIndex = 3
+			previewClick.Parent = icon
+			previewClick.MouseButton1Click:Connect(function()
+				SoundUtil.Click()
+				_BundlePanel.ShowItemPreviewIn(canvas, {
+					name = pet.name,
+					image = imageId,
+					modelPath = pet.modelPath,
+				})
+			end)
+		end
+
+		local nameLbl = Instance.new("TextLabel")
+		nameLbl.Name = "Name"
+		nameLbl.BackgroundTransparency = 1
+		nameLbl.Position = UDim2.fromOffset(6, 77)
+		nameLbl.Size = UDim2.new(1, -12, 0, 18)
+		nameLbl.Font = Enum.Font.GothamBold
+		nameLbl.TextColor3 = C.TextWhite
+		nameLbl.TextSize = 12
+		nameLbl.Text = pet.name
+		nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+		nameLbl.Parent = tile
+
+		local buyBtn = Instance.new("TextButton")
+		buyBtn.Name = "BuyBtn"
+		buyBtn.AnchorPoint = Vector2.new(0.5, 1)
+		buyBtn.Position = UDim2.new(0.5, 0, 1, -6)
+		buyBtn.Size = UDim2.new(1, -12, 0, 26)
+		buyBtn.BackgroundColor3 = isOwned and C.DisabledBtn or Color3.fromRGB(255, 200, 30)
+		buyBtn.BorderSizePixel = 0
+		buyBtn.AutoButtonColor = not isOwned
+		buyBtn.Text = isOwned and "OWNED" or "70K F"
+		buyBtn.TextColor3 = isOwned and Color3.fromRGB(210, 215, 230) or Color3.fromRGB(35, 25, 0)
+		buyBtn.Font = Enum.Font.GothamBold
+		buyBtn.TextSize = 12
+		buyBtn.Parent = tile
+		Instance.new("UICorner", buyBtn).CornerRadius = UDim.new(0, 8)
+
+		buyBtn.MouseButton1Click:Connect(function()
+			if isOwned or not buyRF then
+				return
+			end
+			local okBuy, result = pcall(buyRF.InvokeServer, buyRF, pet.id, "ExclusivePet")
+			if okBuy and result and result.success then
+				_locallyOwned[pet.id] = true
+				isOwned = true
+				buyBtn.Text = "OWNED"
+				buyBtn.BackgroundColor3 = C.DisabledBtn
+				buyBtn.TextColor3 = Color3.fromRGB(210, 215, 230)
+				buyBtn.AutoButtonColor = false
 			end
 		end)
 	end
+
+	local buyAllBtn = Instance.new("TextButton")
+	buyAllBtn.Name = "BuyAllFNAFBtn"
+	buyAllBtn.BackgroundColor3 = C.RobuxButton
+	buyAllBtn.BorderSizePixel = 0
+	buyAllBtn.Position = UDim2.fromOffset(8, BANNER_H + SECTION_GAP + GRID_H + SECTION_GAP)
+	buyAllBtn.Size = UDim2.new(1, -16, 0, BUY_ALL_H)
+	buyAllBtn.Text = string.format("Buy All FNAF Pets — %d Robux", FNAF_BUNDLE_PRICE_ROBUX)
+	buyAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	buyAllBtn.Font = Enum.Font.GothamBold
+	buyAllBtn.TextSize = 18
+	buyAllBtn.Parent = fnafSection
+	Instance.new("UICorner", buyAllBtn).CornerRadius = UDim.new(0, 10)
+	local buyAllStroke = Instance.new("UIStroke")
+	buyAllStroke.Color = Color3.fromRGB(0, 0, 0)
+	buyAllStroke.Thickness = 1.4
+	buyAllStroke.Transparency = 0.35
+	buyAllStroke.Parent = buyAllBtn
+	buyAllBtn.MouseButton1Click:Connect(function()
+		MarketplaceService:PromptGamePassPurchase(LocalPlayer, FNAF_BUNDLE_GAMEPASS_ID)
+	end)
 end
 
 local function populateCards(filterType: string)
@@ -772,8 +1093,11 @@ local function populateCards(filterType: string)
 			local catEntry, catalogImage, modelPath, catalogIconText = resolvePremiumVisual(item, filterType)
 
 			local hasExplicitImage = (catalogImage ~= "")
+			local petEntry = (filterType == "ExclusivePet" and ItemCatalog.GetPet and ItemCatalog.GetPet(item.id)) or nil
+			local isFNAFPet = petEntry and petEntry.collection == "FNAF"
 			local wantsThumbnail = (not hasExplicitImage) and modelPath
 				and (filterType == "ExclusivePet" or filterType == "ExclusiveCrown")
+				and not isFNAFPet
 
 			local cardData = {
 				name = item.name,
@@ -862,6 +1186,20 @@ local function populateCards(filterType: string)
 		end
 	end
 	_isPopulating = false
+end
+
+local function ensureTabBarPinned()
+	if not _tabBarRef or not _tabBarRef.Parent then return end
+	if not _tabBarHostRef or not _tabBarHostRef.Parent then return end
+	if not contentFrame or not contentFrame.Parent then return end
+
+	if _tabBarRef:IsDescendantOf(contentFrame) then
+		_tabBarRef.Parent = _tabBarHostRef
+		_tabBarRef.AnchorPoint = Vector2.new(0.5, 0)
+		_tabBarRef.Position = UDim2.new(0.5, 0, 0, 0)
+		_tabBarRef.Size = UDim2.new(1, 0, 0, S.TabHeight + 8)
+		warn("[TabBarDebug] TabBar was inside scrolling content; reparented to fixed host")
+	end
 end
 
 function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
@@ -982,6 +1320,50 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		pbf.Visible               = false
 		pbf.Parent                = canvas
 		petsBgFrame               = pbf
+
+		-- Pets tab slideshow root (behind content, non-interactive)
+		local slideRoot = Instance.new("Frame")
+		slideRoot.Name = "PetsBackgroundSlideshow"
+		slideRoot.Size = UDim2.fromScale(1, 1)
+		slideRoot.Position = UDim2.fromScale(0, 0)
+		slideRoot.BackgroundTransparency = 1
+		slideRoot.BorderSizePixel = 0
+		slideRoot.ZIndex = 4
+		slideRoot.Active = false
+		slideRoot.Selectable = false
+		slideRoot.ClipsDescendants = true
+		slideRoot.Parent = pbf
+		_petsBgSlidesRoot = slideRoot
+		_petsBgSlots = {}
+
+		for i = 1, 3 do
+			local lbl = Instance.new("ImageLabel")
+			lbl.Name = "PetsBgSlot" .. i
+			lbl.AnchorPoint = Vector2.new(0.5, 0.5)
+			lbl.Position = UDim2.fromScale(0.5, 0.5)
+			lbl.Size = UDim2.fromScale(1, 1)
+			lbl.BackgroundTransparency = 1
+			lbl.Image = ""
+			lbl.ScaleType = Enum.ScaleType.Crop
+			lbl.ImageTransparency = 1
+			lbl.ZIndex = 4
+			lbl.Active = false
+			lbl.Selectable = false
+			lbl.Parent = slideRoot
+			table.insert(_petsBgSlots, lbl)
+		end
+
+		local shade = Instance.new("Frame")
+		shade.Name = "PetsBackgroundShade"
+		shade.Size = UDim2.fromScale(1, 1)
+		shade.Position = UDim2.fromScale(0, 0)
+		shade.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		shade.BackgroundTransparency = 0.72
+		shade.BorderSizePixel = 0
+		shade.ZIndex = 4
+		shade.Active = false
+		shade.Selectable = false
+		shade.Parent = slideRoot
 	end
 
 	_setActiveTab = setActiveTab
@@ -1023,6 +1405,7 @@ function ShopPanel.Hide()
 	overlay.Visible = false
 	stopCoinsBgAnim()
 	stopCrownBgAnim()
+	setPetsBgVisible(false)
 	local t = AnimUtil.ClosePanel(canvas, uiScale)
 	task.spawn(function()
 		t.Completed:Wait()

@@ -38,9 +38,11 @@ local ItemModelRegistry = {}
 
 local _registry: { [string]: Instance } = {}
 local _fuzzyRegistry: { [string]: Instance } = {} -- stripped spaces/underscores for fallback
+local _exactNameRegistry: { [string]: Instance } = {} -- exact child.Name match (case-sensitive)
 local _initialized = false
 local _count = 0
 local _duplicateWarned: { [string]: boolean } = {}
+local _duplicateExactNameWarned: { [string]: boolean } = {}
 
 -- =====================================================================
 -- NORMALIZATION
@@ -99,6 +101,13 @@ local function scanFolder(folder: Instance, pathSegments: { string })
 				if not _fuzzyRegistry[fuzzy] then
 					_fuzzyRegistry[fuzzy] = child
 				end
+				-- Exact-name index (used for name-based lookups without folder assumptions).
+				if not _exactNameRegistry[child.Name] then
+					_exactNameRegistry[child.Name] = child
+				elseif not _duplicateExactNameWarned[child.Name] then
+					_duplicateExactNameWarned[child.Name] = true
+					warn(TAG, "Duplicate exact-name key:", child.Name, "(using first match)")
+				end
 			elseif not _duplicateWarned[key] then
 				_duplicateWarned[key] = true
 				warn(TAG, "Duplicate key:", key)
@@ -148,6 +157,14 @@ function ItemModelRegistry.Get(keyOrPath: string): Instance?
 	if result then return result end
 
 	return nil
+end
+
+--- Look up by exact Instance.Name under ReplicatedStorage.ItemModels.
+--- Case-sensitive and folder-agnostic.
+function ItemModelRegistry.GetByExactName(modelName: string): Instance?
+	if not _initialized then doInit() end
+	if not modelName or modelName == "" then return nil end
+	return _exactNameRegistry[modelName]
 end
 
 -- Alias for backward compat
