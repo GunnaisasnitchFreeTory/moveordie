@@ -46,6 +46,20 @@ local INDICATORS = {
 		extraPadding = 4,
 		pulse        = true,
 	},
+	{
+		targetName   = "FNAFGameBun",
+		text         = "FNAF BUNDLE",
+		extraPadding = 4,
+		pulse        = true,
+		retries      = 120,
+	},
+	{
+		targetName   = "FNAF Game Bun",
+		text         = "FNAF BUNDLE",
+		extraPadding = 4,
+		pulse        = true,
+		retries      = 120,
+	},
 }
 
 local BILLBOARD_SIZE      = UDim2.fromOffset(150, 34)
@@ -246,11 +260,12 @@ function WorldIndicators.Init()
 		task.spawn(function()
 			-- Find target with retries (streaming)
 			local target = nil
-			for attempt = 1, 12 do
+			local retries = cfg.retries or 12
+			for attempt = 1, retries do
 				target = workspace:FindFirstChild(cfg.targetName, true)
 				if target then break end
 				log(cfg.targetName .. " not ready — retrying...")
-				task.wait(2)
+				task.wait(1)
 			end
 			if not target then
 				warn("[WorldIndicators] " .. cfg.targetName .. " not found after retries — skipped")

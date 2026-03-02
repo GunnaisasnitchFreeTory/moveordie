@@ -730,6 +730,102 @@ function UIController.Init()
 		end)
 	end)
 
+	-- ═══════════════════════════════════════════════════════════════════
+	-- WALK-UP: FNAF Bundle Display
+	-- ═══════════════════════════════════════════════════════════════════
+	task.spawn(function()
+		local BUNDLE_OPEN_DISTANCE = 15
+		local BUNDLE_CLOSE_DISTANCE = 30
+		local bundleOpenTime = 0
+
+		local fnafFolder = nil
+		for attempt = 1, 300 do
+			fnafFolder = workspace:FindFirstChild("FNAFGameBun") or workspace:FindFirstChild("FNAF Game Bun")
+			if fnafFolder then break end
+			task.wait(1)
+		end
+
+		if not fnafFolder then
+			log("[FNAFBundle] Folder not found -- walk-up disabled")
+			return
+		end
+
+		local freddyNode = fnafFolder:FindFirstChild("FreddyFzber", true)
+		local promptPart: BasePart? = nil
+		if freddyNode and freddyNode:IsA("BasePart") then
+			promptPart = freddyNode
+		elseif freddyNode and freddyNode:IsA("Model") then
+			if not freddyNode.PrimaryPart then
+				local pp = freddyNode:FindFirstChildWhichIsA("BasePart", true)
+				if pp then
+					freddyNode.PrimaryPart = pp
+				end
+			end
+			promptPart = freddyNode.PrimaryPart
+				or freddyNode:FindFirstChildWhichIsA("BasePart", true)
+		elseif freddyNode then
+			promptPart = freddyNode:FindFirstChildWhichIsA("BasePart", true)
+		end
+
+		if not promptPart then
+			log("[FNAFBundle] FreddyFzber BasePart missing -- walk-up disabled")
+			return
+		end
+		log("[FNAFBundle] Prompt parent part: " .. promptPart:GetFullName())
+
+		local prompt: ProximityPrompt? = nil
+		for _, desc in ipairs(fnafFolder:GetDescendants()) do
+			if desc:IsA("ProximityPrompt") then
+				prompt = desc
+				break
+			end
+		end
+
+		if not prompt then
+			prompt = Instance.new("ProximityPrompt")
+			prompt.Name = "FNAFBundlePrompt"
+			log("[FNAFBundle] Created new prompt")
+		end
+		-- Always normalize prompt to Brainrot-style interaction.
+		prompt.ActionText = "Buy"
+		prompt.ObjectText = "FNAF Bundle"
+		prompt.KeyboardKeyCode = Enum.KeyCode.E
+		prompt.HoldDuration = 0
+		prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE
+		prompt.RequiresLineOfSight = false
+		prompt.Enabled = true
+		prompt.Style = Enum.ProximityPromptStyle.Default
+		prompt.Parent = promptPart
+		log("[FNAFBundle] Prompt active on: " .. prompt.Parent:GetFullName())
+
+		prompt.Triggered:Connect(function(playerWhoTriggered)
+			if playerWhoTriggered ~= LocalPlayer then return end
+			bundleOpenTime = tick()
+			openPanel("Shop")
+			if ShopPanel.ActivateBundleTab then
+				ShopPanel.ActivateBundleTab("fnaf_pets_bundle")
+			end
+		end)
+
+		local GRACE_PERIOD = 3
+		RunService.Heartbeat:Connect(function()
+			if currentPanel ~= "Shop" then return end
+			if (tick() - bundleOpenTime) < GRACE_PERIOD then return end
+			if bundleOpenTime == 0 then return end
+
+			local char = LocalPlayer.Character
+			if not char then return end
+			local root = char:FindFirstChild("HumanoidRootPart")
+			if not root then return end
+
+			local dist = (root.Position - promptPart.Position).Magnitude
+			if dist > BUNDLE_CLOSE_DISTANCE then
+				bundleOpenTime = 0
+				closeCurrentPanel()
+			end
+		end)
+	end)
+
 	if #_failedPanels > 0 then
 		warn("[UIController] DEGRADED: panels failed: " .. table.concat(_failedPanels, ", "))
 	else
