@@ -148,6 +148,8 @@ local function populateCrowns()
 	for i, crown in ipairs(allCrowns) do
 		local isOwned = ownedSet[crown.id] == true
 		local resolved = ItemCatalog.ResolveCrownOrPetImage and ItemCatalog.ResolveCrownOrPetImage(crown.id, "CROWN") or nil
+		local resolvedImage = (resolved and resolved.mode == "STATIC" and resolved.image) or ItemCatalog.GetImage(crown)
+		local resolvedModelPath = (resolved and resolved.mode == "RENDERER" and resolved.rendererKey) or nil
 		local subLabel = nil
 		if not isOwned then
 			subLabel = getCrownSubLabel(crown)
@@ -159,8 +161,8 @@ local function populateCrowns()
 			iconColor = crown.iconColor,
 			thumbnailBgColor = crown.thumbnailBgColor,
 			iconText = crown.iconText or "",
-			image = (resolved and resolved.image) or ItemCatalog.GetImage(crown),
-			modelPath = (resolved and resolved.rendererKey) or crown.modelPath,
+			image = resolvedImage,
+			modelPath = resolvedModelPath,
 			locked = not isOwned,
 			owned = isOwned,
 			subLabel = subLabel,
@@ -168,7 +170,7 @@ local function populateCrowns()
 		card.LayoutOrder = i
 
 		-- Only use ThumbnailRenderer if the item has NO static image asset
-		local hasStaticImage = ((resolved and resolved.mode == "STATIC") or ItemCatalog.GetImage(crown) ~= "")
+		local hasStaticImage = (type(resolvedImage) == "string" and resolvedImage ~= "")
 		if not hasStaticImage then
 			local vpFrame = card:FindFirstChild("ModelPreview", true)
 			if vpFrame and vpFrame:IsA("ViewportFrame") then
@@ -192,6 +194,8 @@ local function populatePets()
 	for i, pet in ipairs(allPets) do
 		local isOwned = ownedSet[pet.id] == true
 		local resolved = ItemCatalog.ResolveCrownOrPetImage and ItemCatalog.ResolveCrownOrPetImage(pet.id, "PET") or nil
+		local resolvedImage = (resolved and resolved.mode == "STATIC" and resolved.image) or ItemCatalog.GetImage(pet)
+		local resolvedModelPath = (resolved and resolved.mode == "RENDERER" and resolved.rendererKey) or nil
 		local isFNAFPet = pet.collection == "FNAF"
 		local subLabel = nil
 		if not isOwned then
@@ -204,8 +208,8 @@ local function populatePets()
 			iconColor = pet.iconColor,
 			thumbnailBgColor = pet.thumbnailBgColor,
 			iconText = pet.iconText or "",
-			image = (resolved and resolved.image) or ItemCatalog.GetImage(pet),
-			modelPath = (resolved and resolved.rendererKey) or pet.modelPath,
+			image = resolvedImage,
+			modelPath = resolvedModelPath,
 			locked = not isOwned,
 			owned = isOwned,
 			subLabel = subLabel,
@@ -213,7 +217,7 @@ local function populatePets()
 		card.LayoutOrder = i
 
 		-- Only use ThumbnailRenderer if the item has NO static image asset
-		local hasStaticImage = ((resolved and resolved.mode == "STATIC") or ItemCatalog.GetImage(pet) ~= "")
+		local hasStaticImage = (type(resolvedImage) == "string" and resolvedImage ~= "")
 		if not hasStaticImage then
 			local vpFrame = card:FindFirstChild("ModelPreview", true)
 			if vpFrame and vpFrame:IsA("ViewportFrame") and not isFNAFPet then

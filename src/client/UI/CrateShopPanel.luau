@@ -69,6 +69,7 @@ local uiScale: UIScale = nil
 local overlay: Frame = nil
 local visible = false
 local closeCallback: (() -> ())? = nil
+local _inventoryUpdatedConn: RBXScriptConnection? = nil
 
 local CrateShopPanel = {}
 
@@ -104,6 +105,34 @@ local function getPreviewItems(crateId: string, count: number): { any }
 		end
 	end
 	return {}
+end
+
+local function showCrateRewards(results)
+	local revealUI = getRevealUI()
+	if not revealUI then
+		return
+	end
+	local revealItems = {}
+	for _, r in ipairs(results or {}) do
+		local entry = ItemCatalog.Get(r.category, r.itemId)
+		table.insert(revealItems, {
+			name = entry and entry.name or r.itemId,
+			rarity = entry and entry.rarity or "Common",
+			modelPath = entry and entry.modelPath,
+			iconColor = entry and entry.iconColor,
+			isDuplicate = r.isDuplicate or false,
+			itemId = r.itemId,
+			category = r.category,
+			itemType = entry and entry.type or "",
+			iconText = entry and entry.iconText or "",
+			image = entry and entry.image or "",
+		})
+	end
+	if #revealItems > 1 and revealUI.ShowRewards then
+		revealUI.ShowRewards(revealItems)
+	elseif #revealItems == 1 and revealUI.ShowReward then
+		revealUI.ShowReward(revealItems[1])
+	end
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -461,29 +490,7 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 			if result and result.success then
 				local revealUI = getRevealUI()
 				if revealUI then
-					-- Collect all rewards into a batch for grid layout
-					local revealItems = {}
-					for _, r in ipairs(result.results or {}) do
-						local entry = ItemCatalog.Get(r.category, r.itemId)
-						table.insert(revealItems, {
-							name = entry and entry.name or r.itemId,
-							rarity = entry and entry.rarity or "Common",
-							modelPath = entry and entry.modelPath,
-							iconColor = entry and entry.iconColor,
-							isDuplicate = r.isDuplicate or false,
-							itemId = r.itemId,
-							category = r.category,
-							itemType = entry and entry.type or "",
-							iconText = entry and entry.iconText or "",
-							image = entry and entry.image or "",
-						})
-					end
-					-- Use batch reveal (grid layout) for multi-crate, single reveal for 1
-					if #revealItems > 1 and revealUI.ShowRewards then
-						revealUI.ShowRewards(revealItems)
-					elseif #revealItems == 1 then
-						revealUI.ShowReward(revealItems[1])
-					end
+					showCrateRewards(result.results or {})
 				else
 					-- Fallback: log to console
 					for _, r in ipairs(result.results or {}) do
@@ -541,6 +548,21 @@ function CrateShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	-- Build crate sections from UIConfig.MockCrates (now has 4 entries)
 	for i, crate in ipairs(UIConfig.MockCrates) do
 		createCrateSection(content, crate, i)
+	end
+
+	if not _inventoryUpdatedConn then
+		task.spawn(function()
+			local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+			local invUpdate = remotes and remotes:FindFirstChild("InventoryUpdated")
+			if invUpdate and invUpdate:IsA("RemoteEvent") then
+				_inventoryUpdatedConn = invUpdate.OnClientEvent:Connect(function(reason, data)
+					if not visible then return end
+					if reason == "CratePurchase" and type(data) == "table" and type(data.results) == "table" then
+						showCrateRewards(data.results)
+					end
+				end)
+			end
+		end)
 	end
 end
 

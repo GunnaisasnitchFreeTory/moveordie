@@ -98,6 +98,7 @@ local _warnedMissing = {}
 -- Items purchased this session: avoids waiting for OwnedCrowns attribute to propagate
 local _locallyOwned: {[string]: true} = {}
 local _isPopulating = false  -- guard: prevents duplicate populate runs
+local _inventoryUpdatedConn: RBXScriptConnection? = nil
 -- ─── Crown background animation state ─────────────────────────────
 -- Crown images collected once at module load from ItemCatalog.Crowns.
 local _crownBgImages: {string} = {}
@@ -137,6 +138,52 @@ local function clearCards()
 		local keep = child:IsA("UIGridLayout") or child:IsA("UIPadding") or child:IsA("UIListLayout")
 		if not keep then child:Destroy() end
 	end
+end
+
+local function showShopToast(message: string)
+	if not canvas or not canvas.Parent then return end
+
+	local old = canvas:FindFirstChild("ShopToast")
+	if old then old:Destroy() end
+
+	local toast = Instance.new("TextLabel")
+	toast.Name = "ShopToast"
+	toast.AnchorPoint = Vector2.new(0.5, 1)
+	toast.Position = UDim2.new(0.5, 0, 1, -18)
+	toast.Size = UDim2.new(0, 320, 0, 36)
+	toast.BackgroundColor3 = Color3.fromRGB(20, 24, 42)
+	toast.BackgroundTransparency = 0.08
+	toast.TextColor3 = Color3.fromRGB(255, 255, 255)
+	toast.Font = Enum.Font.GothamBold
+	toast.TextSize = 14
+	toast.Text = tostring(message or "")
+	toast.TextTransparency = 1
+	toast.BorderSizePixel = 0
+	toast.ZIndex = 80
+	toast.Parent = canvas
+	Instance.new("UICorner", toast).CornerRadius = UDim.new(0, 10)
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(0, 0, 0)
+	stroke.Thickness = 1.3
+	stroke.Transparency = 0.25
+	stroke.Parent = toast
+
+	TweenService:Create(toast, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		TextTransparency = 0
+	}):Play()
+
+	task.delay(1.8, function()
+		if not toast or not toast.Parent then return end
+		local fade = TweenService:Create(toast, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			TextTransparency = 1,
+			BackgroundTransparency = 1
+		})
+		fade:Play()
+		fade.Completed:Connect(function()
+			if toast then toast:Destroy() end
+		end)
+	end)
 end
 
 local NUM_OVERLAYS = 6
@@ -618,10 +665,9 @@ local function resolvePremiumVisual(item, filterType: string)
 	return catEntry, catalogImage, modelPath, catalogIconText
 end
 
-local FNAF_BUNDLE_GAMEPASS_ID = 1732407562
 local FNAF_BANNER_IMAGE = "rbxassetid://72168519670720"
 local FNAF_SINGLE_PRICE = 70000
-local FNAF_BUNDLE_PRICE_ROBUX = 500
+local FNAF_BUNDLE_BUY_TEXT = "Buy All FNAF Pets — 150,000 Fate Coins"
 
 local function populatePetsTab()
 	clearCards()
@@ -655,8 +701,12 @@ local function populatePetsTab()
 	-- ── Build item data ─────────────────────────────────────────────
 	local allPets = ItemCatalog.GetAllPetsSorted and ItemCatalog.GetAllPetsSorted() or {}
 	local fnafSet: {[string]: boolean} = {}
+	local fnafPetIds = {}
 	for _, pet in ipairs(allPets) do
-		if pet.collection == "FNAF" then fnafSet[pet.id] = true end
+		if pet.collection == "FNAF" then
+			fnafSet[pet.id] = true
+			table.insert(fnafPetIds, pet.id)
+		end
 	end
 
 	local topPets = {}
@@ -667,9 +717,21 @@ local function populatePetsTab()
 	end
 
 	local ownedPets = getOwnedSet("OwnedPets")
+	local function areAllFnafOwned(): boolean
+		if #fnafPetIds == 0 then
+			return false
+		end
+		for _, petId in ipairs(fnafPetIds) do
+			if not (_locallyOwned[petId] == true or ownedPets[petId] == true) then
+				return false
+			end
+		end
+		return true
+	end
 
 	local function createPetCard(parent: Instance, item, layoutOrder: number, forceFateCoins: boolean, enablePreview: boolean)
 		local petEntry = ItemCatalog.GetPet and ItemCatalog.GetPet(item.id) or nil
+		local displayName = (petEntry and petEntry.name) or item.name
 		local isFNAFPet = petEntry and petEntry.collection == "FNAF"
 		local isGamepass = item.gamepassId and item.gamepassId > 0
 		if forceFateCoins then
@@ -696,8 +758,19 @@ local function populatePetsTab()
 		end
 
 		local _, catalogImage, modelPath, catalogIconText = resolvePremiumVisual(item, "ExclusivePet")
+		-- Enforce shared image resolver rules directly from authoritative pet entry.
+		if ItemCatalog.ResolveCrownOrPetImage then
+			local resolvedPet = ItemCatalog.ResolveCrownOrPetImage(item.id, "PET")
+			if resolvedPet and resolvedPet.mode == "STATIC" then
+				catalogImage = resolvedPet.image or ""
+				modelPath = nil
+			elseif resolvedPet and resolvedPet.mode == "RENDERER" then
+				catalogImage = ""
+				modelPath = resolvedPet.rendererKey
+			end
+		end
 		local card = Components.CreateItemCard(parent, {
-			name       = item.name,
+			name       = displayName,
 			rarity     = item.rarity or "Rare",
 			iconColor  = item.iconColor,
 			iconText   = catalogIconText,
@@ -753,7 +826,7 @@ local function populatePetsTab()
 				click.MouseButton1Click:Connect(function()
 					SoundUtil.Click()
 					_BundlePanel.ShowItemPreviewIn(canvas, {
-						name = item.name,
+						name = displayName,
 						image = catalogImage,
 						modelPath = modelPath,
 					})
@@ -1007,12 +1080,12 @@ local function populatePetsTab()
 
 	local buyAllBtn = Instance.new("TextButton")
 	buyAllBtn.Name = "BuyAllFNAFBtn"
-	buyAllBtn.BackgroundColor3 = C.RobuxButton
+	buyAllBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 30)
 	buyAllBtn.BorderSizePixel = 0
 	buyAllBtn.Position = UDim2.fromOffset(8, BANNER_H + SECTION_GAP + GRID_H + SECTION_GAP)
 	buyAllBtn.Size = UDim2.new(1, -16, 0, BUY_ALL_H)
-	buyAllBtn.Text = string.format("Buy All FNAF Pets — %d Robux", FNAF_BUNDLE_PRICE_ROBUX)
-	buyAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	buyAllBtn.Text = FNAF_BUNDLE_BUY_TEXT
+	buyAllBtn.TextColor3 = Color3.fromRGB(20, 14, 0)
 	buyAllBtn.Font = Enum.Font.GothamBold
 	buyAllBtn.TextSize = 18
 	buyAllBtn.Parent = fnafSection
@@ -1022,8 +1095,79 @@ local function populatePetsTab()
 	buyAllStroke.Thickness = 1.4
 	buyAllStroke.Transparency = 0.35
 	buyAllStroke.Parent = buyAllBtn
+	local allOwnedNow = areAllFnafOwned()
+	if allOwnedNow then
+		buyAllBtn.Text = "OWNED"
+		buyAllBtn.BackgroundColor3 = C.DisabledBtn
+		buyAllBtn.TextColor3 = Color3.fromRGB(210, 215, 230)
+		buyAllBtn.AutoButtonColor = false
+	end
+	local buyAllBusy = false
 	buyAllBtn.MouseButton1Click:Connect(function()
-		MarketplaceService:PromptGamePassPurchase(LocalPlayer, FNAF_BUNDLE_GAMEPASS_ID)
+		if buyAllBusy then return end
+		if areAllFnafOwned() then
+			showShopToast("You already own all FNAF pets.")
+			return
+		end
+		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+		local buyRF = remotes and remotes:FindFirstChild("Shop_BuyWithCoins")
+		if not buyRF then
+			warn("[ShopPanel] Shop_BuyWithCoins remote not found for FNAF bundle")
+			return
+		end
+
+		buyAllBusy = true
+		buyAllBtn.AutoButtonColor = false
+
+		local okBuy, result = pcall(buyRF.InvokeServer, buyRF, "fnaf_all", "Bundle")
+		if okBuy and result and result.success then
+			for _, petId in ipairs(fnafPetIds) do
+				_locallyOwned[petId] = true
+			end
+			print("[BundlePopup] bundle=fnaf_all image=rbxassetid://95176145899993")
+			RewardPopup.Show({
+				title = "PURCHASED!",
+				name = "All FNAF pets unlocked",
+				itemType = "Bundle",
+				icon = "rbxassetid://95176145899993",
+				okText = "NICE!",
+			})
+			populatePetsTab()
+		else
+			local reason = (okBuy and result and result.reason) or "Purchase failed"
+			if reason == "ALREADY_OWNED" then
+				showShopToast("You already own all FNAF pets.")
+				for _, petId in ipairs(fnafPetIds) do
+					_locallyOwned[petId] = true
+				end
+				populatePetsTab()
+			elseif reason == "INSUFFICIENT_COINS" then
+				local productId = okBuy and result and tonumber(result.productId) or nil
+				if productId and productId > 0 then
+					showShopToast("Not enough Fate Coins. Opening top-up...")
+					MarketplaceService:PromptProductPurchase(LocalPlayer, productId)
+				else
+					RewardPopup.Show({
+						title = "PURCHASE FAILED",
+						name = "Not enough Fate Coins",
+						itemType = "Currency",
+						icon = "rbxassetid://72345557707985",
+						okText = "OK",
+					})
+				end
+			else
+				RewardPopup.Show({
+					title = "PURCHASE FAILED",
+					name = tostring(reason),
+					itemType = "Currency",
+					icon = "rbxassetid://72345557707985",
+					okText = "OK",
+				})
+			end
+		end
+
+		buyAllBusy = false
+		buyAllBtn.AutoButtonColor = true
 	end)
 end
 
@@ -1045,6 +1189,21 @@ local function populateCards(filterType: string)
 
 	print(string.format("[PremiumShop] populateCards called -- filterType=%s", filterType))
 
+	local bestValueCurrencyId: string? = nil
+	if filterType == "Currency" then
+		local bestRatio = -math.huge
+		for _, entry in ipairs(UIConfig.MockPremiumItems) do
+			if entry.type == "Currency" and (entry.robux or 0) > 0 then
+				local coinsAmount = tonumber(entry.coinsAmount) or 0
+				local ratio = coinsAmount / entry.robux
+				if ratio > bestRatio then
+					bestRatio = ratio
+					bestValueCurrencyId = entry.id
+				end
+			end
+		end
+	end
+
 	local order = 0
 	for _, item in ipairs(UIConfig.MockPremiumItems) do
 		if item.type == filterType then
@@ -1054,24 +1213,12 @@ local function populateCards(filterType: string)
 			local isProduct   = item.productId and item.productId > 0
 			local isFateCoins = item.fateCoins and item.fateCoins > 0
 
-			-- Ownership check
+			-- Ownership check (server-confirmed inventory state + local optimistic cache).
 			local isOwned = false
-			if isGamepass then
-				isOwned = checkGamepassOwned(item.gamepassId)
-			elseif isFateCoins then
-				-- Local cache: immediately true after a successful purchase this session
-				if _locallyOwned[item.id] then
-					isOwned = true
-				else
-					-- Fallback: check OwnedCrowns/OwnedPets attribute (may lag by a frame)
-					local attrKey = (filterType == "ExclusiveCrown") and "OwnedCrowns" or "OwnedPets"
-					local raw = LocalPlayer:GetAttribute(attrKey)
-					if raw and type(raw) == "string" and raw ~= "" then
-						for _, ownedId in ipairs(string.split(raw, ",")) do
-							if ownedId == item.id then isOwned = true break end
-						end
-					end
-				end
+			if isGamepass or isFateCoins then
+				local attrKey = (filterType == "ExclusiveCrown") and "OwnedCrowns" or "OwnedPets"
+				local ownedSet = getOwnedSet(attrKey)
+				isOwned = (_locallyOwned[item.id] == true) or (ownedSet[item.id] == true)
 			end
 
 			local actionText
@@ -1107,7 +1254,11 @@ local function populateCards(filterType: string)
 				iconText = catalogIconText,
 				image = catalogImage,
 				modelPath = modelPath,
-				tag = item.tag,
+				tag = (filterType == "Currency" and (
+					(item.id == "coins_500" and "POPULAR")
+					or (item.id == bestValueCurrencyId and "BEST VALUE")
+					or ""
+				)) or item.tag,
 				actionText = actionText,
 				actionColor = actionColor,
 			onAction = function()
@@ -1217,6 +1368,22 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		SoundUtil.Close()
 		ShopPanel.Hide()
 	end)
+
+	if not _inventoryUpdatedConn then
+		task.spawn(function()
+			local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+			local invUpdate = remotes and remotes:FindFirstChild("InventoryUpdated")
+			if invUpdate and invUpdate:IsA("RemoteEvent") then
+				_inventoryUpdatedConn = invUpdate.OnClientEvent:Connect(function()
+					if not visible then return end
+					local tab = CATEGORIES[activeTab]
+					if tab and tab.filter ~= "Bundle" then
+						populateCards(tab.filter)
+					end
+				end)
+			end
+		end)
+	end
 
 	local tabTitles = {}
 	for _, cat in ipairs(CATEGORIES) do

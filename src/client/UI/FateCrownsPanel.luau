@@ -86,18 +86,7 @@ local function getOwnedCrownSet(): { [string]: boolean }
 	for _, id in ipairs(list) do
 		set[id] = true
 	end
-	-- Exclusive crowns sold as gamepasses: if the player owns the gamepass,
-	-- treat the crown as owned in the inventory (same logic as Shop's "OWNED" check).
-	for crownId, gamepassId in pairs(_crownGamepassMap) do
-		if not set[crownId] then
-			local gpOk, owns = pcall(function()
-				return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
-			end)
-			if gpOk and owns then
-				set[crownId] = true
-			end
-		end
-	end
+	-- Ownership is inventory-driven only; server grant confirmation updates attributes.
 	return set
 end
 

@@ -14,12 +14,15 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Server = ServerScriptService:WaitForChild("Server")
 
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
+local BundleCatalog = require(Shared:WaitForChild("BundleCatalog"))
+local UIConfig = require(Shared:WaitForChild("UIConfig"))
 
 local ShopService = {}
 local initialized = false
 
 local _EconomyService   = nil
 local _InventoryService = nil
+local _bundleBuyInFlight: { [number]: boolean } = {}
 
 local function getEconomy()
 	if _EconomyService then return _EconomyService end
@@ -41,9 +44,126 @@ local TYPE_TO_CATEGORY = {
 	ExclusivePet   = "Pets",
 }
 
+local BUNDLE_ALIASES: { [string]: string } = {
+	fnaf_all = "fnaf_pets_bundle",
+	fnaf_pets_bundle = "fnaf_pets_bundle",
+}
+
+local BUNDLE_COIN_COSTS: { [string]: number } = {
+	fnaf_pets_bundle = 150000,
+}
+
+local function findTopUpProduct(shortage: number): (number?, number?)
+	local bestProductId: number? = nil
+	local bestAmount: number? = nil
+	for _, entry in ipairs(UIConfig.MockPremiumItems or {}) do
+		if entry.type == "Currency" and type(entry.productId) == "number" and entry.productId > 0 then
+			local amount = tonumber(entry.coinsAmount) or 0
+			if amount >= shortage then
+				if bestAmount == nil or amount < (bestAmount :: number) then
+					bestAmount = amount
+					bestProductId = entry.productId
+				end
+			end
+		end
+	end
+	return bestProductId, bestAmount
+end
+
+local function buyBundleWithCoins(player: Player, requestBundleId: string): { success: boolean, reason: string?, grantedCount: number?, grantedItemIds: {string}?, productId: number?, shortage: number?, recommendedCoins: number? }
+	local bundleId = BUNDLE_ALIASES[requestBundleId] or requestBundleId
+	local bundle = BundleCatalog.Get(bundleId)
+	if not bundle then
+		return { success = false, reason = "Bundle not found" }
+	end
+
+	local price = BUNDLE_COIN_COSTS[bundleId]
+	if not price or price <= 0 then
+		return { success = false, reason = "Bundle is not available for Fate Coins" }
+	end
+
+	local inFlightKey = player.UserId
+	if _bundleBuyInFlight[inFlightKey] then
+		return { success = false, reason = "Purchase in progress" }
+	end
+	_bundleBuyInFlight[inFlightKey] = true
+
+	local ES = getEconomy()
+	local IS = getInventory()
+	if not ES or not IS then
+		_bundleBuyInFlight[inFlightKey] = nil
+		return { success = false, reason = "Shop services unavailable" }
+	end
+
+	local toGrant = {}
+	for _, inc in ipairs(bundle.includes or {}) do
+		if inc.category and inc.itemId and not IS.OwnsItem(player, inc.category, inc.itemId) then
+			table.insert(toGrant, inc)
+		end
+	end
+	if #toGrant == 0 then
+		print(string.format("[BundleBuy] player=%s bundle=%s cost=%d result=FAIL reason=ALREADY_OWNED",
+			player.Name, bundleId, price))
+		_bundleBuyInFlight[inFlightKey] = nil
+		return { success = false, reason = "ALREADY_OWNED" }
+	end
+
+	local balance = ES.GetCoins(player)
+	if balance < price then
+		local shortage = price - balance
+		if bundleId == "fnaf_pets_bundle" then
+			local productId, recommendedCoins = findTopUpProduct(shortage)
+			print(string.format("[BundleBuy] player=%s bundle=%s cost=%d result=FAIL reason=INSUFFICIENT_FUNDS shortage=%d productId=%s",
+				player.Name, bundleId, price, shortage, tostring(productId)))
+			_bundleBuyInFlight[inFlightKey] = nil
+			return {
+				success = false,
+				reason = "INSUFFICIENT_COINS",
+				productId = productId,
+				shortage = shortage,
+				recommendedCoins = recommendedCoins,
+			}
+		end
+		print(string.format("[BundleBuy] player=%s bundle=%s cost=%d result=FAIL reason=INSUFFICIENT_FUNDS",
+			player.Name, bundleId, price))
+		_bundleBuyInFlight[inFlightKey] = nil
+		return { success = false, reason = "Not enough Fate Coins" }
+	end
+
+	local deducted = ES.DeductCoins(player, price, "BundlePurchase:" .. bundleId)
+	if not deducted then
+		_bundleBuyInFlight[inFlightKey] = nil
+		return { success = false, reason = "Failed to deduct coins" }
+	end
+
+	local grantedCount = 0
+	local grantedItemIds = {}
+	for _, inc in ipairs(toGrant) do
+		if IS.GrantItem(player, inc.category, inc.itemId) then
+			grantedCount += 1
+			table.insert(grantedItemIds, inc.itemId)
+		end
+	end
+
+	if grantedCount == 0 then
+		ES.AwardCoins(player, price, "BundleRefund:" .. bundleId, true)
+		_bundleBuyInFlight[inFlightKey] = nil
+		return { success = false, reason = "Failed to grant bundle items" }
+	end
+
+	print(string.format("[BundleBuy] player=%s bundle=%s cost=%d result=SUCCESS grantedCount=%d",
+		player.Name, bundleId, price, grantedCount))
+	_bundleBuyInFlight[inFlightKey] = nil
+	return { success = true, grantedCount = grantedCount, grantedItemIds = grantedItemIds }
+end
+
 function ShopService.BuyWithCoins(player: Player, itemId: string, itemType: string): { success: boolean, reason: string? }
 	if not itemId or not itemType then
 		return { success = false, reason = "Invalid request" }
+	end
+
+	if itemType == "Bundle" then
+		return buyBundleWithCoins(player, itemId)
 	end
 
 	-- Resolve premium entry for price

@@ -114,6 +114,8 @@ local function refresh()
 		local isOwned = ownedSet[pet.id] == true
 		local isEquipped = isOwned and (pet.id == equippedId)
 		local resolved = ItemCatalog.ResolveCrownOrPetImage and ItemCatalog.ResolveCrownOrPetImage(pet.id, "PET") or nil
+		local resolvedImage = (resolved and resolved.mode == "STATIC" and resolved.image) or ItemCatalog.GetImage(pet)
+		local resolvedModelPath = (resolved and resolved.mode == "RENDERER" and resolved.rendererKey) or nil
 		local actionText = nil
 		local actionColor = nil
 		local subLabel = nil
@@ -132,8 +134,8 @@ local function refresh()
 			iconColor = pet.iconColor,
 			thumbnailBgColor = pet.thumbnailBgColor,
 			iconText = pet.iconText or "",
-			image = (resolved and resolved.image) or ItemCatalog.GetImage(pet),
-			modelPath = (resolved and resolved.rendererKey) or pet.modelPath,
+			image = resolvedImage,
+			modelPath = resolvedModelPath,
 			locked = not isOwned,
 			equipped = isEquipped,
 			owned = isOwned,

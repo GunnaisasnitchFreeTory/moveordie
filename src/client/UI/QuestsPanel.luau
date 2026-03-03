@@ -37,6 +37,10 @@ local okIC, ItemCatalog = pcall(require, Shared:WaitForChild("ItemCatalog", 10))
 if not okIC or not ItemCatalog then
 	ItemCatalog = { Pets = {}, Crowns = {}, CoinImage = "" }
 end
+local okQI, QuestRewardIconResolver = pcall(require, Shared:WaitForChild("QuestRewardIconResolver", 10))
+if not okQI or not QuestRewardIconResolver then
+	QuestRewardIconResolver = { GetQuestRewardIcon = function() return nil end }
+end
 
 local Client            = script.Parent
 local AnimUtil          = require(Client:WaitForChild("AnimUtil"))
@@ -126,39 +130,17 @@ end
 local function populateRewardCard(card, reward)
 	if not reward then return end
 
-	if reward.type == "Coins" then
+	local questRewardIcon = QuestRewardIconResolver.GetQuestRewardIcon(reward)
+	if questRewardIcon then
 		local img = Instance.new("ImageLabel")
 		img.AnchorPoint         = Vector2.new(0.5, 0.5)
 		img.Position            = UDim2.fromScale(0.5, 0.5)
 		img.Size                = UDim2.fromScale(1, 1)
 		img.BackgroundTransparency = 1
-		img.Image               = "rbxassetid://72345557707985"
+		img.Image               = questRewardIcon
 		img.ScaleType           = Enum.ScaleType.Crop
 		img.ZIndex              = 9
 		img.Parent              = card
-
-	elseif reward.type == "Crate" then
-		local img = Instance.new("ImageLabel")
-		img.AnchorPoint         = Vector2.new(0.5, 0.5)
-		img.Position            = UDim2.fromScale(0.5, 0.5)
-		img.Size                = UDim2.fromScale(1, 1)
-		img.BackgroundTransparency = 1
-		img.Image               = "rbxassetid://108812530080296"
-		img.ScaleType           = Enum.ScaleType.Crop
-		img.ZIndex              = 9
-		img.Parent              = card
-
-	elseif reward.type == "Spin" then
-		local img = Instance.new("ImageLabel")
-		img.AnchorPoint         = Vector2.new(0.5, 0.5)
-		img.Position            = UDim2.fromScale(0.5, 0.5)
-		img.Size                = UDim2.fromScale(1, 1)
-		img.BackgroundTransparency = 1
-		img.Image               = "rbxassetid://101810706814974"
-		img.ScaleType           = Enum.ScaleType.Crop
-		img.ZIndex              = 9
-		img.Parent              = card
-
 	else
 		local itemDef   = getItemDef(reward)
 		local staticImg = itemDef and itemDef.image
@@ -440,10 +422,13 @@ local function buildOneRow(sf, questData, rowIndex)
 				local rw = result.reward
 				if rw then
 					if rw.type == "Coins" then
+						local questReward = { type = "Coins", amount = rw.amount }
 						RewardPopup.Show({
 							title      = "QUEST COMPLETE!",
 							name       = tostring(rw.amount) .. " Fate Coins",
 							itemType   = "Coins",
+							icon       = QuestRewardIconResolver.GetQuestRewardIcon(questReward),
+							questReward = questReward,
 							rarityText = "Common",
 							okText     = "CLAIM!",
 						})
@@ -468,6 +453,7 @@ local function buildOneRow(sf, questData, rowIndex)
 							okText     = "CLAIM!",
 						})
 					elseif rw.type == "Crate" then
+						local questReward = { type = "Crate", crateId = rw.crateId, count = rw.count }
 						local extra = result.extra
 						if extra and extra.crateGrant and not extra.crateGrant.isDuplicate then
 							local cg = extra.crateGrant
@@ -476,6 +462,8 @@ local function buildOneRow(sf, questData, rowIndex)
 								name       = cg.displayName or (rw.crateId == "crate_crown" and "Crown" or "Pet"),
 								itemId     = cg.itemId,
 								itemType   = cg.category == "Crowns" and "Crown" or "Pet",
+								icon       = QuestRewardIconResolver.GetQuestRewardIcon(questReward),
+								questReward = questReward,
 								rarityText = cg.rarity or "Common",
 								okText     = "CLAIM!",
 							})
@@ -486,16 +474,21 @@ local function buildOneRow(sf, questData, rowIndex)
 								name       = "1 " .. crateName .. " Opened!",
 								itemId     = rw.crateId or "crate_crown",
 								itemType   = "Crate",
+								icon       = QuestRewardIconResolver.GetQuestRewardIcon(questReward),
+								questReward = questReward,
 								rarityText = "Common",
 								okText     = "CLAIM!",
 							})
 						end
 					elseif rw.type == "Spin" then
 						local n = rw.count or 1
+						local questReward = { type = "Spin", count = n, spinCount = n }
 						RewardPopup.Show({
 							title      = "QUEST COMPLETE!",
 							name       = tostring(n) .. " Free Spin" .. (n == 1 and "" or "s") .. " Added!",
-							itemType   = "Coins",
+							itemType   = "Spin",
+							icon       = QuestRewardIconResolver.GetQuestRewardIcon(questReward),
+							questReward = questReward,
 							rarityText = "Common",
 							okText     = "CLAIM!",
 						})

@@ -77,6 +77,8 @@ local C = UIConfig.Colors
 local S = UIConfig.Sizes
 
 local LocalPlayer = Players.LocalPlayer
+local FNAF_BUNDLE_ID = "fnaf_pets_bundle"
+local FNAF_BUNDLE_COST_COINS = 150000
 
 local ACCENT_COLOR   = Color3.fromRGB(245, 48, 72)
 local SELECTED_GLOW  = Color3.fromRGB(255, 210, 50)
@@ -89,6 +91,7 @@ local ENTRY_SELECTED = Color3.fromRGB(44, 48, 78)
 local contentParent: ScrollingFrame? = nil
 local bundleContainer: Frame? = nil
 local selectedBundleId: string = ""
+local _bundleOwnedLocal: { [string]: boolean } = {}
 local inDetailView = false
 
 local coverImage: ImageLabel? = nil
@@ -201,8 +204,9 @@ local function selectBundle(bundleId: string)
 	end
 
 	if buyBtn then
-		local isOwned = false
-		if bundle.gamepassId then
+		local isFnafCoinBundle = (bundle.id == FNAF_BUNDLE_ID)
+		local isOwned = _bundleOwnedLocal[bundle.id] == true
+		if bundle.gamepassId and not isFnafCoinBundle then
 			local okChk, ownsChk = pcall(function()
 				return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, bundle.gamepassId)
 			end)
@@ -218,8 +222,13 @@ local function selectBundle(bundleId: string)
 			buyBtn.BackgroundColor3 = C.DisabledBtn
 			buyBtn.Active = false
 		else
-			buyBtn.Text = string.format("BUY - %d ROBUX", bundle.priceRobux)
-			buyBtn.BackgroundColor3 = C.BuyButton
+			if isFnafCoinBundle then
+				buyBtn.Text = "BUY - 150K F"
+				buyBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 30)
+			else
+				buyBtn.Text = string.format("BUY - %d ROBUX", bundle.priceRobux)
+				buyBtn.BackgroundColor3 = C.BuyButton
+			end
 			buyBtn.Active = true
 		end
 	end
@@ -852,7 +861,28 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 		local bundle = BundleCatalog.Get(selectedBundleId)
 		if not bundle then return end
 		if not bundle.isAvailable then return end
-		if bundle.gamepassId then
+		if bundle.id == FNAF_BUNDLE_ID then
+			local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+			local buyRF = remotes and remotes:FindFirstChild("Shop_BuyWithCoins")
+			if not buyRF then
+				warn("[BundlePanel] Shop_BuyWithCoins remote missing for FNAF bundle")
+				return
+			end
+			local okBuy, result = pcall(buyRF.InvokeServer, buyRF, "fnaf_all", "Bundle")
+			if okBuy and result and result.success then
+				selectBundle(selectedBundleId)
+			elseif okBuy and result and result.reason == "INSUFFICIENT_COINS" then
+				local productId = tonumber(result.productId)
+				if productId and productId > 0 then
+					MarketplaceService:PromptProductPurchase(LocalPlayer, productId)
+				else
+					warn("[BundlePanel] Missing top-up productId for insufficient FNAF coins")
+				end
+			elseif okBuy and result and result.reason == "ALREADY_OWNED" then
+				_bundleOwnedLocal[FNAF_BUNDLE_ID] = true
+				selectBundle(selectedBundleId)
+			end
+		elseif bundle.gamepassId then
 			MarketplaceService:PromptGamePassPurchase(LocalPlayer, bundle.gamepassId)
 		elseif bundle.productId then
 			MarketplaceService:PromptProductPurchase(LocalPlayer, bundle.productId)
@@ -1067,13 +1097,22 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 		priceLabel.TextSize = 11
 		priceLabel.TextXAlignment = Enum.TextXAlignment.Left
 		local selectorOwned = false
-		if bundle.gamepassId then
+		local isFnafCoinBundle = (bundle.id == FNAF_BUNDLE_ID)
+		if isFnafCoinBundle then
+			selectorOwned = _bundleOwnedLocal[bundle.id] == true
+		elseif bundle.gamepassId then
 			local okS, ownsS = pcall(function()
 				return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, bundle.gamepassId)
 			end)
 			selectorOwned = okS and ownsS == true
 		end
-		priceLabel.Text = selectorOwned and "OWNED" or string.format("%d R$", bundle.priceRobux)
+		if selectorOwned then
+			priceLabel.Text = "OWNED"
+		elseif isFnafCoinBundle then
+			priceLabel.Text = string.format("%s F", tostring(FNAF_BUNDLE_COST_COINS))
+		else
+			priceLabel.Text = string.format("%d R$", bundle.priceRobux)
+		end
 		if selectorOwned then priceLabel.TextColor3 = C.TextMuted end
 		priceLabel.ZIndex = 7
 		priceLabel.Parent = entry
@@ -1149,9 +1188,13 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(_player, _gam
 		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 		local verifyRF = remotes and remotes:FindFirstChild("VerifyGamepassPurchase")
 		if verifyRF then
-			pcall(function() verifyRF:InvokeServer(_gamepassId) end)
+			local okVerify, verifyResult = pcall(function()
+				return verifyRF:InvokeServer(_gamepassId)
+			end)
+			if okVerify and verifyResult and verifyResult.success then
+				selectBundle(selectedBundleId)
+			end
 		end
-		selectBundle(selectedBundleId)
 	end
 end)
 

@@ -63,6 +63,19 @@ local function getThumbnailRenderer()
 	return _ThumbnailRenderer
 end
 
+local _QuestRewardIconResolver = nil
+local function getQuestRewardIconResolver()
+	if _QuestRewardIconResolver then return _QuestRewardIconResolver end
+	pcall(function()
+		local Shared = ReplicatedStorage:FindFirstChild("Shared")
+		if Shared then
+			local mod = Shared:FindFirstChild("QuestRewardIconResolver")
+			if mod then _QuestRewardIconResolver = require(mod) end
+		end
+	end)
+	return _QuestRewardIconResolver
+end
+
 -- ═══════════════════════════════════════════
 -- LOOKUP CATALOG ENTRY (shared helper)
 -- ═══════════════════════════════════════════
@@ -144,6 +157,15 @@ local CRATE_FALLBACK_IMAGE = "rbxassetid://108812530080296"
 -- Returns: resolvedImage, fallbackEmoji, fallbackColor, catalogEntry (for ThumbnailRenderer)
 -- ═══════════════════════════════════════════
 local function resolveIcon(data)
+	-- Quest-specific mapping takes precedence when a quest reward descriptor exists.
+	local questIconResolver = getQuestRewardIconResolver()
+	if questIconResolver and questIconResolver.GetQuestRewardIcon then
+		local questIcon = questIconResolver.GetQuestRewardIcon(data.questReward)
+		if questIcon and questIcon ~= "" then
+			return questIcon, nil, nil, nil
+		end
+	end
+
 	-- Explicit icon from caller (e.g. wheel-specific asset IDs) always wins
 	if data.icon and data.icon ~= "" then
 		return data.icon, nil, nil, nil

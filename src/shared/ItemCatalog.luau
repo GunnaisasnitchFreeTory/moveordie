@@ -29,6 +29,12 @@ local Shared = ReplicatedStorage:FindFirstChild("Shared") or ReplicatedStorage:W
 local UIConfig = Shared and require(Shared:WaitForChild("UIConfig")) or { DebugLogs = false }
 local DEBUG_LOGS = UIConfig.DebugLogs == true
 local _fnafStaticLogPrinted = false
+local FORCED_STATIC_PET_IMAGES: { [string]: string } = {
+	pet_dark_winged_dragon = "rbxassetid://128329301968992",
+	pet_dark_falcon = "rbxassetid://82837073973871",
+	pet_glitched_dragon = "rbxassetid://96913318777670",
+	pet_pink_butterfly = "rbxassetid://96693122849195",
+}
 
 -- ═══════════════════════════════════════════════════════════════════
 -- FALLBACK
@@ -509,7 +515,8 @@ ItemCatalog.Pets = {
 		type      = "Pet",
 		rarity    = "Legendary",
 		modelPath = "ItemModels.Pets.Legendary.Glitched Dragon",
-		image     = "rbxassetid://105972642773708",
+		modelAssetId = 96913318777670,
+		image     = "",
 		iconText = "",
 		iconColor = Color3.fromRGB(58, 255, 128),
 		stats     = { CoinMultiplier = 1.15, WalkSpeed = 3, JumpPower = 5 },
@@ -517,12 +524,13 @@ ItemCatalog.Pets = {
 	},
 	pet_dark_winged_dragon = {
 		id        = "pet_dark_winged_dragon",
-		name      = "D.W.D",
-		modelName = "Dark Winged Dragon",
+		name      = "Music Winged Dragon",
+		modelName = "Music Winged Dragon",
 		type      = "Pet",
 		rarity    = "Legendary",
-		modelPath = "ItemModels.Pets.Legendary.Dark Winged Dragon",
-		image     = "rbxassetid://72226943594824",
+		modelPath = "ItemModels.Pets.Legendary.Music Winged Dragon",
+		modelAssetId = 128329301968992,
+		image     = "",
 		iconText = "",
 		iconColor = Color3.fromRGB(48, 28, 68),
 		stats     = { CoinMultiplier = 1.15, WalkSpeed = 2, JumpPower = 8 },
@@ -535,7 +543,8 @@ ItemCatalog.Pets = {
 		type      = "Pet",
 		rarity    = "Legendary",
 		modelPath = "ItemModels.Pets.Legendary.Pink Butterfly",
-		image     = "rbxassetid://82261955048760",
+		modelAssetId = 96693122849195,
+		image     = "",
 		iconText = "",
 		iconColor = Color3.fromRGB(255, 148, 208),
 		stats     = { CoinMultiplier = 1.12, WalkSpeed = 4 },
@@ -543,12 +552,13 @@ ItemCatalog.Pets = {
 	},
 	pet_dark_falcon = {
 		id        = "pet_dark_falcon",
-		name      = "Dark Falcon",
-		modelName = "Dark Falcon",
+		name      = "Dark Goblem",
+		modelName = "Dark Goblem",
 		type      = "Pet",
 		rarity    = "Legendary",
-		modelPath = "ItemModels.Pets.Legendary.Dark Falcon",
-		image     = "rbxassetid://138265402881761",
+		modelPath = "ItemModels.Pets.Legendary.Dark Goblem",
+		modelAssetId = 82837073973871,
+		image     = "",
 		iconText = "",
 		iconColor = Color3.fromRGB(38, 28, 48),
 		stats     = { CoinMultiplier = 1.14, WalkSpeed = 3, JumpPower = 6 },
@@ -1499,15 +1509,21 @@ ItemCatalog.Currency = {
 
 ItemCatalog.Premium = {
 	-- Coin packs (Developer Products)
-	coins_500  = { id = "coins_500",  name = "500 Fate Coins",   type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 218, 48),  robux = 100, productId = 3539712298, tag = "POPULAR" },
-	coins_2000 = { id = "coins_2000", name = "2,000 Fate Coins", type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 198, 28),  robux = 300, productId = 3539713007, tag = "BEST VALUE" },
-	coins_5000 = { id = "coins_5000", name = "5,000 Fate Coins", type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 178, 18),  robux = 600, productId = 3539713203, tag = "" },
+	coins_500    = { id = "coins_500",    name = "500 Fate Coins",     type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 218, 48), robux = 100,  productId = 3539712298, tag = "POPULAR",    coinsAmount = 500 },
+	coins_2000   = { id = "coins_2000",   name = "2,000 Fate Coins",   type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 198, 28), robux = 200,  productId = 3539713007, tag = "",           coinsAmount = 2000 },
+	coins_5000   = { id = "coins_5000",   name = "5,000 Fate Coins",   type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 178, 18), robux = 400,  productId = 3539713203, tag = "",           coinsAmount = 5000 },
+	coins_10000  = { id = "coins_10000",  name = "10,000 Fate Coins",  type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 170, 24), robux = 500,  productId = 3548924617, tag = "",           coinsAmount = 10000 },
+	coins_20000  = { id = "coins_20000",  name = "20,000 Fate Coins",  type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 160, 24), robux = 600,  productId = 3548924750, tag = "",           coinsAmount = 20000 },
+	coins_80000  = { id = "coins_80000",  name = "80,000 Fate Coins",  type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 150, 24), robux = 800,  productId = 3548924909, tag = "",           coinsAmount = 80000 },
+	coins_100000 = { id = "coins_100000", name = "100,000 Fate Coins", type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 140, 24), robux = 1000, productId = 3548925138, tag = "",           coinsAmount = 100000 },
+	coins_150000 = { id = "coins_150000", name = "150,000 Fate Coins", type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 130, 24), robux = 1200, productId = 3548925310, tag = "",           coinsAmount = 150000 },
+	coins_200000 = { id = "coins_200000", name = "200,000 Fate Coins", type = "Currency", image = "rbxassetid://111156188787000", iconText = "F", iconColor = Color3.fromRGB(255, 120, 24), robux = 2000, productId = 3548925433, tag = "",           coinsAmount = 200000 },
 
 	-- Legendary Pets (Gamepasses)
-	pet_glitched_dragon    = { id = "pet_glitched_dragon",    name = "Glitched Dragon",    type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://105972642773708", iconText = "", iconColor = Color3.fromRGB(58, 255, 128),  thumbnailBgColor = Color3.fromRGB(12, 32, 22), robux = 250, gamepassId = 1718832641, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Glitched Dragon" },
-	pet_dark_winged_dragon = { id = "pet_dark_winged_dragon", name = "D.W.D", type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://72226943594824",  iconText = "", iconColor = Color3.fromRGB(48, 28, 68),    thumbnailBgColor = Color3.fromRGB(15, 10, 25), robux = 300, gamepassId = 1717772785, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Dark Winged Dragon" },
-	pet_pink_butterfly     = { id = "pet_pink_butterfly",     name = "Pink Butterfly",     type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://82261955048760",  iconText = "", iconColor = Color3.fromRGB(255, 148, 208), thumbnailBgColor = Color3.fromRGB(35, 15, 28), robux = 200, gamepassId = 1716864887, tag = "NEW",       modelPath = "ItemModels.Pets.Legendary.Pink Butterfly" },
-	pet_dark_falcon        = { id = "pet_dark_falcon",        name = "Dark Falcon",        type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://138265402881761", iconText = "", iconColor = Color3.fromRGB(38, 28, 48),    thumbnailBgColor = Color3.fromRGB(12, 10, 18), robux = 250, gamepassId = 1716313058, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Dark Falcon" },
+	pet_glitched_dragon    = { id = "pet_glitched_dragon",    name = "Glitched Dragon",      type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://96913318777670",  iconText = "", iconColor = Color3.fromRGB(58, 255, 128),  thumbnailBgColor = Color3.fromRGB(12, 32, 22), robux = 250, gamepassId = 1718832641, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Glitched Dragon", modelAssetId = 96913318777670 },
+	pet_dark_winged_dragon = { id = "pet_dark_winged_dragon", name = "Music Winged Dragon", type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://128329301968992", iconText = "", iconColor = Color3.fromRGB(48, 28, 68),    thumbnailBgColor = Color3.fromRGB(15, 10, 25), robux = 300, gamepassId = 1717772785, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Music Winged Dragon", modelAssetId = 128329301968992 },
+	pet_pink_butterfly     = { id = "pet_pink_butterfly",     name = "Pink Butterfly",       type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://96693122849195",  iconText = "", iconColor = Color3.fromRGB(255, 148, 208), thumbnailBgColor = Color3.fromRGB(35, 15, 28), robux = 200, gamepassId = 1716864887, tag = "NEW",       modelPath = "ItemModels.Pets.Legendary.Pink Butterfly", modelAssetId = 96693122849195 },
+	pet_dark_falcon        = { id = "pet_dark_falcon",        name = "Dark Goblem",          type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://82837073973871",  iconText = "", iconColor = Color3.fromRGB(38, 28, 48),    thumbnailBgColor = Color3.fromRGB(12, 10, 18), robux = 250, gamepassId = 1716313058, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Dark Goblem", modelAssetId = 82837073973871 },
 	-- FNAF Epic Pets (temporary Robux pricing)
 	pet_freddy_fazbear     = { id = "pet_freddy_fazbear",     name = "Freddy Fazbear",      type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://84840145874928",  iconText = "", iconColor = Color3.fromRGB(165, 108, 72), thumbnailBgColor = Color3.fromRGB(30, 22, 16), robux = 400, gamepassId = 1885101001, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.FreddyFazbear" },
 	pet_bonnie             = { id = "pet_bonnie",             name = "Bonnie",              type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://82413653261556",  iconText = "", iconColor = Color3.fromRGB(118, 88, 228), thumbnailBgColor = Color3.fromRGB(20, 16, 34), robux = 400, gamepassId = 1885101002, fateCoins = 75000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Bonnie" },
@@ -1631,6 +1647,29 @@ do
 	end
 end
 
+-- Server startup audit for requested pet model asset IDs.
+if RunService:IsServer() then
+	print("[PetCatalog] ===== model asset audit =====")
+	local auditIds = {
+		"pet_dark_winged_dragon",
+		"pet_pink_butterfly",
+		"pet_dark_falcon",
+		"pet_glitched_dragon",
+	}
+	for _, id in ipairs(auditIds) do
+		local pet = ItemCatalog.Pets[id]
+		if pet then
+			print(string.format("[PetCatalog] %s modelAssetId=%s", id, tostring(pet.modelAssetId or "")))
+			if pet.image and pet.image ~= "" then
+				print(string.format("[ImageRules] STATIC: %s -> %s", id, pet.image))
+			else
+				print(string.format("[ImageRules] RENDERER: %s", id))
+			end
+		end
+	end
+	print("[PetCatalog] ============================")
+end
+
 -- Startup visibility for renderer-only FNAF pets.
 do
 	local fnafIds = {
@@ -1746,6 +1785,18 @@ function ItemCatalog.ResolveCrownOrPetImage(itemId: string, itemType: string)
 
 	if not item then
 		return { mode = "MISSING", image = "", rendererKey = nil, item = nil }
+	end
+
+	if normalized == "PET" then
+		local forcedImage = FORCED_STATIC_PET_IMAGES[itemId]
+		if forcedImage and forcedImage ~= "" then
+			return {
+				mode = "STATIC",
+				image = forcedImage,
+				rendererKey = nil,
+				item = item,
+			}
+		end
 	end
 
 	-- Hard rule: FNAF pets always use static images; never ThumbnailRenderer.

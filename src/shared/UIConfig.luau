@@ -238,14 +238,20 @@ UIConfig.RarityInfo = {
 
 UIConfig.MockPremiumItems = {
 	-- Coin packs (Developer Products)
-	{ id = "coins_500",     name = "500 Fate Coins",   type = "Currency",       robux = 100, productId = 3539712298, iconColor = Color3.fromRGB(255, 218, 48),  tag = "POPULAR" },
-	{ id = "coins_2000",    name = "2,000 Fate Coins", type = "Currency",       robux = 300, productId = 3539713007, iconColor = Color3.fromRGB(255, 198, 28),  tag = "BEST VALUE" },
-	{ id = "coins_5000",    name = "5,000 Fate Coins", type = "Currency",       robux = 600, productId = 3539713203, iconColor = Color3.fromRGB(255, 178, 18),  tag = "" },
+	{ id = "coins_500",      name = "500 Fate Coins",    type = "Currency", robux = 100,  productId = 3539712298, iconColor = Color3.fromRGB(255, 218, 48), tag = "POPULAR",    coinsAmount = 500 },
+	{ id = "coins_2000",     name = "2,000 Fate Coins",  type = "Currency", robux = 200,  productId = 3539713007, iconColor = Color3.fromRGB(255, 198, 28), tag = "",           coinsAmount = 2000 },
+	{ id = "coins_5000",     name = "5,000 Fate Coins",  type = "Currency", robux = 400,  productId = 3539713203, iconColor = Color3.fromRGB(255, 178, 18), tag = "",           coinsAmount = 5000 },
+	{ id = "coins_10000",    name = "10,000 Fate Coins", type = "Currency", robux = 500,  productId = 3548924617, iconColor = Color3.fromRGB(255, 170, 24), tag = "",           coinsAmount = 10000 },
+	{ id = "coins_20000",    name = "20,000 Fate Coins", type = "Currency", robux = 600,  productId = 3548924750, iconColor = Color3.fromRGB(255, 160, 24), tag = "",           coinsAmount = 20000 },
+	{ id = "coins_80000",    name = "80,000 Fate Coins", type = "Currency", robux = 800,  productId = 3548924909, iconColor = Color3.fromRGB(255, 150, 24), tag = "",           coinsAmount = 80000 },
+	{ id = "coins_100000",   name = "100,000 Fate Coins",type = "Currency", robux = 1000, productId = 3548925138, iconColor = Color3.fromRGB(255, 140, 24), tag = "",           coinsAmount = 100000 },
+	{ id = "coins_150000",   name = "150,000 Fate Coins",type = "Currency", robux = 1200, productId = 3548925310, iconColor = Color3.fromRGB(255, 130, 24), tag = "",           coinsAmount = 150000 },
+	{ id = "coins_200000",   name = "200,000 Fate Coins",type = "Currency", robux = 2000, productId = 3548925433, iconColor = Color3.fromRGB(255, 120, 24), tag = "",           coinsAmount = 200000 },
 	-- Legendary Pets (Gamepasses)
 	{ id = "pet_glitched_dragon",    name = "Glitched Dragon",    type = "ExclusivePet",   robux = 250, gamepassId = 1718832641, iconColor = Color3.fromRGB(58, 255, 128),  tag = "EXCLUSIVE", rarity = "Legendary" },
-	{ id = "pet_dark_winged_dragon", name = "D.W.D", type = "ExclusivePet",   robux = 300, gamepassId = 1717772785, iconColor = Color3.fromRGB(48, 28, 68),    tag = "EXCLUSIVE", rarity = "Legendary" },
+	{ id = "pet_dark_winged_dragon", name = "Music Winged Dragon", type = "ExclusivePet",   robux = 300, gamepassId = 1717772785, iconColor = Color3.fromRGB(48, 28, 68),    tag = "EXCLUSIVE", rarity = "Legendary" },
 	{ id = "pet_pink_butterfly",     name = "Pink Butterfly",     type = "ExclusivePet",   robux = 200, gamepassId = 1716864887, iconColor = Color3.fromRGB(255, 148, 208), tag = "NEW",       rarity = "Legendary" },
-	{ id = "pet_dark_falcon",        name = "Dark Falcon",        type = "ExclusivePet",   robux = 250, gamepassId = 1716313058, iconColor = Color3.fromRGB(38, 28, 48),    tag = "EXCLUSIVE", rarity = "Legendary" },
+	{ id = "pet_dark_falcon",        name = "Dark Goblem",        type = "ExclusivePet",   robux = 250, gamepassId = 1716313058, iconColor = Color3.fromRGB(38, 28, 48),    tag = "EXCLUSIVE", rarity = "Legendary" },
 	-- FNAF Epic Pets (shop test flow)
 	{ id = "pet_freddy_fazbear",     name = "Freddy Fazbear",     type = "ExclusivePet",   robux = 400, gamepassId = 1885101001, iconColor = Color3.fromRGB(165, 108, 72), tag = "NEW",       rarity = "Epic" },
 	{ id = "pet_bonnie",             name = "Bonnie",             type = "ExclusivePet",   robux = 400, gamepassId = 1885101002, iconColor = Color3.fromRGB(118, 88, 228), tag = "NEW",       rarity = "Epic" },

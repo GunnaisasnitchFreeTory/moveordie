@@ -54,6 +54,7 @@ local SpinWheelService = require(Server:WaitForChild("SpinWheelService"))
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local SpinWheelConfig = require(Shared:WaitForChild("SpinWheelConfig"))
+local UIConfig = require(Shared:WaitForChild("UIConfig"))
 
 SpinWheelService.Init()
 
@@ -101,7 +102,7 @@ end)
 -- SHARED SERVICE REFERENCES (lazy-loaded)
 -- ═══════════════════════════════════════════════════════════════════
 
-local _InventoryService, _EconomyService, _CrateService, _ItemCatalog
+local _InventoryService, _EconomyService, _CrateService, _ItemCatalog, _PlayerDataService
 local _BundleCatalog
 
 local function getInventoryService()
@@ -123,6 +124,13 @@ local function getCrateService()
 		_CrateService = require(Server:WaitForChild("CrateService", 5))
 	end
 	return _CrateService
+end
+
+local function getPlayerDataService()
+	if not _PlayerDataService then
+		_PlayerDataService = require(Server:WaitForChild("PlayerDataService", 5))
+	end
+	return _PlayerDataService
 end
 
 local function getItemCatalog()
@@ -165,17 +173,26 @@ end
 local PRODUCT_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 	-- Spins (auto-populated from SpinWheelConfig below)
 
-	-- Fate Coins
-	[3539712298] = { type = "Coins", amount = 500,  label = "500 Fate Coins" },
-	[3539713007] = { type = "Coins", amount = 2000, label = "2,000 Fate Coins" },
-	[3539713203] = { type = "Coins", amount = 5000, label = "5,000 Fate Coins" },
-
 	-- Crate Bundles (6x each, uses CrateService.RollCrateFree)
 	[3539706736] = { type = "Crate", crateId = "crate_crown",      quantity = 6, label = "6 Crown Crates" },
 	[3539709447] = { type = "Crate", crateId = "crate_pet_common", quantity = 6, label = "6 Common Pet Crates" },
 	[3539710049] = { type = "Crate", crateId = "crate_pet_rare",   quantity = 6, label = "6 Rare Pet Crates" },
 	[3539710471] = { type = "Crate", crateId = "crate_pet_epic",   quantity = 6, label = "6 Epic Pet Crates" },
 }
+
+-- Auto-populate Fate Coin developer products from UIConfig (single source for shop UI + receipts)
+for _, item in ipairs(UIConfig.MockPremiumItems or {}) do
+	if item.type == "Currency" and type(item.productId) == "number" and item.productId > 0 then
+		local amount = tonumber(item.coinsAmount) or 0
+		if amount > 0 then
+			PRODUCT_REWARD_MAP[item.productId] = {
+				type = "Coins",
+				amount = amount,
+				label = tostring(item.name or (tostring(amount) .. " Fate Coins")),
+			}
+		end
+	end
+end
 
 -- Auto-populate spin products from config
 for _, pkg in ipairs(SpinWheelConfig.SpinPrices) do
@@ -188,6 +205,42 @@ print(string.format("[PurchaseSystem] PRODUCT_REWARD_MAP built: %d entries", (fu
 	local n = 0; for _ in pairs(PRODUCT_REWARD_MAP) do n += 1 end; return n
 end)()))
 
+local function validateConfiguredRobuxProducts()
+	-- Coins from shop config
+	for _, entry in ipairs(UIConfig.MockPremiumItems or {}) do
+		if entry.type == "Currency" and type(entry.productId) == "number" and entry.productId > 0 then
+			if not PRODUCT_REWARD_MAP[entry.productId] then
+				warn(string.format("[ReceiptMap] Missing mapping for coin productId=%d (%s)",
+					entry.productId, tostring(entry.id)))
+			end
+		end
+	end
+
+	-- Crates from crate shop config
+	for _, crate in ipairs(UIConfig.MockCrates or {}) do
+		for _, price in ipairs(crate.prices or {}) do
+			if price.currency == "Robux" and type(price.productId) == "number" and price.productId > 0 then
+				if not PRODUCT_REWARD_MAP[price.productId] then
+					warn(string.format("[ReceiptMap] Missing mapping for crate productId=%d (%s)",
+						price.productId, tostring(crate.id)))
+				end
+			end
+		end
+	end
+
+	-- Spins from spin config
+	for _, pkg in ipairs(SpinWheelConfig.SpinPrices or {}) do
+		if type(pkg.productId) == "number" and pkg.productId > 0 then
+			if not PRODUCT_REWARD_MAP[pkg.productId] then
+				warn(string.format("[ReceiptMap] Missing mapping for spin productId=%d (%s)",
+					pkg.productId, tostring(pkg.label)))
+			end
+		end
+	end
+end
+
+validateConfiguredRobuxProducts()
+
 -- ═══════════════════════════════════════════════════════════════════
 -- GAMEPASS_REWARD_MAP (Gamepasses → permanent unlocks)
 --
@@ -197,8 +250,8 @@ end)()))
 
 local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 	-- Exclusive Pets
-	[1716313058] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_falcon",        label = "Dark Falcon" },
-	[1717772785] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_winged_dragon",  label = "Dark Winged Dragon" },
+	[1716313058] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_falcon",        label = "Dark Goblem" },
+	[1717772785] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_winged_dragon",  label = "Music Winged Dragon" },
 	[1716864887] = { type = "Pet",   category = "Pets",   itemId = "pet_pink_butterfly",      label = "Pink Butterfly" },
 	[1718832641] = { type = "Pet",   category = "Pets",   itemId = "pet_glitched_dragon",     label = "Glitched Dragon" },
 	[1885101001] = { type = "Pet",   category = "Pets",   itemId = "pet_freddy_fazbear",      label = "Freddy Fazbear" },
@@ -270,12 +323,22 @@ local function grantGamepassReward(player: Player, gamepassId: number): boolean
 	if reward.type == "Bundle" then
 		for _, item in ipairs(reward.items) do
 			if not inv.OwnsItem(player, item.category, item.itemId) then
-				inv.GrantItem(player, item.category, item.itemId)
+				local okGrant = inv.GrantItem(player, item.category, item.itemId)
+				if not okGrant then
+					warn(string.format("[PurchaseSystem] Gamepass bundle grant failed: %s/%s for %s",
+						item.category, item.itemId, player.Name))
+					return false
+				end
 			end
 		end
 	else
 		if not inv.OwnsItem(player, reward.category, reward.itemId) then
-			inv.GrantItem(player, reward.category, reward.itemId)
+			local okGrant = inv.GrantItem(player, reward.category, reward.itemId)
+			if not okGrant then
+				warn(string.format("[PurchaseSystem] Gamepass grant failed: %s/%s for %s",
+					reward.category, reward.itemId, player.Name))
+				return false
+			end
 		end
 	end
 
@@ -318,8 +381,11 @@ gamepassVerifyRF.OnServerInvoke = function(player: Player, gamepassId: number)
 	end)
 
 	if ok and owns then
-		grantGamepassReward(player, gamepassId)
-		return { success = true }
+		local granted = grantGamepassReward(player, gamepassId)
+		if granted then
+			return { success = true }
+		end
+		return { success = false, reason = "Grant failed" }
 	end
 
 	return { success = false, reason = "Not owned" }
@@ -350,6 +416,8 @@ local processedReceipts: { [string]: boolean } = {}
 
 MarketplaceService.ProcessReceipt = function(receiptInfo)
 	local receiptKey = tostring(receiptInfo.PurchaseId)
+	local productId = receiptInfo.ProductId
+	print(string.format("[Receipt] playerId=%d productId=%d processing...", receiptInfo.PlayerId, productId))
 
 	if processedReceipts[receiptKey] then
 		print("[PurchaseSystem] Receipt already processed:", receiptKey)
@@ -362,24 +430,49 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
-	local productId = receiptInfo.ProductId
+	local pds = getPlayerDataService()
+	if pds then
+		local pdata = pds.GetData(player)
+		local processed = pdata and pdata.ProcessedReceipts
+		if type(processed) == "table" and processed[receiptKey] then
+			processedReceipts[receiptKey] = true
+			print(string.format("[Receipt] player=%s productId=%d alreadyProcessed=true", player.Name, productId))
+			return Enum.ProductPurchaseDecision.PurchaseGranted
+		end
+	end
+
 	local reward = PRODUCT_REWARD_MAP[productId]
 
 	if not reward then
+		print(string.format("[Receipt] productId=%d resolvedGrant=UNKNOWN amount=0 itemId=nil", productId))
+		print(string.format("[Receipt] productId=%d grant=FAIL reason=UNKNOWN_PRODUCT", productId))
+		warn(string.format("[CoinsProduct] player=%s productId=%d grant=0 result=FAIL reason=UNKNOWN_PRODUCT",
+			player.Name, productId))
 		warn("[PurchaseSystem] Unknown productId:", productId, "receipt:", receiptKey)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
+	print(string.format("[Receipt] productId=%d resolvedGrant=%s amount=%s itemId=%s",
+		productId,
+		tostring(reward.type),
+		tostring(reward.amount or reward.quantity or 0),
+		tostring(reward.itemId or reward.crateId or "")
+	))
 
 	local granted = false
 	local ok, err = pcall(function()
 		if reward.type == "Spins" then
 			granted = SpinWheelService.GrantRobuxSpins(player, reward.amount)
+			if granted then
+				notifyClient(player, "SpinPurchase", { spins = reward.amount })
+			end
 
 		elseif reward.type == "Coins" then
 			local econ = getEconomyService()
 			if econ then
 				econ.AwardCoins(player, reward.amount, "DevProduct:" .. tostring(productId))
 				notifyClient(player, "ShopPurchase", { "coins" })
+				print(string.format("[CoinsProduct] player=%s productId=%d grant=%d result=SUCCESS",
+					player.Name, productId, reward.amount))
 				granted = true
 			end
 
@@ -402,17 +495,31 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 	end)
 
 	if not ok then
+		print(string.format("[Receipt] productId=%d grant=FAIL reason=%s", productId, tostring(err)))
 		warn("[PurchaseSystem] Error granting reward for productId", productId, ":", err)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
 	if granted then
 		processedReceipts[receiptKey] = true
+		if pds then
+			local pdata = pds.GetData(player)
+			if pdata then
+				local processed = pdata.ProcessedReceipts
+				if type(processed) ~= "table" then
+					processed = {}
+				end
+				processed[receiptKey] = true
+				pds.SetField(player, "ProcessedReceipts", processed)
+			end
+		end
+		print(string.format("[Receipt] productId=%d grant=SUCCESS", productId))
 		print(string.format("[PurchaseSystem] Granted: %s (%s) to %s, receipt=%s",
 			reward.label, reward.type, player.Name, receiptKey))
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 
+	print(string.format("[Receipt] productId=%d grant=FAIL reason=GRANT_RETURNED_FALSE", productId))
 	warn("[PurchaseSystem] Failed to grant reward for productId:", productId, "receipt:", receiptKey)
 	return Enum.ProductPurchaseDecision.NotProcessedYet
 end
