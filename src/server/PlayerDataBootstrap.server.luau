@@ -208,6 +208,9 @@ local equipEvent      = ensureRemote("EquipItem")
 local unequipEvent    = ensureRemote("UnequipItem")
 local inventoryUpdate = ensureRemote("InventoryUpdated")
 local openCrateFunc   = ensureRemoteFunction("OpenCrate")
+local buyCrateFunc    = ensureRemoteFunction("BuyCrate")
+local getCratesFunc   = ensureRemoteFunction("GetOwnedCrates")
+local openOwnedCratesFunc = ensureRemoteFunction("OpenOwnedCrates")
 
 equipEvent.OnServerEvent:Connect(function(player, category, id)
 	if type(category) ~= "string" or type(id) ~= "string" then return end
@@ -264,6 +267,71 @@ openCrateFunc.OnServerInvoke = function(player, crateId, quantity)
 		inventoryUpdate:FireClient(player, "CrateOpened", result.results)
 	end
 
+	return result
+end
+
+buyCrateFunc.OnServerInvoke = function(player, crateId, quantity, currencyCode)
+	print(string.format("[CrateBuy] START player=%s crateType=%s qty=%s currency=%s",
+		player.Name, tostring(crateId), tostring(quantity), tostring(currencyCode)))
+	if not PlayerDataService.IsLoaded(player) then
+		print("[CrateBuy] FAIL reason=Data not loaded")
+		return { success = false, reason = "Data not loaded" }
+	end
+	if type(currencyCode) ~= "string" then
+		print("[CrateBuy] FAIL reason=Invalid currency")
+		return { success = false, reason = "Invalid currency" }
+	end
+	if currencyCode ~= "Coins" then
+		print("[CrateBuy] FAIL reason=Robux must use product prompt")
+		return { success = false, reason = "Robux must use product prompt" }
+	end
+
+	local result = CrateService.BuyCrateWithCoins(player, crateId, quantity)
+	if result.success then
+		local counts = CrateService.GetCrateCounts(player)
+		inventoryUpdate:FireClient(player, "CrateBalance", {
+			crateId = crateId,
+			newCount = result.newCount,
+			counts = counts,
+			qty = quantity,
+		})
+		print(string.format("[CrateBuy] SUCCESS player=%s crateType=%s qty=%s newCount=%s",
+			player.Name, tostring(crateId), tostring(quantity), tostring(result.newCount)))
+	else
+		print(string.format("[CrateBuy] FAIL reason=%s", tostring(result.reason)))
+	end
+	return result
+end
+
+getCratesFunc.OnServerInvoke = function(player)
+	if not PlayerDataService.IsLoaded(player) then
+		return {}
+	end
+	return CrateService.GetCrateCounts(player)
+end
+
+openOwnedCratesFunc.OnServerInvoke = function(player, crateId, quantity)
+	print(string.format("[CrateOpen] START player=%s crateType=%s qty=%s",
+		player.Name, tostring(crateId), tostring(quantity)))
+	if not PlayerDataService.IsLoaded(player) then
+		print("[CrateOpen] FAIL reason=Data not loaded")
+		return { results = {}, success = false, error = "Data not loaded" }
+	end
+	local result = CrateService.OpenOwnedCrates(player, crateId, quantity)
+	if result.success then
+		local counts = CrateService.GetCrateCounts(player)
+		inventoryUpdate:FireClient(player, "CrateBalance", {
+			crateId = crateId,
+			newCount = result.newCount,
+			counts = counts,
+		})
+		inventoryUpdate:FireClient(player, "CrateOpened", result.results)
+		local rewardsCount = type(result.results) == "table" and #result.results or 0
+		print(string.format("[CrateOpen] RESULT player=%s crateType=%s qty=%s rewards=%d",
+			player.Name, tostring(crateId), tostring(quantity), rewardsCount))
+	else
+		print(string.format("[CrateOpen] FAIL reason=%s", tostring(result.error)))
+	end
 	return result
 end
 

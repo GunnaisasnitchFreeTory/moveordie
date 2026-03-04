@@ -30,6 +30,7 @@ PlayerData.Attributes = {
 	EquippedIcon          = "EquippedIcon",
 	OwnedIconImages       = "OwnedIconImages",
 	EquippedIconImage     = "EquippedIconImage",
+	OwnedCrates           = "OwnedCrates",
 	LifetimeWins          = "LifetimeWins",
 	CoinMultiplier        = "CoinMultiplier",
 	LifetimeCoinsAchieved = "LifetimeCoinsAchieved",
@@ -60,6 +61,7 @@ function PlayerData.GetDefaults(): { [string]: any }
 		EquippedIcon          = nil,
 		OwnedIconImages       = {},
 		EquippedIconImage     = nil,
+		OwnedCrates           = {},
 		LifetimeWins          = 0,
 		LifetimeCoinsAchieved = 0,
 		WeeklyWins            = 0,
@@ -70,6 +72,8 @@ function PlayerData.GetDefaults(): { [string]: any }
 		LifetimeDeaths        = 0,
 		TimePlayedSeconds     = 0,
 		DailyQuestData        = "",
+		ProcessedReceipts     = {},
+		ProcessedGrants       = {},
 	}
 end
 
@@ -89,6 +93,7 @@ function PlayerData.Validate(data: { [string]: any }): { [string]: any }
 	if type(data.OwnedCrowns) ~= "table" then data.OwnedCrowns = defaults.OwnedCrowns end
 	if type(data.OwnedIcons) ~= "table" then data.OwnedIcons = defaults.OwnedIcons end
 	if type(data.OwnedIconImages) ~= "table" then data.OwnedIconImages = defaults.OwnedIconImages end
+	if type(data.OwnedCrates) ~= "table" then data.OwnedCrates = defaults.OwnedCrates end
 	if type(data.LifetimeWins) ~= "number" then data.LifetimeWins = 0 end
 	if type(data.LifetimeCoinsAchieved) ~= "number" then data.LifetimeCoinsAchieved = 0 end
 	if type(data.WeeklyWins) ~= "number" then data.WeeklyWins = 0 end
@@ -99,6 +104,8 @@ function PlayerData.Validate(data: { [string]: any }): { [string]: any }
 	if type(data.LifetimeDeaths) ~= "number" then data.LifetimeDeaths = 0 end
 	if type(data.TimePlayedSeconds) ~= "number" then data.TimePlayedSeconds = 0 end
 	if type(data.DailyQuestData) ~= "string" then data.DailyQuestData = "" end
+	if type(data.ProcessedReceipts) ~= "table" then data.ProcessedReceipts = {} end
+	if type(data.ProcessedGrants) ~= "table" then data.ProcessedGrants = {} end
 
 	if data.EquippedPet ~= nil and type(data.EquippedPet) ~= "string" then
 		data.EquippedPet = nil

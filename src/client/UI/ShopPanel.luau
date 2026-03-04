@@ -667,7 +667,27 @@ end
 
 local FNAF_BANNER_IMAGE = "rbxassetid://72168519670720"
 local FNAF_SINGLE_PRICE = 70000
-local FNAF_BUNDLE_BUY_TEXT = "Buy All FNAF Pets — 150,000 Fate Coins"
+local function formatCoinText(n: number): string
+	local s = tostring(math.max(0, math.floor(n)))
+	local k
+	repeat
+		s, k = string.gsub(s, "^(-?%d+)(%d%d%d)", "%1,%2")
+	until k == 0
+	return s
+end
+
+local function getFnafBundleQuote()
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	local quoteRF = remotes and remotes:FindFirstChild("Shop_GetBundleQuote")
+	if not quoteRF then
+		return nil
+	end
+	local ok, result = pcall(quoteRF.InvokeServer, quoteRF, "fnaf_all")
+	if not ok or type(result) ~= "table" then
+		return nil
+	end
+	return result
+end
 
 local function populatePetsTab()
 	clearCards()
@@ -717,17 +737,6 @@ local function populatePetsTab()
 	end
 
 	local ownedPets = getOwnedSet("OwnedPets")
-	local function areAllFnafOwned(): boolean
-		if #fnafPetIds == 0 then
-			return false
-		end
-		for _, petId in ipairs(fnafPetIds) do
-			if not (_locallyOwned[petId] == true or ownedPets[petId] == true) then
-				return false
-			end
-		end
-		return true
-	end
 
 	local function createPetCard(parent: Instance, item, layoutOrder: number, forceFateCoins: boolean, enablePreview: boolean)
 		local petEntry = ItemCatalog.GetPet and ItemCatalog.GetPet(item.id) or nil
@@ -738,11 +747,10 @@ local function populatePetsTab()
 			isGamepass = false
 		end
 		local isFateCoins = forceFateCoins or (item.fateCoins and item.fateCoins > 0)
-		local isOwned = false
+		local isOwned = _locallyOwned[item.id] == true or ownedPets[item.id] == true
 		if isGamepass then
-			isOwned = checkGamepassOwned(item.gamepassId)
-		else
-			isOwned = _locallyOwned[item.id] == true or ownedPets[item.id] == true
+			-- Gamepass ownership checks can lag after purchase; inventory ownership is authoritative.
+			isOwned = isOwned or checkGamepassOwned(item.gamepassId)
 		end
 
 		local actionText, actionColor
@@ -1084,7 +1092,7 @@ local function populatePetsTab()
 	buyAllBtn.BorderSizePixel = 0
 	buyAllBtn.Position = UDim2.fromOffset(8, BANNER_H + SECTION_GAP + GRID_H + SECTION_GAP)
 	buyAllBtn.Size = UDim2.new(1, -16, 0, BUY_ALL_H)
-	buyAllBtn.Text = FNAF_BUNDLE_BUY_TEXT
+	buyAllBtn.Text = "Buy All FNAF Pets — 150,000 Fate Coins"
 	buyAllBtn.TextColor3 = Color3.fromRGB(20, 14, 0)
 	buyAllBtn.Font = Enum.Font.GothamBold
 	buyAllBtn.TextSize = 18
@@ -1095,17 +1103,30 @@ local function populatePetsTab()
 	buyAllStroke.Thickness = 1.4
 	buyAllStroke.Transparency = 0.35
 	buyAllStroke.Parent = buyAllBtn
-	local allOwnedNow = areAllFnafOwned()
-	if allOwnedNow then
-		buyAllBtn.Text = "OWNED"
-		buyAllBtn.BackgroundColor3 = C.DisabledBtn
-		buyAllBtn.TextColor3 = Color3.fromRGB(210, 215, 230)
-		buyAllBtn.AutoButtonColor = false
+	local function applyBuyAllStateFromQuote(quote)
+		if quote and quote.ok == false and quote.reason == "ALREADY_OWNED" then
+			buyAllBtn.Text = "OWNED"
+			buyAllBtn.BackgroundColor3 = C.DisabledBtn
+			buyAllBtn.TextColor3 = Color3.fromRGB(210, 215, 230)
+			buyAllBtn.AutoButtonColor = false
+			buyAllBtn.Active = false
+			return
+		end
+		local price = quote and tonumber(quote.price) or 150000
+		buyAllBtn.Text = string.format("Buy All FNAF Pets — %s Fate Coins", formatCoinText(price))
+		buyAllBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 30)
+		buyAllBtn.TextColor3 = Color3.fromRGB(20, 14, 0)
+		buyAllBtn.AutoButtonColor = true
+		buyAllBtn.Active = true
 	end
+	applyBuyAllStateFromQuote(getFnafBundleQuote())
+
 	local buyAllBusy = false
 	buyAllBtn.MouseButton1Click:Connect(function()
 		if buyAllBusy then return end
-		if areAllFnafOwned() then
+		local preQuote = getFnafBundleQuote()
+		applyBuyAllStateFromQuote(preQuote)
+		if preQuote and preQuote.ok == false and preQuote.reason == "ALREADY_OWNED" then
 			showShopToast("You already own all FNAF pets.")
 			return
 		end
@@ -1124,14 +1145,6 @@ local function populatePetsTab()
 			for _, petId in ipairs(fnafPetIds) do
 				_locallyOwned[petId] = true
 			end
-			print("[BundlePopup] bundle=fnaf_all image=rbxassetid://95176145899993")
-			RewardPopup.Show({
-				title = "PURCHASED!",
-				name = "All FNAF pets unlocked",
-				itemType = "Bundle",
-				icon = "rbxassetid://95176145899993",
-				okText = "NICE!",
-			})
 			populatePetsTab()
 		else
 			local reason = (okBuy and result and result.reason) or "Purchase failed"
@@ -1168,6 +1181,7 @@ local function populatePetsTab()
 
 		buyAllBusy = false
 		buyAllBtn.AutoButtonColor = true
+		applyBuyAllStateFromQuote(getFnafBundleQuote())
 	end)
 end
 
@@ -1295,15 +1309,6 @@ local function populateCards(filterType: string)
 							-- Card not found by ID (e.g. first open): fall back to full rebuild
 							populateCards(CATEGORIES[activeTab].filter)
 						end
-						local catEntry = ItemCatalog.Get("Premium", item.id)
-						RewardPopup.Show({
-							title      = "PURCHASED!",
-							name       = item.name,
-							itemId     = item.id,
-							itemType   = item.type,
-							rarityText = item.rarity or (catEntry and catEntry.rarity) or "Legendary",
-							okText     = "NICE!",
-						})
 					elseif ok and result then
 						warn(string.format("[ShopPanel] Purchase failed for %s: %s", item.name, tostring(result.reason)))
 					else
@@ -1582,15 +1587,26 @@ function ShopPanel.Hide()
 end
 
 -- Refresh cards after a gamepass purchase completes
-MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(_player, _gamepassId, wasPurchased)
-	if wasPurchased and visible then
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(a, b, c)
+	local gamepassId: number? = nil
+	local wasPurchased: boolean? = nil
+	if typeof(a) == "Instance" and a:IsA("Player") then
+		gamepassId = tonumber(b)
+		wasPurchased = (c == true)
+	else
+		gamepassId = tonumber(a)
+		wasPurchased = (b == true)
+	end
+	print(string.format("[GamePassClient] finished gamepassId=%s purchased=%s",
+		tostring(gamepassId), tostring(wasPurchased)))
+	if wasPurchased then
 		task.wait(0.5)
 		local verifyRF = ReplicatedStorage:FindFirstChild("Remotes")
 			and ReplicatedStorage.Remotes:FindFirstChild("VerifyGamepassPurchase")
-		if verifyRF then
-			pcall(function() verifyRF:InvokeServer(_gamepassId) end)
+		if verifyRF and gamepassId and gamepassId > 0 then
+			pcall(function() verifyRF:InvokeServer(gamepassId) end)
 		end
-		if activeTab and CATEGORIES[activeTab] and CATEGORIES[activeTab].filter ~= "Bundle" then
+		if visible and activeTab and CATEGORIES[activeTab] and CATEGORIES[activeTab].filter ~= "Bundle" then
 			populateCards(CATEGORIES[activeTab].filter)
 		end
 	end

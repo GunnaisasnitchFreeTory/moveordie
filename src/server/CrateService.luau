@@ -23,6 +23,7 @@
 local RunService           = game:GetService("RunService")
 local ReplicatedStorage    = game:GetService("ReplicatedStorage")
 local ServerScriptService  = game:GetService("ServerScriptService")
+local HttpService          = game:GetService("HttpService")
 
 local Shared      = ReplicatedStorage:WaitForChild("Shared")
 local Server      = ServerScriptService:WaitForChild("Server")
@@ -37,6 +38,8 @@ local MAX_QUANTITY = 10
 -- ── Lazy loaders ──
 local _EconomyService = nil
 local _InventoryService = nil
+local _GrantService = nil
+local _PlayerDataService = nil
 
 local function getEconomy()
 	if _EconomyService then return _EconomyService end
@@ -50,6 +53,20 @@ local function getInventory()
 	local ok, mod = pcall(require, Server:WaitForChild("InventoryService", 10))
 	if ok and mod then _InventoryService = mod end
 	return _InventoryService
+end
+
+local function getGrantService()
+	if _GrantService then return _GrantService end
+	local ok, mod = pcall(require, Server:WaitForChild("GrantService", 10))
+	if ok and mod then _GrantService = mod end
+	return _GrantService
+end
+
+local function getPlayerData()
+	if _PlayerDataService then return _PlayerDataService end
+	local ok, mod = pcall(require, Server:WaitForChild("PlayerDataService", 10))
+	if ok and mod then _PlayerDataService = mod end
+	return _PlayerDataService
 end
 
 local function log(...)
@@ -266,6 +283,132 @@ function CrateService.Init()
 	log("Initialized —", #priceIds, "crate types")
 end
 
+function CrateService.GetCrateCounts(player: Player): { [string]: number }
+	local pds = getPlayerData()
+	if not pds then return {} end
+	local data = pds.GetData(player)
+	if not data then return {} end
+	local owned = data.OwnedCrates
+	if type(owned) ~= "table" then
+		owned = {}
+		pds.SetField(player, "OwnedCrates", owned)
+	end
+	return owned
+end
+
+function CrateService.GetCrateCount(player: Player, crateId: string): number
+	local counts = CrateService.GetCrateCounts(player)
+	local n = tonumber(counts[crateId]) or 0
+	return math.max(0, math.floor(n))
+end
+
+function CrateService.AddCrates(player: Player, crateId: string, quantity: number, source: string?): { success: boolean, reason: string?, newCount: number? }
+	quantity = math.max(1, math.floor(quantity or 0))
+	if not ItemCatalog.Crates[crateId] then
+		return { success = false, reason = "Unknown crate type" }
+	end
+	local pds = getPlayerData()
+	if not pds or not pds.IsLoaded(player) then
+		return { success = false, reason = "Data not loaded" }
+	end
+
+	local data = pds.GetData(player)
+	if not data then
+		return { success = false, reason = "Data not loaded" }
+	end
+	local counts = data.OwnedCrates
+	if type(counts) ~= "table" then
+		counts = {}
+	end
+	local current = tonumber(counts[crateId]) or 0
+	local newCount = current + quantity
+	counts[crateId] = newCount
+	pds.SetField(player, "OwnedCrates", counts)
+
+	print(string.format("[CrateBuy] SUCCESS player=%s crateType=%s qty=%d newCount=%d source=%s",
+		player.Name, crateId, quantity, newCount, tostring(source or "Unknown")))
+	return { success = true, newCount = newCount }
+end
+
+function CrateService.OpenOwnedCrates(player: Player, crateId: string, quantity: number): { results: { any }, success: boolean, error: string?, newCount: number? }
+	if type(crateId) ~= "string" or type(quantity) ~= "number" then
+		return { results = {}, success = false, error = "Invalid arguments" }
+	end
+	quantity = math.clamp(math.floor(quantity), 1, MAX_QUANTITY)
+	if not ItemCatalog.Crates[crateId] then
+		return { results = {}, success = false, error = "Unknown crate: " .. tostring(crateId) }
+	end
+
+	local pds = getPlayerData()
+	if not pds or not pds.IsLoaded(player) then
+		return { results = {}, success = false, error = "Data not loaded" }
+	end
+	local data = pds.GetData(player)
+	if not data then
+		return { results = {}, success = false, error = "Data not loaded" }
+	end
+
+	local counts = data.OwnedCrates
+	if type(counts) ~= "table" then
+		counts = {}
+	end
+	local current = math.max(0, math.floor(tonumber(counts[crateId]) or 0))
+	if current < quantity then
+		return { results = {}, success = false, error = "Not enough owned crates" }
+	end
+
+	local newCount = current - quantity
+	counts[crateId] = newCount
+	pds.SetField(player, "OwnedCrates", counts)
+
+	local rolled = CrateService.RollCrateFree(player, crateId, quantity)
+	if not rolled.success then
+		-- Roll failed after consume: restore crate balance.
+		counts[crateId] = current
+		pds.SetField(player, "OwnedCrates", counts)
+		return { results = {}, success = false, error = rolled.error or "Open failed" }
+	end
+
+	return {
+		results = rolled.results or {},
+		success = true,
+		newCount = newCount,
+	}
+end
+
+function CrateService.BuyCrateWithCoins(player: Player, crateId: string, quantity: number): { success: boolean, reason: string?, newCount: number?, cost: number? }
+	if type(crateId) ~= "string" or type(quantity) ~= "number" then
+		print(string.format("[CrateBuy] FAIL reason=%s", "Invalid arguments"))
+		return { success = false, reason = "Invalid arguments" }
+	end
+	quantity = math.clamp(math.floor(quantity), 1, MAX_QUANTITY)
+	local price = findPrice(crateId, quantity)
+	if not price then
+		print(string.format("[CrateBuy] FAIL reason=%s", "No price for quantity"))
+		return { success = false, reason = "No price for quantity" }
+	end
+	if price.currency ~= "Coins" then
+		print(string.format("[CrateBuy] FAIL reason=%s", "Robux purchase required"))
+		return { success = false, reason = "Robux purchase required" }
+	end
+	local economy = getEconomy()
+	if not economy then
+		print(string.format("[CrateBuy] FAIL reason=%s", "Economy service unavailable"))
+		return { success = false, reason = "Economy service unavailable" }
+	end
+	if not economy.DeductCoins(player, price.cost, "CrateBuy:" .. crateId .. "x" .. quantity) then
+		print(string.format("[CrateBuy] FAIL reason=%s", "INSUFFICIENT_FUNDS"))
+		return { success = false, reason = "INSUFFICIENT_FUNDS" }
+	end
+	local add = CrateService.AddCrates(player, crateId, quantity, "Coins")
+	if not add.success then
+		economy.AwardCoins(player, price.cost, "CrateBuyRefund:" .. crateId, true)
+		print(string.format("[CrateBuy] FAIL reason=%s", tostring(add.reason or "AddCrates failed")))
+		return { success = false, reason = add.reason or "AddCrates failed" }
+	end
+	return { success = true, newCount = add.newCount, cost = price.cost }
+end
+
 function CrateService.OpenCrate(player: Player, crateId: string, quantity: number): { results: { any }, success: boolean, error: string? }
 	if type(crateId) ~= "string" or type(quantity) ~= "number" then
 		return { results = {}, success = false, error = "Invalid arguments" }
@@ -295,10 +438,16 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 		return { results = {}, success = false, error = "Not enough coins" }
 	end
 
-	local inv = getInventory()
-	local results = {}
+	local grant = getGrantService()
+	if not grant then
+		return { results = {}, success = false, error = "Grant service unavailable" }
+	end
 
-	for _ = 1, quantity do
+	local crateTxnId = HttpService:GenerateGUID(false)
+	local results = {}
+	local grantedPopupItems = {}
+
+	for rollIndex = 1, quantity do
 		local itemId, category, isDuplicate = rollItem(player, crateId)
 
 		local catalogEntry = ItemCatalog.Get(category, itemId)
@@ -315,8 +464,34 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 			log(string.format("%s opened %s — already owned: %s (%s)",
 				player.Name, crateId, itemId, category))
 		else
-			if inv then
-				inv.GrantItem(player, category, itemId)
+			local grantType = (category == "Crowns") and "Crown" or "Pet"
+			local grantRes = grant.GrantItem(player, grantType, itemId, "Crate", {
+				fireReward = false,
+				idempotencyKey = string.format("crate:%s:%s:%d:%s", player.UserId, crateTxnId, rollIndex, itemId),
+				payload = {
+					type = grantType,
+					id = itemId,
+					category = category,
+					source = "Crate",
+					rarity = result.rarity,
+					name = result.displayName,
+				},
+			})
+			if grantRes.success then
+				result.grantSuccess = true
+				table.insert(grantedPopupItems, {
+					type = grantType,
+					id = itemId,
+					category = category,
+					source = "Crate",
+					rarity = result.rarity,
+					name = result.displayName,
+				})
+			else
+				result.grantSuccess = false
+				result.grantFailReason = grantRes.reason or "UNKNOWN"
+				warn(string.format("[CrateService] Grant failed player=%s crate=%s roll=%d item=%s reason=%s",
+					player.Name, crateId, rollIndex, itemId, tostring(grantRes.reason)))
 			end
 			local entry = ItemCatalog.Get(category, itemId)
 			log(string.format("%s opened %s — got %s (%s)",
@@ -324,6 +499,15 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 		end
 
 		table.insert(results, result)
+	end
+
+	if #grantedPopupItems > 0 then
+		grant.EmitRewardGranted(player, {
+			type = "Crate",
+			id = crateId,
+			source = "Crate",
+			batchItems = grantedPopupItems,
+		})
 	end
 
 	return { results = results, success = true }
@@ -345,8 +529,14 @@ function CrateService.RollCrateFree(player: Player, crateId: string, quantity: n
 		return { results = {}, success = false, error = "Unknown crate: " .. tostring(crateId) }
 	end
 
-	local inv = getInventory()
+	local grant = getGrantService()
+	if not grant then
+		return { results = {}, success = false, error = "Grant service unavailable" }
+	end
+
+	local crateTxnId = HttpService:GenerateGUID(false)
 	local results = {}
+	local grantedPopupItems = {}
 
 	for i = 1, quantity do
 		local itemId, category, isDuplicate = rollItem(player, crateId)
@@ -365,14 +555,49 @@ function CrateService.RollCrateFree(player: Player, crateId: string, quantity: n
 			log(string.format("%s FREE roll #%d %s — already owned: %s (%s)",
 				player.Name, i, crateId, itemId, category))
 		else
-			if inv then
-				inv.GrantItem(player, category, itemId)
+			local grantType = (category == "Crowns") and "Crown" or "Pet"
+			local grantRes = grant.GrantItem(player, grantType, itemId, "Crate", {
+				fireReward = false,
+				idempotencyKey = string.format("cratefree:%s:%s:%d:%s", player.UserId, crateTxnId, i, itemId),
+				payload = {
+					type = grantType,
+					id = itemId,
+					category = category,
+					source = "Crate",
+					rarity = result.rarity,
+					name = result.displayName,
+				},
+			})
+			if grantRes.success then
+				result.grantSuccess = true
+				table.insert(grantedPopupItems, {
+					type = grantType,
+					id = itemId,
+					category = category,
+					source = "Crate",
+					rarity = result.rarity,
+					name = result.displayName,
+				})
+			else
+				result.grantSuccess = false
+				result.grantFailReason = grantRes.reason or "UNKNOWN"
+				warn(string.format("[CrateService] Free grant failed player=%s crate=%s roll=%d item=%s reason=%s",
+					player.Name, crateId, i, itemId, tostring(grantRes.reason)))
 			end
 			log(string.format("%s FREE roll #%d %s — got %s (%s)",
 				player.Name, i, crateId, catalogEntry and catalogEntry.name or itemId, category))
 		end
 
 		table.insert(results, result)
+	end
+
+	if #grantedPopupItems > 0 then
+		grant.EmitRewardGranted(player, {
+			type = "Crate",
+			id = crateId,
+			source = "Crate",
+			batchItems = grantedPopupItems,
+		})
 	end
 
 	return { results = results, success = true }

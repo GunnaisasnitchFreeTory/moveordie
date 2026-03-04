@@ -82,6 +82,7 @@ end)
 
 local _EconomyService = nil
 local _InventoryService = nil
+local _GrantService = nil
 
 local function getEconomyService()
 	if _EconomyService ~= nil then return _EconomyService end
@@ -101,6 +102,16 @@ local function getInventoryService()
 	end)
 	if ok and mod then _InventoryService = mod else _InventoryService = false end
 	return _InventoryService
+end
+
+local function getGrantService()
+	if _GrantService ~= nil then return _GrantService end
+	local ok, mod = pcall(function()
+		local Server = ServerScriptService:WaitForChild("Server", 5)
+		return require(Server:WaitForChild("GrantService", 5))
+	end)
+	if ok and mod then _GrantService = mod else _GrantService = false end
+	return _GrantService
 end
 
 local SPIN_DURATION_SECONDS = 11
@@ -209,21 +220,16 @@ local function isUnlimitedSpinsEnabled(): boolean
 end
 
 local function grantPet(player: Player, catalogId: string)
-	local IS = getInventoryService()
-	if IS and type(IS.GrantItem) == "function" then
-		IS.GrantItem(player, "Pets", catalogId)
-		log(string.format("PET GRANTED via InventoryService: %s → %s", player.Name, catalogId))
-	else
-		local raw = player:GetAttribute("OwnedPets")
-		local pets = {}
-		if raw and type(raw) == "string" and raw ~= "" then
-			local ok2, list = pcall(function() return HttpService:JSONDecode(raw) end)
-			if ok2 and type(list) == "table" then pets = list end
+	local GS = getGrantService()
+	if GS and GS ~= false and type(GS.GrantItem) == "function" then
+		local res = GS.GrantItem(player, "Pet", catalogId, "SpinWheel")
+		if not res.success then
+			error("GrantService Pet grant failed: " .. tostring(res.reason))
 		end
-		table.insert(pets, catalogId)
-		player:SetAttribute("OwnedPets", HttpService:JSONEncode(pets))
-		log(string.format("PET GRANTED via fallback: %s → %s (total: %d)", player.Name, catalogId, #pets))
+		log(string.format("PET GRANTED via GrantService: %s → %s", player.Name, catalogId))
+		return
 	end
+	error("GrantService unavailable for pet grant")
 end
 
 local function loadData(userId: number): { lastFreeSpinTime: number, purchasedSpins: number, dataVersion: number }
@@ -526,29 +532,38 @@ function SpinWheelService.RequestSpin(player: Player)
 				log(string.format("GRANTED spinId=%s Pet %s to %s", spinId, rCatalog, livePlayer.Name))
 			elseif rType == "Crown" and rCatalog and rCatalog ~= "" then
 				if pending.isDuplicate then
-					local ES = getEconomyService()
-					if ES and type(ES.AwardCoins) == "function" then
-						ES.AwardCoins(livePlayer, rCoins, "SpinWheelCrownDuplicate:" .. rCatalog, true)
+					local GS = getGrantService()
+					if GS and GS ~= false and type(GS.GrantItem) == "function" then
+						local g = GS.GrantItem(livePlayer, "Currency", rCoins, "SpinWheel")
+						if not g.success then
+							error("SpinWheel duplicate crown coin grant failed: " .. tostring(g.reason))
+						end
 					else
-						local cur = livePlayer:GetAttribute("Coins") or 0
-						livePlayer:SetAttribute("Coins", cur + rCoins)
+						error("GrantService unavailable for duplicate coin grant")
 					end
 					log(string.format("GRANTED spinId=%s Crown %s DUPLICATE to %s → +%d coins",
 						spinId, rCatalog, livePlayer.Name, rCoins))
 				else
-					local IS = getInventoryService()
-					if IS and type(IS.GrantItem) == "function" then
-						IS.GrantItem(livePlayer, "Crowns", rCatalog)
+					local GS = getGrantService()
+					if GS and GS ~= false and type(GS.GrantItem) == "function" then
+						local g = GS.GrantItem(livePlayer, "Crown", rCatalog, "SpinWheel")
+						if not g.success then
+							error("SpinWheel crown grant failed: " .. tostring(g.reason))
+						end
+					else
+						error("GrantService unavailable for crown grant")
 					end
 					log(string.format("GRANTED spinId=%s Crown %s to %s", spinId, rCatalog, livePlayer.Name))
 				end
 			else
-				local ES = getEconomyService()
-				if ES and type(ES.AwardCoins) == "function" then
-					ES.AwardCoins(livePlayer, rCoins, "SpinWheel", true)
+				local GS = getGrantService()
+				if GS and GS ~= false and type(GS.GrantItem) == "function" then
+					local g = GS.GrantItem(livePlayer, "Currency", rCoins, "SpinWheel")
+					if not g.success then
+						error("SpinWheel coin grant failed: " .. tostring(g.reason))
+					end
 				else
-					local currentCoins = livePlayer:GetAttribute("Coins") or 0
-					livePlayer:SetAttribute("Coins", currentCoins + rCoins)
+					error("GrantService unavailable for coin grant")
 				end
 				log(string.format("GRANTED spinId=%s %s to %s (+%d coins)",
 					spinId, rName, livePlayer.Name, rCoins))

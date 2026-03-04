@@ -30,6 +30,7 @@ local player = Players.LocalPlayer
 local _active = false
 local _overlay: Frame? = nil
 local _onDismissCallback: (() -> ())? = nil
+local _ignoreBackdropUntil = 0
 
 -- ═══════════════════════════════════════════
 -- LAZY-LOAD ITEMCATALOG + THUMBNAILRENDERER
@@ -317,14 +318,24 @@ local function getGui(): ScreenGui?
 	local pg = player:FindFirstChild("PlayerGui")
 	if not pg then return nil end
 	local existing = pg:FindFirstChild("RewardPopupGui")
-	if existing then _gui = existing; return existing end
+	if existing and existing:IsA("ScreenGui") then
+		existing.ResetOnSpawn = false
+		existing.IgnoreGuiInset = true
+		existing.DisplayOrder = math.max(existing.DisplayOrder, 500)
+		existing.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+		existing.Enabled = true
+		_gui = existing
+		return existing
+	end
 	local sg = Instance.new("ScreenGui")
 	sg.Name = "RewardPopupGui"
-	sg.DisplayOrder = 120
+	sg.DisplayOrder = 500
 	sg.IgnoreGuiInset = true
+	sg.ResetOnSpawn = false
 	sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	sg.Enabled = true
 	sg.Parent = pg
-	print("[Modal] RewardPopupGui ready (DisplayOrder=120)")
+	print("[Modal] RewardPopupGui ready (DisplayOrder=500)")
 	_gui = sg
 	return sg
 end
@@ -457,9 +468,11 @@ function RewardPopup.Show(data)
 	end
 	local gui = getGui()
 	if not gui then return end
+	gui.Enabled = true
 
 	_active = true
 	_onDismissCallback = data.onDismiss
+	_ignoreBackdropUntil = os.clock() + 0.2
 
 	local titleText = data.title or "YOU WON!"
 	local nameText = data.name or "MISSING ITEM"
@@ -487,7 +500,12 @@ function RewardPopup.Show(data)
 	clickCatcher.Active = true
 	clickCatcher.ZIndex = 50
 	clickCatcher.Parent = wrapper
-	clickCatcher.MouseButton1Click:Connect(dismiss)
+	clickCatcher.MouseButton1Click:Connect(function()
+		if os.clock() < _ignoreBackdropUntil then
+			return
+		end
+		dismiss()
+	end)
 
 	local card = Instance.new("Frame")
 	card.Name = "Card"
@@ -517,6 +535,14 @@ function RewardPopup.Show(data)
 				card.Position.X.Scale, card.Position.Y.Scale,
 				card.AbsolutePosition.X, card.AbsolutePosition.Y,
 				card.AbsoluteSize.X, card.AbsoluteSize.Y))
+			print(string.format("[CrateModalDebug] parent=%s visible=%s size=%s pos=%s screenEnabled=%s displayOrder=%d zindex=%d",
+				card.Parent and card.Parent:GetFullName() or "nil",
+				tostring(card.Visible),
+				tostring(card.Size),
+				tostring(card.Position),
+				tostring(gui.Enabled),
+				gui.DisplayOrder,
+				card.ZIndex))
 		end
 	end)
 
@@ -619,9 +645,11 @@ function RewardPopup.ShowBatch(items)
 
 	local gui = getGui()
 	if not gui then return end
+	gui.Enabled = true
 
 	_active = true
 	_onDismissCallback = nil
+	_ignoreBackdropUntil = os.clock() + 0.2
 
 	local count = #items
 	local CARD_W, CARD_H = 150, 200
@@ -650,7 +678,12 @@ function RewardPopup.ShowBatch(items)
 	clickCatcher.Active = true
 	clickCatcher.ZIndex = 50
 	clickCatcher.Parent = wrapper
-	clickCatcher.MouseButton1Click:Connect(dismiss)
+	clickCatcher.MouseButton1Click:Connect(function()
+		if os.clock() < _ignoreBackdropUntil then
+			return
+		end
+		dismiss()
+	end)
 
 	-- Main panel
 	local panelW = containerW + 40
@@ -683,6 +716,14 @@ function RewardPopup.ShowBatch(items)
 				panel.Position.X.Scale, panel.Position.Y.Scale,
 				panel.AbsolutePosition.X, panel.AbsolutePosition.Y,
 				panel.AbsoluteSize.X, panel.AbsoluteSize.Y))
+			print(string.format("[CrateModalDebug] parent=%s visible=%s size=%s pos=%s screenEnabled=%s displayOrder=%d zindex=%d",
+				panel.Parent and panel.Parent:GetFullName() or "nil",
+				tostring(panel.Visible),
+				tostring(panel.Size),
+				tostring(panel.Position),
+				tostring(gui.Enabled),
+				gui.DisplayOrder,
+				panel.ZIndex))
 		end
 	end)
 

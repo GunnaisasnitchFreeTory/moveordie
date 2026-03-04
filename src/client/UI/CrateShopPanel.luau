@@ -11,7 +11,7 @@
 	  • Right-top: All preview thumbnails with item names + drop % (horizontal scroll)
 	  • Right-bottom: 3 buy buttons
 
-	After purchase, shows reward via CrateRevealUI.
+	Reward popups are shown only from server-confirmed RewardGranted events.
 
 	Used by: UIController (walk-up proximity or OpenCrateShop RemoteEvent)
 ]]
@@ -70,6 +70,11 @@ local overlay: Frame = nil
 local visible = false
 local closeCallback: (() -> ())? = nil
 local _inventoryUpdatedConn: RBXScriptConnection? = nil
+local _crateCountLabels: { [string]: TextLabel } = {}
+local _crateCounts: { [string]: number } = {}
+local _pendingRobuxCrateBuys: { [string]: number } = {}
+local _pendingRobuxCrateBuyExpiresAt: { [string]: number } = {}
+local _buyOpenBusyByCrate: { [string]: boolean } = {}
 
 local CrateShopPanel = {}
 
@@ -81,6 +86,90 @@ local function getOpenCrateFunc(): RemoteFunction?
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 	if not remotes then return nil end
 	return remotes:FindFirstChild("OpenCrate")
+end
+
+local function getBuyCrateFunc(): RemoteFunction?
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then return nil end
+	return remotes:FindFirstChild("BuyCrate")
+end
+
+local function getOwnedCratesFunc(): RemoteFunction?
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then return nil end
+	return remotes:FindFirstChild("GetOwnedCrates")
+end
+
+local function getOpenOwnedCratesFunc(): RemoteFunction?
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then return nil end
+	return remotes:FindFirstChild("OpenOwnedCrates")
+end
+
+local function showToast(msg: string, okStyle: boolean?)
+	if not canvas then return end
+	local toast = Instance.new("TextLabel")
+	toast.Name = "CrateToast"
+	toast.AnchorPoint = Vector2.new(0.5, 0)
+	toast.Position = UDim2.new(0.5, 0, 0, 10)
+	toast.Size = UDim2.new(0.75, 0, 0, 30)
+	toast.BackgroundColor3 = okStyle and Color3.fromRGB(40, 145, 75) or Color3.fromRGB(145, 45, 45)
+	toast.BackgroundTransparency = 0.1
+	toast.BorderSizePixel = 0
+	toast.Font = Enum.Font.GothamBold
+	toast.Text = msg
+	toast.TextColor3 = Color3.fromRGB(255, 255, 255)
+	toast.TextSize = 14
+	toast.ZIndex = 200
+	toast.Parent = canvas
+	Instance.new("UICorner", toast).CornerRadius = UDim.new(0, 8)
+	task.delay(2.2, function()
+		if toast and toast.Parent then
+			toast:Destroy()
+		end
+	end)
+end
+
+local function updateCrateCountLabel(crateId: string, count: number)
+	_crateCounts[crateId] = count
+	local lbl = _crateCountLabels[crateId]
+	if lbl and lbl.Parent then
+		lbl.Text = string.format("Owned: %d", math.max(0, math.floor(count)))
+	end
+end
+
+local function getCrateDisplayName(crateId: string): string
+	for _, crate in ipairs(UIConfig.MockCrates or {}) do
+		if crate.id == crateId then
+			return tostring(crate.name or crateId)
+		end
+	end
+	local stripped = string.gsub(tostring(crateId or "Crate"), "^crate_", "")
+	stripped = string.gsub(stripped, "_", " ")
+	local titled = string.gsub(stripped, "(%a)([%w_]*)", function(first, rest)
+		return string.upper(first) .. string.lower(rest)
+	end)
+	return titled .. " Crate"
+end
+
+local function pluralizeCrateName(displayName: string, qty: number): string
+	if qty == 1 then
+		return displayName
+	end
+	if string.sub(displayName, -5) == "Crate" then
+		return string.sub(displayName, 1, -2) .. "s"
+	end
+	return displayName .. "s"
+end
+
+local function formatCratePurchaseToast(crateId: string, qty: number, ownedCount: number?): string
+	local n = math.max(1, math.floor(tonumber(qty) or 1))
+	local name = pluralizeCrateName(getCrateDisplayName(crateId), n)
+	local msg = string.format("Purchased %d %s", n, name)
+	if ownedCount ~= nil then
+		msg = string.format("%s (Owned: %d)", msg, math.max(0, math.floor(ownedCount)))
+	end
+	return msg
 end
 
 --- Get random preview items for a crate from its drop table
@@ -110,7 +199,7 @@ end
 local function showCrateRewards(results)
 	local revealUI = getRevealUI()
 	if not revealUI then
-		return
+		return false
 	end
 	local revealItems = {}
 	for _, r in ipairs(results or {}) do
@@ -130,9 +219,30 @@ local function showCrateRewards(results)
 	end
 	if #revealItems > 1 and revealUI.ShowRewards then
 		revealUI.ShowRewards(revealItems)
+		return true
 	elseif #revealItems == 1 and revealUI.ShowReward then
 		revealUI.ShowReward(revealItems[1])
+		return true
 	end
+	return false
+end
+
+local function openPurchasedCrates(crateId: string, qty: number): boolean
+	local openOwned = getOpenOwnedCratesFunc()
+	if not openOwned then
+		warn("[CrateShop] OpenOwnedCrates RemoteFunction not found")
+		return false
+	end
+	local ok, result = pcall(openOwned.InvokeServer, openOwned, crateId, qty)
+	if not ok or not result or not result.success then
+		warn("[CrateShop] OpenOwnedCrates failed:", ok and (result.error or result.reason) or result)
+		return false
+	end
+	if type(result.newCount) == "number" then
+		updateCrateCountLabel(crateId, result.newCount)
+	end
+	print(string.format("[CrateUI] ShowingRewardModal crateType=%s qty=%d", crateId, qty))
+	return showCrateRewards(result.results)
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -263,11 +373,24 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 	trs.Transparency = 0.22
 	trs.Parent = titleR
 
+	local countLbl = Instance.new("TextLabel")
+	countLbl.Name = "OwnedCount"
+	countLbl.Size = UDim2.new(1, -155, 0, 18)
+	countLbl.Position = UDim2.fromOffset(143, 26)
+	countLbl.BackgroundTransparency = 1
+	countLbl.Font = Enum.Font.GothamBold
+	countLbl.TextColor3 = Color3.fromRGB(255, 220, 120)
+	countLbl.TextSize = 12
+	countLbl.TextXAlignment = Enum.TextXAlignment.Left
+	countLbl.Text = string.format("Owned: %d", _crateCounts[crateData.id] or 0)
+	countLbl.Parent = section
+	_crateCountLabels[crateData.id] = countLbl
+
 	-- ── Right: Preview thumbnails row (horizontal scroll) ──
 	local thumbRow = Instance.new("ScrollingFrame")
 	thumbRow.Name = "Thumbnails"
 	thumbRow.Size = UDim2.new(1, -155, 0, 104)
-	thumbRow.Position = UDim2.fromOffset(143, 36)
+	thumbRow.Position = UDim2.fromOffset(143, 44)
 	thumbRow.BackgroundTransparency = 1
 	thumbRow.BorderSizePixel = 0
 	thumbRow.ScrollingDirection = Enum.ScrollingDirection.X
@@ -464,9 +587,13 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 
 		AnimUtil.WireButton(pBtn, function()
 			SoundUtil.Click()
+			print(string.format("[CrateShopUI] Click buy crateType=%s qty=%d currency=%s",
+				tostring(crateData.id), qty, isRobux and "Robux" or "F"))
 
 			if isRobux then
 				if price.productId and price.productId > 0 then
+					_pendingRobuxCrateBuys[crateData.id] = (_pendingRobuxCrateBuys[crateData.id] or 0) + qty
+					_pendingRobuxCrateBuyExpiresAt[crateData.id] = os.clock() + 45
 					MarketplaceService:PromptProductPurchase(Players.LocalPlayer, price.productId)
 				else
 					print(string.format("[CrateShop] Robux purchase: %s — %s (no productId)", crateData.name, price.label))
@@ -480,32 +607,32 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 				return
 			end
 
-			local openCrate = getOpenCrateFunc()
-			if not openCrate then
-				warn("[CrateShop] OpenCrate RemoteFunction not found")
+			local buyCrate = getBuyCrateFunc()
+			if not buyCrate then
+				warn("[CrateShop] BuyCrate RemoteFunction not found")
 				return
 			end
 
-			local result = openCrate:InvokeServer(crateData.id, qty)
+			local result = buyCrate:InvokeServer(crateData.id, qty, "Coins")
 			if result and result.success then
-				local revealUI = getRevealUI()
-				if revealUI then
-					showCrateRewards(result.results or {})
-				else
-					-- Fallback: log to console
-					for _, r in ipairs(result.results or {}) do
-						local entry = ItemCatalog.Get(r.category, r.itemId)
-						if r.isDuplicate then
-							print(string.format("[CrateShop] Already owned: %s",
-								entry and entry.name or r.itemId))
-						else
-							print(string.format("[CrateShop] Got: %s!",
-								entry and entry.name or r.itemId))
-						end
-					end
+				local newCount = tonumber(result.newCount) or (_crateCounts[crateData.id] or 0)
+				updateCrateCountLabel(crateData.id, newCount)
+				if _buyOpenBusyByCrate[crateData.id] then
+					return
+				end
+				_buyOpenBusyByCrate[crateData.id] = true
+				local opened = openPurchasedCrates(crateData.id, qty)
+				_buyOpenBusyByCrate[crateData.id] = nil
+				if not opened then
+					showToast(formatCratePurchaseToast(crateData.id, qty, newCount), true)
 				end
 			elseif result then
-				warn("[CrateShop] Failed:", result.error or "unknown")
+				if tostring(result.reason) == "INSUFFICIENT_FUNDS" then
+					showToast("Not enough Fate Coins", false)
+				else
+					showToast("Purchase failed", false)
+				end
+				warn("[CrateShop] Failed:", result.error or result.reason or "unknown")
 			end
 		end)
 	end
@@ -519,6 +646,11 @@ end
 
 function CrateShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	closeCallback = onClose
+	_crateCountLabels = {}
+	_crateCounts = {}
+	_pendingRobuxCrateBuys = {}
+	_pendingRobuxCrateBuyExpiresAt = {}
+	_buyOpenBusyByCrate = {}
 
 	overlay = Components.CreateDimOverlay(screenGui, function()
 		CrateShopPanel.Hide()
@@ -545,6 +677,18 @@ function CrateShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 
 	Components.AddListLayout(content, 16)
 
+	do
+		local getOwned = getOwnedCratesFunc()
+		if getOwned then
+			local ok, counts = pcall(getOwned.InvokeServer, getOwned)
+			if ok and type(counts) == "table" then
+				for crateId, n in pairs(counts) do
+					_crateCounts[crateId] = tonumber(n) or 0
+				end
+			end
+		end
+	end
+
 	-- Build crate sections from UIConfig.MockCrates (now has 4 entries)
 	for i, crate in ipairs(UIConfig.MockCrates) do
 		createCrateSection(content, crate, i)
@@ -556,9 +700,33 @@ function CrateShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 			local invUpdate = remotes and remotes:FindFirstChild("InventoryUpdated")
 			if invUpdate and invUpdate:IsA("RemoteEvent") then
 				_inventoryUpdatedConn = invUpdate.OnClientEvent:Connect(function(reason, data)
-					if not visible then return end
-					if reason == "CratePurchase" and type(data) == "table" and type(data.results) == "table" then
-						showCrateRewards(data.results)
+					if reason == "CrateBalance" and type(data) == "table" then
+						if type(data.counts) == "table" then
+							for crateId, n in pairs(data.counts) do
+								updateCrateCountLabel(crateId, tonumber(n) or 0)
+							end
+						elseif type(data.crateId) == "string" then
+							updateCrateCountLabel(data.crateId, tonumber(data.newCount) or 0)
+						end
+						if visible and tonumber(data.qty) and tonumber(data.qty) > 0 and type(data.crateId) == "string" then
+							local pending = tonumber(_pendingRobuxCrateBuys[data.crateId]) or 0
+							local expiresAt = tonumber(_pendingRobuxCrateBuyExpiresAt[data.crateId]) or 0
+							if pending > 0 and os.clock() <= expiresAt then
+								local qty = tonumber(data.qty) or 1
+								_pendingRobuxCrateBuys[data.crateId] = math.max(0, pending - qty)
+								if _pendingRobuxCrateBuys[data.crateId] <= 0 then
+									_pendingRobuxCrateBuyExpiresAt[data.crateId] = nil
+								end
+								if not _buyOpenBusyByCrate[data.crateId] then
+									_buyOpenBusyByCrate[data.crateId] = true
+									local opened = openPurchasedCrates(data.crateId, qty)
+									_buyOpenBusyByCrate[data.crateId] = nil
+									if not opened then
+										showToast(formatCratePurchaseToast(data.crateId, qty, tonumber(data.newCount)), true)
+									end
+								end
+							end
+						end
 					end
 				end)
 			end

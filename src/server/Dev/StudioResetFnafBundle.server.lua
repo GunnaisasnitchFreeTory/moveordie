@@ -7,16 +7,16 @@ if not RunService:IsStudio() then
 	return
 end
 
+-- Safety: keep this OFF by default. Enable manually only when you explicitly
+-- want to wipe FNAF ownership for local Studio testing.
+local ENABLE_STUDIO_FNAF_RESET = false
+if not ENABLE_STUDIO_FNAF_RESET then
+	return
+end
+
 local Server = ServerScriptService:WaitForChild("Server")
 local PlayerDataService = require(Server:WaitForChild("PlayerDataService"))
 local BundleCatalog = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("BundleCatalog"))
-
-local ALLOWED_USER_IDS = {
-	[game.CreatorId] = true,
-}
-local ALLOWED_USERNAMES = {
-	ihavehopsxd = true,
-}
 
 local fnafPetIds = {}
 do
@@ -42,9 +42,6 @@ local function waitForData(player: Player): boolean
 end
 
 local function resetPlayer(player: Player)
-	if not ALLOWED_USER_IDS[player.UserId] and not ALLOWED_USERNAMES[string.lower(player.Name)] then
-		return
-	end
 	if not waitForData(player) then
 		return
 	end
@@ -72,18 +69,54 @@ local function resetPlayer(player: Player)
 		PlayerDataService.SetField(player, "EquippedPet", "")
 	end
 
-	PlayerDataService.SetField(player, "Coins", 0)
+	local processedGrants = data.ProcessedGrants
+	local clearedGrantKeys = 0
+	if type(processedGrants) == "table" then
+		local nextProcessed = {}
+		for key, value in pairs(processedGrants) do
+			local keep = true
+			if type(key) == "string" then
+				local lower = string.lower(key)
+				if string.find(lower, "fnaf", 1, true) or string.find(lower, "bundle", 1, true) then
+					keep = false
+				else
+					for petId in pairs(fnafPetIds) do
+						if string.find(lower, string.lower(petId), 1, true) then
+							keep = false
+							break
+						end
+					end
+				end
+			end
+			if keep then
+				nextProcessed[key] = value
+			else
+				clearedGrantKeys += 1
+			end
+		end
+		PlayerDataService.SetField(player, "ProcessedGrants", nextProcessed)
+	end
 
 	warn(string.format(
-		"[StudioResetFNAF] Reset %s: removedFnafPets=%d coins=0",
+		"[StudioResetFNAF] Reset %s: removedFnafPets=%d clearedGrantKeys=%d",
 		player.Name,
-		removed
+		removed,
+		clearedGrantKeys
 	))
 end
 
-Players.PlayerAdded:Connect(resetPlayer)
+local function wirePlayer(player: Player)
+	task.spawn(resetPlayer, player)
+	player.CharacterAdded:Connect(function()
+		task.delay(0.2, function()
+			resetPlayer(player)
+		end)
+	end)
+end
+
+Players.PlayerAdded:Connect(wirePlayer)
 
 for _, player in ipairs(Players:GetPlayers()) do
-	task.spawn(resetPlayer, player)
+	wirePlayer(player)
 end
 

@@ -168,6 +168,17 @@ else
 	warn("[Client] WorldIndicators FAILED:", indicatorsErr)
 end
 
+-- 6b. FNAF indicator wiring (clone working Brainrot indicator)
+local fnafIndicatorOk, fnafIndicatorErr = pcall(function()
+	local FnafIndicatorWiring = require(Client:WaitForChild("FnafIndicatorWiring"))
+	FnafIndicatorWiring.Init()
+end)
+if fnafIndicatorOk then
+	print("[Client] FnafIndicatorWiring loaded OK")
+else
+	warn("[Client] FnafIndicatorWiring FAILED:", fnafIndicatorErr)
+end
+
 -- 7. BrainrotPickupController (floating animation + pickup popup)
 local brainrotOk, brainrotErr = pcall(function()
 	local BrainrotPickupController = require(Client:WaitForChild("BrainrotPickupController"))
@@ -243,6 +254,17 @@ if gsOk then
 	print("[Client] GroupSignController loaded OK")
 else
 	warn("[Client] GroupSignController FAILED:", gsErr)
+end
+
+-- 12. RewardGrantListener (server-confirmed reward popup only)
+local rewardGrantOk, rewardGrantErr = pcall(function()
+	local RewardGrantListener = require(Client:WaitForChild("RewardGrantListener"))
+	RewardGrantListener.Init()
+end)
+if rewardGrantOk then
+	print("[Client] RewardGrantListener loaded OK")
+else
+	warn("[Client] RewardGrantListener FAILED:", rewardGrantErr)
 end
 
 -- BUILD_ID label (bottom-left corner, subtle version stamp)

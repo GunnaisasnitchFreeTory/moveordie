@@ -139,15 +139,15 @@ function InventoryService.GrantItem(player: Player, category: string, id: string
 		data[mapping.ownedKey] = ownedList
 	end
 
+	for _, ownedId in ipairs(ownedList) do
+		if ownedId == id then
+			log(string.format("%s already owns %s/%s", player.Name, category, id))
+			return true
+		end
+	end
 	if category == "Pets" then
 		table.insert(ownedList, id)
 	else
-		for _, ownedId in ipairs(ownedList) do
-			if ownedId == id then
-				log(string.format("%s already owns %s/%s", player.Name, category, id))
-				return true
-			end
-		end
 		table.insert(ownedList, id)
 	end
 

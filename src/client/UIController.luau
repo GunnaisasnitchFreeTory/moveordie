@@ -648,6 +648,9 @@ function UIController.Init()
 		local BUNDLE_OPEN_DISTANCE = 15
 		local BUNDLE_CLOSE_DISTANCE = 30
 		local bundleOpenTime = 0
+		local lastPromptOpenAt = 0
+		local promptOpenCooldown = 0.75
+		local openedByFnafPrompt = false
 
 		local brainrotFolder = nil
 		for attempt = 1, 12 do
@@ -750,48 +753,6 @@ function UIController.Init()
 			return nil
 		end
 
-		local function findPromptPart(folder: Instance): BasePart?
-			local preferredNames = { "FreddyFzber", "FreddyFazber", "FreddyFazbear" }
-			for _, name in ipairs(preferredNames) do
-				local node = folder:FindFirstChild(name, true)
-				if node then
-					if node:IsA("BasePart") then
-						return node
-					elseif node:IsA("Model") then
-						if not node.PrimaryPart then
-							local pp = node:FindFirstChildWhichIsA("BasePart", true)
-							if pp then node.PrimaryPart = pp end
-						end
-						return node.PrimaryPart or node:FindFirstChildWhichIsA("BasePart", true)
-					else
-						local bp = node:FindFirstChildWhichIsA("BasePart", true)
-						if bp then return bp end
-					end
-				end
-			end
-			for _, d in ipairs(folder:GetDescendants()) do
-				local n = string.lower(d.Name)
-				if string.find(n, "freddy", 1, true) then
-					if d:IsA("BasePart") then
-						return d
-					elseif d:IsA("Model") then
-						if not d.PrimaryPart then
-							local pp = d:FindFirstChildWhichIsA("BasePart", true)
-							if pp then d.PrimaryPart = pp end
-						end
-						local bp = d.PrimaryPart or d:FindFirstChildWhichIsA("BasePart", true)
-						if bp then return bp end
-					end
-				end
-			end
-			local posterModel = folder:FindFirstChild("Poster")
-			if posterModel then
-				local posterPart = posterModel:FindFirstChildWhichIsA("BasePart", true)
-				if posterPart then return posterPart end
-			end
-			return folder:FindFirstChildWhichIsA("BasePart", true)
-		end
-
 		local fnafFolder = nil
 		for attempt = 1, 300 do
 			fnafFolder = findFnafFolder()
@@ -804,13 +765,24 @@ function UIController.Init()
 			return
 		end
 
-		local promptPart: BasePart? = findPromptPart(fnafFolder)
+		local promptPart: BasePart? = nil
+		for attempt = 1, 6 do
+			local posterModel = fnafFolder:FindFirstChild("Poster")
+			if posterModel then
+				promptPart = posterModel:FindFirstChildWhichIsA("BasePart")
+			end
+			if promptPart then break end
+			task.wait(2)
+		end
+		if not promptPart then
+			promptPart = fnafFolder:FindFirstChildWhichIsA("BasePart", true)
+		end
 
 		if not promptPart then
-			log("[FNAFBundle] FreddyFzber BasePart missing -- walk-up disabled")
+			log("[FNAFBundle] No poster BasePart -- walk-up disabled")
 			return
 		end
-		log("[FNAFBundle] Prompt parent part: " .. promptPart:GetFullName())
+		log("[FNAFBundle] Poster part found: " .. promptPart:GetFullName() .. " at " .. tostring(promptPart.Position))
 
 		local prompt: ProximityPrompt? = nil
 		for _, desc in ipairs(fnafFolder:GetDescendants()) do
@@ -823,24 +795,32 @@ function UIController.Init()
 		if not prompt then
 			prompt = Instance.new("ProximityPrompt")
 			prompt.Name = "FNAFBundlePrompt"
-			log("[FNAFBundle] Created new prompt")
+			prompt.ActionText = "Buy"
+			prompt.ObjectText = "FNAF Bundle"
+			prompt.KeyboardKeyCode = Enum.KeyCode.E
+			prompt.HoldDuration = 0
+			prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE
+			prompt.RequiresLineOfSight = false
+			prompt.Parent = promptPart
+			log("[FNAFBundle] Prompt parented directly to poster at " .. tostring(promptPart.Position))
 		end
-		-- Always normalize prompt to Brainrot-style interaction.
-		prompt.ActionText = "Buy"
-		prompt.ObjectText = "FNAF Bundle"
-		prompt.KeyboardKeyCode = Enum.KeyCode.E
-		prompt.HoldDuration = 0
-		prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE
-		prompt.RequiresLineOfSight = false
-		prompt.Enabled = true
-		prompt.Style = Enum.ProximityPromptStyle.Default
-		prompt.Parent = promptPart
-		log("[FNAFBundle] Prompt active on: " .. prompt.Parent:GetFullName())
+		print(string.format("[BundleIndicator] bundle=fnaf visible=true part=%s", promptPart:GetFullName()))
 
 		prompt.Triggered:Connect(function(playerWhoTriggered)
 			if playerWhoTriggered ~= LocalPlayer then return end
+			local now = tick()
+			if (now - lastPromptOpenAt) < promptOpenCooldown then
+				return
+			end
+			lastPromptOpenAt = now
 			bundleOpenTime = tick()
-			openPanel("Shop")
+			openedByFnafPrompt = true
+			print("[ShopOpen] source=FNAFPrompt action=OPEN")
+			if currentPanel ~= "Shop" then
+				openPanel("Shop")
+			else
+				ShopPanel.Show()
+			end
 			if ShopPanel.ActivateBundleTab then
 				ShopPanel.ActivateBundleTab("fnaf_pets_bundle")
 			end
@@ -860,6 +840,10 @@ function UIController.Init()
 			local dist = (root.Position - promptPart.Position).Magnitude
 			if dist > BUNDLE_CLOSE_DISTANCE then
 				bundleOpenTime = 0
+				if openedByFnafPrompt and currentPanel == "Shop" then
+					print(string.format("[ShopOpen] source=FNAFPrompt action=CLOSE reason=DISTANCE_%.1f", dist))
+					openedByFnafPrompt = false
+				end
 				closeCurrentPanel()
 			end
 		end)

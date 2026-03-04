@@ -9,6 +9,7 @@
 
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+local HttpService = game:GetService("HttpService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Server = ServerScriptService:WaitForChild("Server")
@@ -22,6 +23,7 @@ local initialized = false
 
 local _EconomyService   = nil
 local _InventoryService = nil
+local _GrantService = nil
 local _bundleBuyInFlight: { [number]: boolean } = {}
 
 local function getEconomy()
@@ -38,6 +40,13 @@ local function getInventory()
 	return _InventoryService
 end
 
+local function getGrant()
+	if _GrantService then return _GrantService end
+	local ok, mod = pcall(require, Server:WaitForChild("GrantService", 10))
+	if ok and mod then _GrantService = mod end
+	return _GrantService
+end
+
 -- Map shop item type → catalog category
 local TYPE_TO_CATEGORY = {
 	ExclusiveCrown = "Crowns",
@@ -49,8 +58,19 @@ local BUNDLE_ALIASES: { [string]: string } = {
 	fnaf_pets_bundle = "fnaf_pets_bundle",
 }
 
-local BUNDLE_COIN_COSTS: { [string]: number } = {
-	fnaf_pets_bundle = 150000,
+local FNAF_BUNDLE_ID = "fnaf_pets_bundle"
+local FNAF_BUNDLE_REQUEST_ID = "fnaf_all"
+local FNAF_BASE_PRICE = 150000
+local FNAF_PER_OWNED_DISCOUNT = 0.10
+
+local FNAF_BUNDLE_PET_IDS = {
+	"pet_freddy_fazbear",
+	"pet_bonnie",
+	"pet_chica",
+	"pet_foxy",
+	"pet_golden_freddy",
+	"pet_the_puppet",
+	"pet_cupcake",
 }
 
 local function findTopUpProduct(shortage: number): (number?, number?)
@@ -70,16 +90,59 @@ local function findTopUpProduct(shortage: number): (number?, number?)
 	return bestProductId, bestAmount
 end
 
+local function getFnafQuote(player: Player): { ok: boolean, reason: string?, price: number, ownedCount: number, totalCount: number, missingCount: number }
+	local IS = getInventory()
+	if not IS then
+		return { ok = false, reason = "InventoryService unavailable", price = FNAF_BASE_PRICE, ownedCount = 0, totalCount = #FNAF_BUNDLE_PET_IDS, missingCount = #FNAF_BUNDLE_PET_IDS }
+	end
+
+	local ownedCount = 0
+	local totalCount = #FNAF_BUNDLE_PET_IDS
+	for _, petId in ipairs(FNAF_BUNDLE_PET_IDS) do
+		if IS.OwnsItem(player, "Pets", petId) then
+			ownedCount += 1
+		end
+	end
+	local missingCount = math.max(0, totalCount - ownedCount)
+	if missingCount == 0 then
+		print(string.format("[BundleQuote] bundle=%s owned=%d/%d price=0", FNAF_BUNDLE_REQUEST_ID, ownedCount, totalCount))
+		return {
+			ok = false,
+			reason = "ALREADY_OWNED",
+			price = 0,
+			ownedCount = ownedCount,
+			totalCount = totalCount,
+			missingCount = missingCount,
+		}
+	end
+
+	local discountPercent = ownedCount * FNAF_PER_OWNED_DISCOUNT
+	local finalPrice = math.floor(FNAF_BASE_PRICE * (1 - discountPercent))
+	finalPrice = math.max(0, finalPrice)
+
+	print(string.format("[BundleQuote] bundle=%s owned=%d/%d price=%d", FNAF_BUNDLE_REQUEST_ID, ownedCount, totalCount, finalPrice))
+	return {
+		ok = true,
+		price = finalPrice,
+		ownedCount = ownedCount,
+		totalCount = totalCount,
+		missingCount = missingCount,
+	}
+end
+
+function ShopService.GetBundleQuote(player: Player, requestBundleId: string)
+	local bundleId = BUNDLE_ALIASES[requestBundleId] or requestBundleId
+	if bundleId == FNAF_BUNDLE_ID then
+		return getFnafQuote(player)
+	end
+	return { ok = false, reason = "BUNDLE_NOT_SUPPORTED", price = 0, ownedCount = 0, totalCount = 0, missingCount = 0 }
+end
+
 local function buyBundleWithCoins(player: Player, requestBundleId: string): { success: boolean, reason: string?, grantedCount: number?, grantedItemIds: {string}?, productId: number?, shortage: number?, recommendedCoins: number? }
 	local bundleId = BUNDLE_ALIASES[requestBundleId] or requestBundleId
 	local bundle = BundleCatalog.Get(bundleId)
 	if not bundle then
 		return { success = false, reason = "Bundle not found" }
-	end
-
-	local price = BUNDLE_COIN_COSTS[bundleId]
-	if not price or price <= 0 then
-		return { success = false, reason = "Bundle is not available for Fate Coins" }
 	end
 
 	local inFlightKey = player.UserId
@@ -90,47 +153,81 @@ local function buyBundleWithCoins(player: Player, requestBundleId: string): { su
 
 	local ES = getEconomy()
 	local IS = getInventory()
-	if not ES or not IS then
+	local GS = getGrant()
+	if not ES or not IS or not GS then
 		_bundleBuyInFlight[inFlightKey] = nil
 		return { success = false, reason = "Shop services unavailable" }
 	end
 
+	if bundleId ~= FNAF_BUNDLE_ID then
+		_bundleBuyInFlight[inFlightKey] = nil
+		return { success = false, reason = "Bundle is not available for Fate Coins" }
+	end
+
+	local quote = getFnafQuote(player)
+	local ownedPetsCount = quote.ownedCount
+	local totalPetsCount = quote.totalCount
+	local missingPetsCount = quote.missingCount
+	local finalCost = quote.price
+	if not quote.ok then
+		print(string.format("[BundleBuy] bundle=%s owned=%d missing=%d cost=%d result=FAIL reason=%s",
+			FNAF_BUNDLE_REQUEST_ID, ownedPetsCount, missingPetsCount, finalCost, tostring(quote.reason)))
+		_bundleBuyInFlight[inFlightKey] = nil
+		return {
+			success = false,
+			reason = quote.reason or "ALREADY_OWNED",
+			finalCost = finalCost,
+			missingPetsCount = missingPetsCount,
+			ownedPetsCount = ownedPetsCount,
+			totalPetsCount = totalPetsCount,
+		}
+	end
+
+	local totalPetsCount = 0
+	local ownedPetsCount = 0
+	local missingPetsCount = 0
 	local toGrant = {}
 	for _, inc in ipairs(bundle.includes or {}) do
+		if inc.category == "Pets" and inc.itemId then
+			totalPetsCount += 1
+			if IS.OwnsItem(player, inc.category, inc.itemId) then
+				ownedPetsCount += 1
+			else
+				missingPetsCount += 1
+			end
+		end
 		if inc.category and inc.itemId and not IS.OwnsItem(player, inc.category, inc.itemId) then
 			table.insert(toGrant, inc)
 		end
 	end
-	if #toGrant == 0 then
-		print(string.format("[BundleBuy] player=%s bundle=%s cost=%d result=FAIL reason=ALREADY_OWNED",
-			player.Name, bundleId, price))
+	if missingPetsCount <= 0 or #toGrant == 0 then
+		print(string.format("[BundleBuy] bundle=%s owned=%d missing=%d cost=%d result=FAIL reason=ALREADY_OWNED",
+			FNAF_BUNDLE_REQUEST_ID, ownedPetsCount, missingPetsCount, finalCost))
 		_bundleBuyInFlight[inFlightKey] = nil
 		return { success = false, reason = "ALREADY_OWNED" }
 	end
 
 	local balance = ES.GetCoins(player)
-	if balance < price then
-		local shortage = price - balance
-		if bundleId == "fnaf_pets_bundle" then
-			local productId, recommendedCoins = findTopUpProduct(shortage)
-			print(string.format("[BundleBuy] player=%s bundle=%s cost=%d result=FAIL reason=INSUFFICIENT_FUNDS shortage=%d productId=%s",
-				player.Name, bundleId, price, shortage, tostring(productId)))
-			_bundleBuyInFlight[inFlightKey] = nil
-			return {
-				success = false,
-				reason = "INSUFFICIENT_COINS",
-				productId = productId,
-				shortage = shortage,
-				recommendedCoins = recommendedCoins,
-			}
-		end
-		print(string.format("[BundleBuy] player=%s bundle=%s cost=%d result=FAIL reason=INSUFFICIENT_FUNDS",
-			player.Name, bundleId, price))
+	if balance < finalCost then
+		local shortage = finalCost - balance
+		local productId, recommendedCoins = findTopUpProduct(shortage)
+		print(string.format("[BundleBuy] bundle=%s owned=%d missing=%d cost=%d result=FAIL reason=INSUFFICIENT_COINS",
+			FNAF_BUNDLE_REQUEST_ID, ownedPetsCount, missingPetsCount, finalCost))
 		_bundleBuyInFlight[inFlightKey] = nil
-		return { success = false, reason = "Not enough Fate Coins" }
+		return {
+			success = false,
+			reason = "INSUFFICIENT_COINS",
+			productId = productId,
+			shortage = shortage,
+			recommendedCoins = recommendedCoins,
+			finalCost = finalCost,
+			missingPetsCount = missingPetsCount,
+			ownedPetsCount = ownedPetsCount,
+			totalPetsCount = totalPetsCount,
+		}
 	end
 
-	local deducted = ES.DeductCoins(player, price, "BundlePurchase:" .. bundleId)
+	local deducted = ES.DeductCoins(player, finalCost, "BundlePurchase:" .. bundleId)
 	if not deducted then
 		_bundleBuyInFlight[inFlightKey] = nil
 		return { success = false, reason = "Failed to deduct coins" }
@@ -138,23 +235,54 @@ local function buyBundleWithCoins(player: Player, requestBundleId: string): { su
 
 	local grantedCount = 0
 	local grantedItemIds = {}
+	local grantedRewards = {}
 	for _, inc in ipairs(toGrant) do
-		if IS.GrantItem(player, inc.category, inc.itemId) then
+		local grantType = (inc.category == "Crowns") and "Crown" or "Pet"
+		local grantRes = GS.GrantItem(player, grantType, inc.itemId, "Bundle", {
+			fireReward = false,
+			idempotencyKey = string.format("bundle:%s:%s:%s", tostring(player.UserId), bundleId, inc.itemId),
+		})
+		if grantRes.success then
 			grantedCount += 1
 			table.insert(grantedItemIds, inc.itemId)
+			table.insert(grantedRewards, {
+				type = grantType,
+				id = inc.itemId,
+				category = inc.category,
+				source = "Bundle",
+			})
 		end
 	end
 
 	if grantedCount == 0 then
-		ES.AwardCoins(player, price, "BundleRefund:" .. bundleId, true)
+		ES.AwardCoins(player, finalCost, "BundleRefund:" .. bundleId, true)
 		_bundleBuyInFlight[inFlightKey] = nil
 		return { success = false, reason = "Failed to grant bundle items" }
 	end
 
-	print(string.format("[BundleBuy] player=%s bundle=%s cost=%d result=SUCCESS grantedCount=%d",
-		player.Name, bundleId, price, grantedCount))
+	print(string.format("[BundleBuy] bundle=%s owned=%d missing=%d cost=%d result=SUCCESS",
+		FNAF_BUNDLE_REQUEST_ID, ownedPetsCount, missingPetsCount, finalCost))
+	if #grantedRewards > 0 then
+		GS.EmitBundlePurchaseConfirmed(player, FNAF_BUNDLE_REQUEST_ID, {
+			token = HttpService:GenerateGUID(false),
+			title = "PURCHASED!",
+			name = "All FNAF pets unlocked",
+			itemType = "Bundle",
+			itemId = FNAF_BUNDLE_REQUEST_ID,
+			icon = bundle.coverImage,
+			okText = "NICE!",
+		})
+	end
 	_bundleBuyInFlight[inFlightKey] = nil
-	return { success = true, grantedCount = grantedCount, grantedItemIds = grantedItemIds }
+	return {
+		success = true,
+		grantedCount = grantedCount,
+		grantedItemIds = grantedItemIds,
+		finalCost = finalCost,
+		missingPetsCount = missingPetsCount,
+		ownedPetsCount = ownedPetsCount,
+		totalPetsCount = totalPetsCount,
+	}
 end
 
 function ShopService.BuyWithCoins(player: Player, itemId: string, itemType: string): { success: boolean, reason: string? }
@@ -183,8 +311,9 @@ function ShopService.BuyWithCoins(player: Player, itemId: string, itemType: stri
 	end
 
 	local IS = getInventory()
-	if not IS then
-		return { success = false, reason = "InventoryService unavailable" }
+	local GS = getGrant()
+	if not IS or not GS then
+		return { success = false, reason = "Grant services unavailable" }
 	end
 
 	-- Already owned?
@@ -208,11 +337,14 @@ function ShopService.BuyWithCoins(player: Player, itemId: string, itemType: stri
 		return { success = false, reason = "Failed to deduct coins" }
 	end
 
-	local granted = IS.GrantItem(player, category, itemId)
-	if not granted then
+	local grantType = (category == "Crowns") and "Crown" or "Pet"
+	local grantRes = GS.GrantItem(player, grantType, itemId, "Shop", {
+		idempotencyKey = string.format("shop:%s:%s:%s", tostring(player.UserId), category, itemId),
+	})
+	if not grantRes.success then
 		-- Refund on grant failure
 		ES.AwardCoins(player, price, "ShopRefund:" .. itemId, true)
-		return { success = false, reason = "Failed to grant item" }
+		return { success = false, reason = "Failed to grant item: " .. tostring(grantRes.reason) }
 	end
 
 	print(string.format("[ShopService] %s purchased %s/%s for %d Fate Coins", player.Name, category, itemId, price))
@@ -238,11 +370,25 @@ function ShopService.Init()
 		buyRF.Parent = remotes
 	end
 
+	local quoteRF = remotes:FindFirstChild("Shop_GetBundleQuote")
+	if not quoteRF then
+		quoteRF = Instance.new("RemoteFunction")
+		quoteRF.Name = "Shop_GetBundleQuote"
+		quoteRF.Parent = remotes
+	end
+
 	buyRF.OnServerInvoke = function(player: Player, itemId: string, itemType: string)
 		local ok, result = pcall(ShopService.BuyWithCoins, player, itemId, itemType)
 		if ok then return result end
 		warn("[ShopService] BuyWithCoins error:", result)
 		return { success = false, reason = "Internal error" }
+	end
+
+	quoteRF.OnServerInvoke = function(player: Player, requestBundleId: string)
+		local ok, result = pcall(ShopService.GetBundleQuote, player, requestBundleId)
+		if ok then return result end
+		warn("[ShopService] GetBundleQuote error:", result)
+		return { ok = false, reason = "Internal error", price = 0, ownedCount = 0, totalCount = 0, missingCount = 0 }
 	end
 
 	print("[ShopService] Initialized")

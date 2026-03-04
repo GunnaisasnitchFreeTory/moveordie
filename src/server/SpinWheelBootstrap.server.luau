@@ -102,7 +102,7 @@ end)
 -- SHARED SERVICE REFERENCES (lazy-loaded)
 -- ═══════════════════════════════════════════════════════════════════
 
-local _InventoryService, _EconomyService, _CrateService, _ItemCatalog, _PlayerDataService
+local _InventoryService, _EconomyService, _CrateService, _ItemCatalog, _PlayerDataService, _GrantService
 local _BundleCatalog
 
 local function getInventoryService()
@@ -131,6 +131,13 @@ local function getPlayerDataService()
 		_PlayerDataService = require(Server:WaitForChild("PlayerDataService", 5))
 	end
 	return _PlayerDataService
+end
+
+local function getGrantService()
+	if not _GrantService then
+		_GrantService = require(Server:WaitForChild("GrantService", 5))
+	end
+	return _GrantService
 end
 
 local function getItemCatalog()
@@ -314,31 +321,49 @@ local function grantGamepassReward(player: Player, gamepassId: number): boolean
 	local reward = GAMEPASS_REWARD_MAP[gamepassId]
 	if not reward then return false end
 
-	local inv = getInventoryService()
-	if not inv then
-		warn("[PurchaseSystem] InventoryService unavailable for gamepass grant")
+	local grant = getGrantService()
+	if not grant then
+		warn("[PurchaseSystem] GrantService unavailable for gamepass grant")
 		return false
 	end
 
 	if reward.type == "Bundle" then
+		local grantedItems = {}
 		for _, item in ipairs(reward.items) do
-			if not inv.OwnsItem(player, item.category, item.itemId) then
-				local okGrant = inv.GrantItem(player, item.category, item.itemId)
-				if not okGrant then
-					warn(string.format("[PurchaseSystem] Gamepass bundle grant failed: %s/%s for %s",
-						item.category, item.itemId, player.Name))
-					return false
-				end
-			end
-		end
-	else
-		if not inv.OwnsItem(player, reward.category, reward.itemId) then
-			local okGrant = inv.GrantItem(player, reward.category, reward.itemId)
-			if not okGrant then
-				warn(string.format("[PurchaseSystem] Gamepass grant failed: %s/%s for %s",
-					reward.category, reward.itemId, player.Name))
+			local grantType = (item.category == "Crowns") and "Crown" or "Pet"
+			local okGrant = grant.GrantItem(player, grantType, item.itemId, "GamePass", {
+				fireReward = false,
+				idempotencyKey = string.format("gamepass:%d:%d:%s", player.UserId, gamepassId, item.itemId),
+			})
+			if not okGrant.success then
+				warn(string.format("[PurchaseSystem] Gamepass bundle grant failed: %s/%s for %s reason=%s",
+					item.category, item.itemId, player.Name, tostring(okGrant.reason)))
 				return false
 			end
+			table.insert(grantedItems, {
+				type = grantType,
+				id = item.itemId,
+				category = item.category,
+				source = "GamePass",
+			})
+		end
+		if #grantedItems > 0 then
+			grant.EmitRewardGranted(player, {
+				type = "Bundle",
+				id = reward.bundleId or tostring(gamepassId),
+				source = "GamePass",
+				batchItems = grantedItems,
+			})
+		end
+	else
+		local grantType = (reward.category == "Crowns") and "Crown" or "Pet"
+		local okGrant = grant.GrantItem(player, grantType, reward.itemId, "GamePass", {
+			idempotencyKey = string.format("gamepass:%d:%d:%s", player.UserId, gamepassId, reward.itemId),
+		})
+		if not okGrant.success then
+			warn(string.format("[PurchaseSystem] Gamepass grant failed: %s/%s for %s reason=%s",
+				reward.category, reward.itemId, player.Name, tostring(okGrant.reason)))
+			return false
 		end
 	end
 
@@ -361,6 +386,25 @@ local function checkGamepassOwnership(player: Player)
 		end
 	end
 end
+
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, gamepassId: number, wasPurchased: boolean)
+	print(string.format("[GamePass] FINISHED passId=%d player=%s purchased=%s",
+		tonumber(gamepassId) or 0,
+		player and player.Name or "unknown",
+		tostring(wasPurchased)))
+	if not wasPurchased then
+		return
+	end
+	if not player or not player.Parent then
+		return
+	end
+	if GAMEPASS_REWARD_MAP[gamepassId] then
+		local granted = grantGamepassReward(player, gamepassId)
+		if not granted then
+			warn(string.format("[GamePass] Grant failed passId=%d player=%s", gamepassId, player.Name))
+		end
+	end
+end)
 
 -- Create remote for client to request gamepass verification after purchase
 local gamepassVerifyRF = remotesFolder:FindFirstChild("VerifyGamepassPurchase")
@@ -417,7 +461,7 @@ local processedReceipts: { [string]: boolean } = {}
 MarketplaceService.ProcessReceipt = function(receiptInfo)
 	local receiptKey = tostring(receiptInfo.PurchaseId)
 	local productId = receiptInfo.ProductId
-	print(string.format("[Receipt] playerId=%d productId=%d processing...", receiptInfo.PlayerId, productId))
+	print(string.format("[Receipt] START productId=%d playerId=%d purchaseId=%s", productId, receiptInfo.PlayerId, receiptKey))
 
 	if processedReceipts[receiptKey] then
 		print("[PurchaseSystem] Receipt already processed:", receiptKey)
@@ -429,6 +473,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 		print("[PurchaseSystem] Player not in game for receipt:", receiptKey, "userId:", receiptInfo.PlayerId)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
+	print(string.format("[Receipt] START productId=%d player=%s purchaseId=%s", productId, player.Name, receiptKey))
 
 	local pds = getPlayerDataService()
 	if pds then
@@ -444,58 +489,66 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 	local reward = PRODUCT_REWARD_MAP[productId]
 
 	if not reward then
-		print(string.format("[Receipt] productId=%d resolvedGrant=UNKNOWN amount=0 itemId=nil", productId))
-		print(string.format("[Receipt] productId=%d grant=FAIL reason=UNKNOWN_PRODUCT", productId))
+		print(string.format("[Receipt] productId=%d result=FAIL reason=UNKNOWN_PRODUCT", productId))
 		warn(string.format("[CoinsProduct] player=%s productId=%d grant=0 result=FAIL reason=UNKNOWN_PRODUCT",
 			player.Name, productId))
 		warn("[PurchaseSystem] Unknown productId:", productId, "receipt:", receiptKey)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
-	print(string.format("[Receipt] productId=%d resolvedGrant=%s amount=%s itemId=%s",
+	print(string.format("[Receipt] productId=%d resolvedGrant type=%s id=%s amount=%s",
 		productId,
 		tostring(reward.type),
-		tostring(reward.amount or reward.quantity or 0),
-		tostring(reward.itemId or reward.crateId or "")
+		tostring(reward.itemId or reward.crateId or ""),
+		tostring(reward.amount or reward.quantity or 0)
 	))
 
 	local granted = false
 	local ok, err = pcall(function()
+		local grant = getGrantService()
+		if not grant then
+			error("GrantService unavailable")
+		end
 		if reward.type == "Spins" then
-			granted = SpinWheelService.GrantRobuxSpins(player, reward.amount)
-			if granted then
-				notifyClient(player, "SpinPurchase", { spins = reward.amount })
-			end
+			local g = grant.GrantItem(player, "Spin", reward.amount, "DevProduct", {
+				idempotencyKey = "receipt:" .. receiptKey,
+			})
+			granted = g.success
 
 		elseif reward.type == "Coins" then
-			local econ = getEconomyService()
-			if econ then
-				econ.AwardCoins(player, reward.amount, "DevProduct:" .. tostring(productId))
-				notifyClient(player, "ShopPurchase", { "coins" })
+			local g = grant.GrantItem(player, "Currency", reward.amount, "DevProduct", {
+				idempotencyKey = "receipt:" .. receiptKey,
+			})
+			granted = g.success
+			if granted then
 				print(string.format("[CoinsProduct] player=%s productId=%d grant=%d result=SUCCESS",
 					player.Name, productId, reward.amount))
-				granted = true
 			end
 
 		elseif reward.type == "Crate" then
 			local crate = getCrateService()
 			if crate then
-				local result = crate.RollCrateFree(player, reward.crateId, reward.quantity)
+				local result = crate.AddCrates(player, reward.crateId, reward.quantity, "DevProduct")
 				if result and result.success then
-					notifyClient(player, "CratePurchase", {
-						crateId = reward.crateId,
-						quantity = reward.quantity,
-						results = result.results,
-					})
+					local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+					local invUpdate = remotes and remotes:FindFirstChild("InventoryUpdated")
+					if invUpdate and invUpdate:IsA("RemoteEvent") then
+						invUpdate:FireClient(player, "CrateBalance", {
+							crateId = reward.crateId,
+							newCount = result.newCount,
+							counts = crate.GetCrateCounts(player),
+							qty = reward.quantity,
+						})
+					end
 					granted = true
 				else
-					warn("[PurchaseSystem] RollCrateFree failed:", result and result.error or "unknown")
+					warn("[PurchaseSystem] AddCrates failed:", result and result.reason or "unknown")
 				end
 			end
 		end
 	end)
 
 	if not ok then
-		print(string.format("[Receipt] productId=%d grant=FAIL reason=%s", productId, tostring(err)))
+		print(string.format("[Receipt] productId=%d result=FAIL reason=%s", productId, tostring(err)))
 		warn("[PurchaseSystem] Error granting reward for productId", productId, ":", err)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
@@ -513,13 +566,13 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 				pds.SetField(player, "ProcessedReceipts", processed)
 			end
 		end
-		print(string.format("[Receipt] productId=%d grant=SUCCESS", productId))
+		print(string.format("[Receipt] productId=%d result=SUCCESS", productId))
 		print(string.format("[PurchaseSystem] Granted: %s (%s) to %s, receipt=%s",
 			reward.label, reward.type, player.Name, receiptKey))
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 
-	print(string.format("[Receipt] productId=%d grant=FAIL reason=GRANT_RETURNED_FALSE", productId))
+	print(string.format("[Receipt] productId=%d result=FAIL reason=GRANT_RETURNED_FALSE", productId))
 	warn("[PurchaseSystem] Failed to grant reward for productId:", productId, "receipt:", receiptKey)
 	return Enum.ProductPurchaseDecision.NotProcessedYet
 end

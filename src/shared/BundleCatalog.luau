@@ -23,6 +23,13 @@
 
 local BundleCatalog = {}
 
+local COIN_PRICING_DEFAULTS = {
+	-- Keep this in the requested 10%-40% cap range.
+	maxDiscountPercent = 0.30,
+	minDiscountCapPercent = 0.10,
+	maxDiscountCapPercent = 0.40,
+}
+
 local _bundles = {
 	{
 		id           = "fnaf_pets_bundle",
@@ -31,6 +38,10 @@ local _bundles = {
 		isAvailable  = true,
 		isLimited    = false,
 		priceFateCoins = 150000,
+		coinPricing = {
+			baseCost = 150000,
+			maxDiscountPercent = COIN_PRICING_DEFAULTS.maxDiscountPercent,
+		},
 		priceRobux   = 500,
 		gamepassId   = 1732407562,
 		productId    = nil,
@@ -117,6 +128,42 @@ end
 
 function BundleCatalog.Get(id: string)
 	return _byId[id]
+end
+
+function BundleCatalog.GetCoinPricing(id: string): { baseCost: number, maxDiscountPercent: number }?
+	local bundle = _byId[id]
+	if not bundle then
+		return nil
+	end
+	local pricing = bundle.coinPricing
+	if type(pricing) ~= "table" then
+		return nil
+	end
+	local baseCost = tonumber(pricing.baseCost) or tonumber(bundle.priceFateCoins) or 0
+	local maxDiscountPercent = tonumber(pricing.maxDiscountPercent) or COIN_PRICING_DEFAULTS.maxDiscountPercent
+	maxDiscountPercent = math.clamp(
+		maxDiscountPercent,
+		COIN_PRICING_DEFAULTS.minDiscountCapPercent,
+		COIN_PRICING_DEFAULTS.maxDiscountCapPercent
+	)
+	return {
+		baseCost = math.max(0, math.floor(baseCost)),
+		maxDiscountPercent = maxDiscountPercent,
+	}
+end
+
+function BundleCatalog.ComputeCoinCost(id: string, ownedCount: number, totalCount: number): number?
+	local pricing = BundleCatalog.GetCoinPricing(id)
+	if not pricing then
+		return nil
+	end
+	local total = math.max(0, math.floor(totalCount or 0))
+	if total <= 0 then
+		return pricing.baseCost
+	end
+	local owned = math.clamp(math.floor(ownedCount or 0), 0, total)
+	local discountPercent = math.clamp((owned / total) * pricing.maxDiscountPercent, 0, pricing.maxDiscountPercent)
+	return math.floor(pricing.baseCost * (1 - discountPercent))
 end
 
 return BundleCatalog
