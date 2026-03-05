@@ -77,7 +77,16 @@ local C = UIConfig.Colors
 local S = UIConfig.Sizes
 
 local LocalPlayer = Players.LocalPlayer
+local COIN_BUNDLE_REQUEST_IDS: { [string]: string } = {
+	fnaf_pets_bundle = "fnaf_all",
+	brainrot_bundle = "brainrot_all",
+}
 local FNAF_BUNDLE_ID = "fnaf_pets_bundle"
+local BRAINROT_BUNDLE_ID = "brainrot_bundle"
+local FNAF_ITEM_PRICE = 70000
+local BRAINROT_ITEM_PRICE = 75000
+local COIN_BUNDLE_BASE_COST = 150000
+local COIN_BUNDLE_PER_OWNED_DISCOUNT = 0.10
 
 local ACCENT_COLOR   = Color3.fromRGB(245, 48, 72)
 local SELECTED_GLOW  = Color3.fromRGB(255, 210, 50)
@@ -125,31 +134,43 @@ local function getOwnedSetFromAttribute(attributeName: string): { [string]: bool
 	return set
 end
 
-local function getFnafBundleState(bundle): { totalPetsCount: number, ownedPetsCount: number, missingPetsCount: number, finalCost: number, coins: number }
-	local totalPetsCount = 0
-	local ownedPetsCount = 0
-	local ownedPets = getOwnedSetFromAttribute("OwnedPets")
+local function getOwnedSetForCategory(category: string): { [string]: boolean }
+	if category == "Pets" then
+		return getOwnedSetFromAttribute("OwnedPets")
+	elseif category == "Crowns" then
+		return getOwnedSetFromAttribute("OwnedCrowns")
+	elseif category == "IconImages" then
+		return getOwnedSetFromAttribute("OwnedIconImages")
+	end
+	return {}
+end
+
+local function getCoinBundleState(bundle): { totalCount: number, ownedCount: number, missingCount: number, finalCost: number, coins: number }
+	local totalCount = 0
+	local ownedCount = 0
+	local ownedByCategory: { [string]: { [string]: boolean } } = {}
 
 	for _, inc in ipairs(bundle.includes or {}) do
-		if inc.category == "Pets" and inc.itemId then
-			totalPetsCount += 1
-			if ownedPets[inc.itemId] == true then
-				ownedPetsCount += 1
+		if inc.category and inc.itemId and COIN_BUNDLE_REQUEST_IDS[bundle.id] then
+			if not ownedByCategory[inc.category] then
+				ownedByCategory[inc.category] = getOwnedSetForCategory(inc.category)
+			end
+			totalCount += 1
+			if ownedByCategory[inc.category][inc.itemId] == true then
+				ownedCount += 1
 			end
 		end
 	end
 
-	local missingPetsCount = math.max(0, totalPetsCount - ownedPetsCount)
-	local pricing = BundleCatalog.GetCoinPricing and BundleCatalog.GetCoinPricing(bundle.id) or nil
-	local baseCost = (pricing and pricing.baseCost) or bundle.priceFateCoins or 0
-	local computedCost = BundleCatalog.ComputeCoinCost and BundleCatalog.ComputeCoinCost(bundle.id, ownedPetsCount, totalPetsCount) or nil
-	local finalCost = (type(computedCost) == "number" and computedCost) or baseCost
+	local missingCount = math.max(0, totalCount - ownedCount)
+	local finalCost = math.floor(COIN_BUNDLE_BASE_COST * (1 - (ownedCount * COIN_BUNDLE_PER_OWNED_DISCOUNT)))
+	finalCost = math.max(0, finalCost)
 	local coins = tonumber(LocalPlayer:GetAttribute("Coins")) or 0
 
 	return {
-		totalPetsCount = totalPetsCount,
-		ownedPetsCount = ownedPetsCount,
-		missingPetsCount = missingPetsCount,
+		totalCount = totalCount,
+		ownedCount = ownedCount,
+		missingCount = missingCount,
 		finalCost = math.max(0, math.floor(finalCost)),
 		coins = math.max(0, math.floor(coins)),
 	}
@@ -251,9 +272,9 @@ local function selectBundle(bundleId: string)
 	end
 
 	if buyBtn then
-		local isFnafCoinBundle = (bundle.id == FNAF_BUNDLE_ID)
+		local isCoinBundle = COIN_BUNDLE_REQUEST_IDS[bundle.id] ~= nil
 		local isOwned = _bundleOwnedLocal[bundle.id] == true
-		if bundle.gamepassId and not isFnafCoinBundle then
+		if bundle.gamepassId and not isCoinBundle then
 			local okChk, ownsChk = pcall(function()
 				return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, bundle.gamepassId)
 			end)
@@ -269,13 +290,13 @@ local function selectBundle(bundleId: string)
 			buyBtn.BackgroundColor3 = C.DisabledBtn
 			buyBtn.Active = false
 		else
-			if isFnafCoinBundle then
-				local state = getFnafBundleState(bundle)
-				if state.missingPetsCount <= 0 then
+			if isCoinBundle then
+				local state = getCoinBundleState(bundle)
+				if state.missingCount <= 0 then
 					buyBtn.Text = "OWNED"
 					buyBtn.BackgroundColor3 = C.DisabledBtn
 					buyBtn.Active = false
-				elseif state.coins < state.finalCost then
+				elseif bundle.id ~= BRAINROT_BUNDLE_ID and state.coins < state.finalCost then
 					buyBtn.Text = "GET MORE FATE COINS"
 					buyBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 55)
 					buyBtn.Active = true
@@ -726,12 +747,90 @@ local function showDetailView()
 	gridFrame.Parent = detailFrame
 
 	Components.AddGridLayout(gridFrame, Vector2.new(S.CardWidth, S.CardHeight), S.CardPad)
+	local isFnafBundle = (bundle.id == FNAF_BUNDLE_ID)
+	local isBrainrotBundle = (bundle.id == BRAINROT_BUNDLE_ID)
+	local hasPerItemCoinBuy = isFnafBundle or isBrainrotBundle
+	local ownedByCategory: { [string]: { [string]: boolean } } = {}
 
 	for i, inc in ipairs(bundle.includes) do
 		local itemData = ItemCatalog.Get(inc.category, inc.itemId)
 		if not itemData then
 			warn("[BundlePanel] Missing catalog entry:", inc.category, inc.itemId)
 			continue
+		end
+		if not ownedByCategory[inc.category] then
+			ownedByCategory[inc.category] = getOwnedSetForCategory(inc.category)
+		end
+		local isOwned = ownedByCategory[inc.category][inc.itemId] == true
+		if isBrainrotBundle then
+			print(string.format("[BrainrotCard] Render item=%s owned=%s", tostring(inc.itemId), tostring(isOwned)))
+		end
+		local actionText = nil
+		local actionColor = nil
+		local onAction = nil
+		if isBrainrotBundle then
+			if isOwned then
+				actionText = "OWNED"
+				actionColor = C.DisabledBtn
+			else
+				actionText = "BUY - 75,000 F"
+				actionColor = Color3.fromRGB(255, 200, 30)
+				onAction = function()
+					print(string.format("[BrainrotCard] ClickBuy item=%s", tostring(inc.itemId)))
+					local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+					local buyRF = remotes and remotes:FindFirstChild("BuyBrainrotItem")
+					if not buyRF then
+						warn("[BundlePanel] BuyBrainrotItem remote missing")
+						return
+					end
+					local okBuy, result = pcall(buyRF.InvokeServer, buyRF, inc.itemId)
+					if okBuy and result and result.success then
+						selectBundle(selectedBundleId)
+						showDetailView()
+					elseif okBuy and result and result.reason == "INSUFFICIENT_COINS" then
+						local productId = tonumber(result.productId)
+						if productId and productId > 0 then
+							MarketplaceService:PromptProductPurchase(LocalPlayer, productId)
+						else
+							warn("[BundlePanel] Missing top-up productId for insufficient bundle item coins")
+						end
+					elseif okBuy and result and result.reason == "ALREADY_OWNED" then
+						selectBundle(selectedBundleId)
+						showDetailView()
+					end
+				end
+			end
+		elseif isFnafBundle and inc.category == "Pets" then
+			if isOwned then
+				actionText = "OWNED"
+				actionColor = C.DisabledBtn
+			else
+				actionText = "BUY - 70,000 F"
+				actionColor = Color3.fromRGB(255, 200, 30)
+				onAction = function()
+					local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+					local buyRF = remotes and remotes:FindFirstChild("Shop_BuyWithCoins")
+					if not buyRF then
+						warn("[BundlePanel] Shop_BuyWithCoins remote missing for FNAF item buy")
+						return
+					end
+					local okBuy, result = pcall(buyRF.InvokeServer, buyRF, inc.itemId, "ExclusivePet")
+					if okBuy and result and result.success then
+						selectBundle(selectedBundleId)
+						showDetailView()
+					elseif okBuy and result and result.reason == "INSUFFICIENT_COINS" then
+						local productId = tonumber(result.productId)
+						if productId and productId > 0 then
+							MarketplaceService:PromptProductPurchase(LocalPlayer, productId)
+						else
+							warn("[BundlePanel] Missing top-up productId for insufficient FNAF item coins")
+						end
+					elseif okBuy and result and tostring(result.reason or "") == "Already owned" then
+						selectBundle(selectedBundleId)
+						showDetailView()
+					end
+				end
+			end
 		end
 
 		local cardData = {
@@ -741,6 +840,11 @@ local function showDetailView()
 			iconText = itemData.iconText,
 			image = ItemCatalog.GetImage and ItemCatalog.GetImage(itemData) or itemData.image or "",
 			modelPath = itemData.modelPath,
+			locked = nil,
+			owned = hasPerItemCoinBuy and isOwned or nil,
+			actionText = actionText,
+			actionColor = actionColor,
+			onAction = onAction,
 			itemId = inc.itemId,
 			itemType = panelOptions and panelOptions.itemType or nil,
 			coinPrice = panelOptions and panelOptions.itemCoinPrice or nil,
@@ -749,17 +853,30 @@ local function showDetailView()
 		local card = Components.CreateItemCard(gridFrame, cardData)
 		card.LayoutOrder = i
 
+		-- Preview is always available regardless of ownership.
+		-- For Brainrot, keep overlay off CTA row so BUY remains clickable.
 		local clickOverlay = Instance.new("TextButton")
 		clickOverlay.Name = "PreviewClick"
-		clickOverlay.Size = UDim2.fromScale(1, 1)
+		clickOverlay.Size = if hasPerItemCoinBuy then UDim2.new(1, 0, 1, -50) else UDim2.fromScale(1, 1)
 		clickOverlay.BackgroundTransparency = 1
 		clickOverlay.Text = ""
 		clickOverlay.ZIndex = 20
 		clickOverlay.Parent = card
 		clickOverlay.MouseButton1Click:Connect(function()
+			if isBrainrotBundle then
+				print(string.format("[BrainrotCard] ClickPreview item=%s", tostring(inc.itemId)))
+			end
 			SoundUtil.Click()
 			showItemPreview(cardData)
 		end)
+
+		if hasPerItemCoinBuy and isOwned then
+			local btn = card:FindFirstChild("ActionBtn")
+			if btn and btn:IsA("TextButton") then
+				btn.Active = false
+				btn.AutoButtonColor = false
+			end
+		end
 	end
 end
 
@@ -920,10 +1037,11 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 		local bundle = BundleCatalog.Get(selectedBundleId)
 		if not bundle then return end
 		if not bundle.isAvailable then return end
-		if bundle.id == FNAF_BUNDLE_ID then
-			local stateBefore = getFnafBundleState(bundle)
-			if stateBefore.missingPetsCount <= 0 then
-				_bundleOwnedLocal[FNAF_BUNDLE_ID] = true
+		local coinRequestId = COIN_BUNDLE_REQUEST_IDS[bundle.id]
+		if coinRequestId then
+			local stateBefore = getCoinBundleState(bundle)
+			if stateBefore.missingCount <= 0 then
+				_bundleOwnedLocal[bundle.id] = true
 				selectBundle(selectedBundleId)
 				return
 			end
@@ -931,10 +1049,10 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 			local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 			local buyRF = remotes and remotes:FindFirstChild("Shop_BuyWithCoins")
 			if not buyRF then
-				warn("[BundlePanel] Shop_BuyWithCoins remote missing for FNAF bundle")
+				warn("[BundlePanel] Shop_BuyWithCoins remote missing for coin bundle")
 				return
 			end
-			local okBuy, result = pcall(buyRF.InvokeServer, buyRF, "fnaf_all", "Bundle")
+			local okBuy, result = pcall(buyRF.InvokeServer, buyRF, coinRequestId, "Bundle")
 			if okBuy and result and result.success then
 				selectBundle(selectedBundleId)
 			elseif okBuy and result and result.reason == "INSUFFICIENT_COINS" then
@@ -942,10 +1060,10 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 				if productId and productId > 0 then
 					MarketplaceService:PromptProductPurchase(LocalPlayer, productId)
 				else
-					warn("[BundlePanel] Missing top-up productId for insufficient FNAF coins")
+					warn("[BundlePanel] Missing top-up productId for insufficient bundle coins")
 				end
 			elseif okBuy and result and result.reason == "ALREADY_OWNED" then
-				_bundleOwnedLocal[FNAF_BUNDLE_ID] = true
+				_bundleOwnedLocal[bundle.id] = true
 				selectBundle(selectedBundleId)
 			end
 		elseif bundle.gamepassId then
@@ -1163,10 +1281,10 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 		priceLabel.TextSize = 11
 		priceLabel.TextXAlignment = Enum.TextXAlignment.Left
 		local selectorOwned = false
-		local isFnafCoinBundle = (bundle.id == FNAF_BUNDLE_ID)
-		if isFnafCoinBundle then
-			local state = getFnafBundleState(bundle)
-			selectorOwned = state.missingPetsCount <= 0
+		local isCoinBundle = COIN_BUNDLE_REQUEST_IDS[bundle.id] ~= nil
+		if isCoinBundle then
+			local state = getCoinBundleState(bundle)
+			selectorOwned = state.missingCount <= 0
 		elseif bundle.gamepassId then
 			local okS, ownsS = pcall(function()
 				return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, bundle.gamepassId)
@@ -1175,8 +1293,8 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 		end
 		if selectorOwned then
 			priceLabel.Text = "OWNED"
-		elseif isFnafCoinBundle then
-			local state = getFnafBundleState(bundle)
+		elseif isCoinBundle then
+			local state = getCoinBundleState(bundle)
 			priceLabel.Text = string.format("%d F", state.finalCost)
 		else
 			priceLabel.Text = string.format("%d R$", bundle.priceRobux)

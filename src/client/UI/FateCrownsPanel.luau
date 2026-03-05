@@ -119,6 +119,12 @@ local function refresh()
 	local ownedSet = getOwnedCrownSet()
 	equippedId = player:GetAttribute("EquippedCrown") or nil
 	local allCrowns = ItemCatalog.GetAllCrownsSorted()
+	for _, crown in ipairs(allCrowns) do
+		if crown.name == "Aura Crown" then
+			print(string.format("[CrownCatalog] AuraCrown id=%s", tostring(crown.id)))
+			break
+		end
+	end
 
 	for i, crown in ipairs(allCrowns) do
 		local isOwned = ownedSet[crown.id] == true

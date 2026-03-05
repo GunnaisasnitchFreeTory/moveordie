@@ -101,11 +101,38 @@ local PET_NO_ROLL_WOBBLE: { [string]: boolean } = {
 -- Scale override: bypasses auto-scaling for models that need special treatment.
 -- Value is used as a raw multiplier on the model's original scale.
 local PET_SCALE_OVERRIDES: { [string]: number } = {
-	pet_glitched_dragon = 0.10,  -- model is enormous; tuned to match other pets (~3 studs)
+	-- Keep base normalization path unchanged for these; massive scaling is applied
+	-- later at final spawn stage so it cannot be re-normalized back down.
+	pet_glitched_dragon = 1.0,
+	pet_dark_falcon = 1.0,        -- Dark Goblem
+	pet_pink_butterfly = 1.0,
+	pet_dark_winged_dragon = 1.0, -- Music Winged Dragon
+}
+
+local PET_MASSIVE_SCALE_TARGETS: { [string]: boolean } = {
+	pet_glitched_dragon = true,
+	pet_dark_falcon = true,
+	pet_pink_butterfly = true,
+	pet_dark_winged_dragon = true,
+}
+
+local PET_FINAL_SPAWN_SCALE_MULTIPLIER: { [string]: number } = {
+	pet_glitched_dragon = 3.5, -- slight shrink only
+	pet_dark_falcon = 2.8,        -- Dark Goblem
+	pet_pink_butterfly = 2.6,
+	pet_dark_winged_dragon = 2.8, -- Music Winged Dragon
 }
 
 local MOVEMENT_HOVER = "HOVER"
 local MOVEMENT_WALKER = "WALKER_R15"
+local MOVEMENT_SERVER_MOTOR = "SERVER_MOTOR_RIG"
+
+local SERVER_MOTOR_PET_IDS: { [string]: boolean } = {
+	pet_pink_butterfly = true,
+	pet_glitched_dragon = true,
+	pet_dark_winged_dragon = true, -- Music Winged Dragon
+	pet_dark_falcon = true, -- Dark Goblem
+}
 
 local PET_MOVEMENT_TYPE: { [string]: string } = {
 	-- Reverted to floating/bobble path
@@ -140,6 +167,53 @@ local PET_EQUIP_OFFSET_CFRAME: { [string]: CFrame } = {
 	pet_huggy_wuggy = CFrame.new(0, -0.35, 0) * CFrame.Angles(0, math.rad(180), 0),
 }
 
+-- Deterministic orientation target list (ONLY these pets).
+local DETERMINISTIC_PET_IDS: { [string]: boolean } = {
+	pet_crocodile = true,
+	pet_shark = true,
+	pet_dog = true,
+	pet_parrot = true,
+	pet_penguin = true,
+	pet_rabbit = true,
+	pet_eagle = true,
+	pet_ray_fish = true,
+	pet_scorpion = true,
+	pet_spider = true,
+	pet_axolotl = true,
+	pet_bat = true,
+	pet_fredbear_plush = true,
+	pet_steve = true,
+	pet_huggy_wuggy = true,
+	pet_glitched_dragon = true,
+	pet_dark_falcon = true,
+	pet_pink_butterfly = true,
+	pet_dark_winged_dragon = true,
+}
+
+-- Per-pet deterministic rotation overrides (identity by default).
+-- Only listed pets are allowed here.
+local PET_DETERMINISTIC_ROTATION_OVERRIDES: { [string]: CFrame } = {
+	pet_crocodile = CFrame.new(),
+	pet_shark = CFrame.new(),
+	pet_dog = CFrame.new(),
+	pet_parrot = CFrame.new(),
+	pet_penguin = CFrame.new(),
+	pet_rabbit = CFrame.new(),
+	pet_eagle = CFrame.new(),
+	pet_ray_fish = CFrame.new(),
+	pet_scorpion = CFrame.Angles(0, math.rad(180), 0),
+	pet_spider = CFrame.new(),
+	pet_axolotl = CFrame.new(),
+	pet_bat = CFrame.new(),
+	pet_fredbear_plush = CFrame.Angles(0, math.rad(-90), 0),
+	pet_steve = CFrame.new(),
+	pet_huggy_wuggy = CFrame.Angles(0, math.rad(180), 0),
+	pet_glitched_dragon = CFrame.Angles(0, math.rad(90), 0),
+	pet_dark_falcon = CFrame.Angles(0, math.rad(180), 0),
+	pet_pink_butterfly = CFrame.new(),
+	pet_dark_winged_dragon = CFrame.new(),
+}
+
 -- =====================================================================
 -- SIZE NORMALIZATION
 -- =====================================================================
@@ -160,6 +234,8 @@ local _activePets: { [Player]: {
 	mover: any?,
 	_isWalker: boolean?,
 	_walkerPetId: string?,
+	_isServerMotor: boolean?,
+	_serverMotorPetId: string?,
 } } = {}
 
 local _playerConns: { [Player]: { RBXScriptConnection } } = {}
@@ -285,6 +361,9 @@ local function getConfiguredPetModelName(petId: string, petDef): string
 end
 
 local function getMovementType(petId: string, petDef): string
+	if SERVER_MOTOR_PET_IDS[petId] then
+		return MOVEMENT_SERVER_MOTOR
+	end
 	local modelName = getConfiguredPetModelName(petId, petDef)
 	local explicit = PET_MOVEMENT_TYPE[modelName]
 	if explicit then return explicit end
@@ -330,6 +409,110 @@ local function findHrpInModel(model: Model): BasePart?
 		return hrp
 	end
 	return nil
+end
+
+local ROOT_NAME_PRIORITY = {
+	"HumanoidRootPart",
+	"Root",
+	"RootPart",
+	"Handle",
+	"UpperTorso",
+	"LowerTorso",
+	"Torso",
+}
+
+local function ensureDeterministicPrimaryPart(model: Model): BasePart?
+	local current = model.PrimaryPart
+	if current and current:IsA("BasePart") then
+		return current
+	end
+
+	for _, name in ipairs(ROOT_NAME_PRIORITY) do
+		local candidate = model:FindFirstChild(name, true)
+		if candidate and candidate:IsA("BasePart") then
+			model.PrimaryPart = candidate
+			return candidate
+		end
+	end
+
+	local allParts = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			table.insert(allParts, d)
+		end
+	end
+	table.sort(allParts, function(a, b)
+		return a:GetFullName() < b:GetFullName()
+	end)
+	local first = allParts[1]
+	if first then
+		model.PrimaryPart = first
+		return first
+	end
+	return nil
+end
+
+local function pickDeterministicVisualRoot(model: Model): BasePart?
+	for _, name in ipairs({ "Root", "Handle", "HumanoidRootPart" }) do
+		local part = model:FindFirstChild(name, true)
+		if part and part:IsA("BasePart") then
+			model.PrimaryPart = part
+			return part
+		end
+	end
+
+	local best: BasePart? = nil
+	local bestVolume = -math.huge
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local v = d.Size.X * d.Size.Y * d.Size.Z
+			if v > bestVolume then
+				bestVolume = v
+				best = d
+			end
+		end
+	end
+	if best then
+		model.PrimaryPart = best
+		return best
+	end
+	return nil
+end
+
+local function ensureInternalWeldsToRoot(model: Model, root: BasePart)
+	local hasInternalJoints = false
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("WeldConstraint") or d:IsA("Motor6D") then
+			hasInternalJoints = true
+			break
+		end
+	end
+	if hasInternalJoints then
+		return
+	end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") and d ~= root then
+			local weld = Instance.new("WeldConstraint")
+			weld.Name = "_PetInternalWeld"
+			weld.Part0 = root
+			weld.Part1 = d
+			weld.Parent = root
+		end
+	end
+end
+
+local function moveModelByRootDelta(model: Model, targetRootCF: CFrame): boolean
+	local root = model.PrimaryPart
+	if not root then
+		return false
+	end
+	local delta = targetRootCF * root.CFrame:Inverse()
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.CFrame = delta * d.CFrame
+		end
+	end
+	return true
 end
 
 local function findWalkerRootPart(model: Model, humanoid: Humanoid?): (BasePart?, boolean)
@@ -405,8 +588,10 @@ local function destroyPetFor(player: Player)
 	if not entry then return end
 
 	-- Walker pets live on the server; notify it to clean up.
-	if entry._isWalker then
-		pcall(function() _unequipRemote:FireServer() end)
+	if entry._isWalker or entry._isServerMotor then
+		if player == Players.LocalPlayer then
+			pcall(function() _unequipRemote:FireServer() end)
+		end
 		_activePets[player] = nil
 		return
 	end
@@ -424,6 +609,7 @@ local function spawnPetFor(player: Player, petId: string)
 	local existing = _activePets[player]
 	if existing then
 		if existing._isWalker and existing._walkerPetId == petId then return end
+		if existing._isServerMotor and existing._serverMotorPetId == petId then return end
 		if not existing._isWalker and existing.pet and existing.pet.Parent
 			and existing.pet:GetAttribute("_petId") == petId then return end
 	end
@@ -488,7 +674,25 @@ local function spawnPetFor(player: Player, petId: string)
 		return
 	end
 
+	-- ── SERVER MOTOR-RIG PETS (special 4 only) ────────────────────────────────
+	if movementType == MOVEMENT_SERVER_MOTOR then
+		if player == Players.LocalPlayer then
+			_equipRemote:FireServer(petId)
+		end
+		_activePets[player] = {
+			pet              = nil,
+			conn             = nil,
+			pos              = rootPart.Position,
+			t0               = tick(),
+			mover            = nil,
+			_isServerMotor   = true,
+			_serverMotorPetId = petId,
+		}
+		return
+	end
+
 	local clone = sourceModel:Clone()
+	local deterministicTarget = DETERMINISTIC_PET_IDS[petId] == true
 
 	-- Unwrap Accessory → extract children into a Model wrapper
 	if clone:IsA("Accessory") then
@@ -518,16 +722,30 @@ local function spawnPetFor(player: Player, petId: string)
 	end
 
 	-- Ensure consistent pivot behavior for per-pet offsets.
-	if clone:IsA("Model") and not clone.PrimaryPart then
-		local preferredRoot = clone:FindFirstChild("HumanoidRootPart", true)
-		if preferredRoot and preferredRoot:IsA("BasePart") then
-			clone.PrimaryPart = preferredRoot
-		else
-			local firstPart = clone:FindFirstChildWhichIsA("BasePart", true)
-			if firstPart then
-				clone.PrimaryPart = firstPart
+	if clone:IsA("Model") then
+		if deterministicTarget then
+			local root = pickDeterministicVisualRoot(clone) or ensureDeterministicPrimaryPart(clone)
+			if root then
+				ensureInternalWeldsToRoot(clone, root)
+			end
+		elseif not clone.PrimaryPart then
+			local preferredRoot = clone:FindFirstChild("HumanoidRootPart", true)
+			if preferredRoot and preferredRoot:IsA("BasePart") then
+				clone.PrimaryPart = preferredRoot
+			else
+				local firstPart = clone:FindFirstChildWhichIsA("BasePart", true)
+				if firstPart then
+					clone.PrimaryPart = firstPart
+				end
 			end
 		end
+	end
+	local spawnBoundsBeforeStr: string? = nil
+	local spawnPrimaryPartName: string = "nil"
+	if PET_MASSIVE_SCALE_TARGETS[petId] then
+		local b = getBBoxSize(clone)
+		spawnBoundsBeforeStr = b and string.format("%.2f,%.2f,%.2f", b.X, b.Y, b.Z) or "nil"
+		spawnPrimaryPartName = (clone:IsA("Model") and clone.PrimaryPart and clone.PrimaryPart.Name) or "nil"
 	end
 
 	local useUnanchoredFloat = FNAF_REVERTED_FLOAT_IDS[petId] == true
@@ -574,7 +792,11 @@ local function spawnPetFor(player: Player, petId: string)
 			end
 		end
 
-		petScale = math.clamp(petScale, SCALE_FLOOR, SCALE_CEIL)
+		local scaleCeil = SCALE_CEIL
+		if scaleOverride and scaleOverride > SCALE_CEIL then
+			scaleCeil = scaleOverride
+		end
+		petScale = math.clamp(petScale, SCALE_FLOOR, scaleCeil)
 
 		-- Apply the primary scale
 		if petScale < 1 then
@@ -593,6 +815,16 @@ local function spawnPetFor(player: Player, petId: string)
 				log("post_scale", "Post-scale correction for", petId,
 					string.format("extra %.3fx (was %.1f studs)", correction, postMax))
 			end
+		end
+		if PET_MASSIVE_SCALE_TARGETS[petId] then
+			local beforeStr = preBBox and string.format("%.2f,%.2f,%.2f", preBBox.X, preBBox.Y, preBBox.Z) or "nil"
+			local after = getBBoxSize(clone)
+			local afterStr = after and string.format("%.2f,%.2f,%.2f", after.X, after.Y, after.Z) or "nil"
+			print(string.format("[PetScale] pet=%s appliedScale=%.2f bounds=%s/%s",
+				tostring(petDef and petDef.name or petId),
+				petScale,
+				beforeStr,
+				afterStr))
 		end
 	end
 
@@ -640,23 +872,91 @@ local function spawnPetFor(player: Player, petId: string)
 			petId, math.deg(petYawRad)))
 	end
 
-	-- ── INITIAL POSITION ───────────────────────────────────────────
-	local startPos = (rootPart.CFrame * petOffset).Position
-	local look0 = rootPart.CFrame.LookVector
-	local yaw0  = math.atan2(-look0.X, -look0.Z) + petYawRad
-	local startCF = CFrame.new(startPos) * CFrame.Angles(0, yaw0, 0)
-
-	if clone:IsA("Model") then
-		clone:PivotTo(startCF)
-	elseif clone:IsA("BasePart") then
-		clone.CFrame = startCF
-	end
-
 	clone.Name = PET_INSTANCE_NAME
 	clone:SetAttribute("IsPet", true)
 	clone:SetAttribute("_petId", petId)
 	clone:SetAttribute("_owner", player.Name)
 	clone.Parent = workspace
+
+	-- Final in-game scale pass for the four tiny legendary pets.
+	-- Runs AFTER normalization and parent, BEFORE final attach transform.
+	local finalSpawnMult = PET_FINAL_SPAWN_SCALE_MULTIPLIER[petId]
+	if finalSpawnMult and finalSpawnMult > 1 then
+		print(string.format("[PetSpawnModel] pet=%s modelPath=%s primaryPart=%s boundsBefore=%s",
+			tostring(petDef and petDef.name or petId),
+			tostring(clone:GetFullName()),
+			tostring(spawnPrimaryPartName),
+			tostring(spawnBoundsBeforeStr or "nil")))
+		applyScale(clone, finalSpawnMult)
+		petScale = petScale * finalSpawnMult
+		local after = getBBoxSize(clone)
+		local afterStr = after and string.format("%.2f,%.2f,%.2f", after.X, after.Y, after.Z) or "nil"
+		print(string.format("[PetScaleApplied] pet=%s multiplier=%.2f boundsAfter=%s",
+			tostring(petDef and petDef.name or petId),
+			finalSpawnMult,
+			afterStr))
+	end
+
+	-- ── INITIAL POSITION ───────────────────────────────────────────
+	local startPos = (rootPart.CFrame * petOffset).Position
+	local look0 = rootPart.CFrame.LookVector
+	local yaw0  = math.atan2(-look0.X, -look0.Z) + petYawRad
+	local startCF = CFrame.new(startPos) * CFrame.Angles(0, yaw0, 0)
+	local deterministicOverride = deterministicTarget and (PET_DETERMINISTIC_ROTATION_OVERRIDES[petId] or CFrame.new()) or CFrame.new()
+	local attachCF = startCF
+		* (PET_EQUIP_OFFSET_CFRAME[petId] or CFrame.new())
+		* (PET_ROTATION_FIX[petId] or CFrame.new())
+		* deterministicOverride
+
+	if deterministicTarget and clone:IsA("Model") then
+		task.wait()
+		local root = pickDeterministicVisualRoot(clone) or ensureDeterministicPrimaryPart(clone)
+		if not root then
+			clone:PivotTo(attachCF)
+		else
+			ensureInternalWeldsToRoot(clone, root)
+			if not moveModelByRootDelta(clone, attachCF) then
+				clone:PivotTo(attachCF)
+			end
+		end
+	elseif clone:IsA("Model") then
+		clone:PivotTo(attachCF)
+	elseif clone:IsA("BasePart") then
+		clone.CFrame = attachCF
+	end
+
+	if deterministicTarget then
+		local rootPath = "nil"
+		if clone:IsA("Model") and clone.PrimaryPart then
+			rootPath = clone.PrimaryPart:GetFullName()
+		elseif clone:IsA("BasePart") then
+			rootPath = clone:GetFullName()
+		end
+		local parts = 0
+		local anchored = 0
+		local transparent = 0
+		local ltmNonZero = 0
+		local samplePos = Vector3.new(0, 0, 0)
+		for _, d in ipairs(clone:GetDescendants()) do
+			if d:IsA("BasePart") then
+				parts += 1
+				if d.Anchored then anchored += 1 end
+				if d.Transparency >= 1 then transparent += 1 end
+				if d.LocalTransparencyModifier > 0 then ltmNonZero += 1 end
+				samplePos = d.Position
+			end
+		end
+		print(string.format(
+			"[PetAttach] pet=%s root=%s parts=%d anchored=%d transparent=%d ltmNonZero=%d samplePos=<%.2f,%.2f,%.2f> finalLook=<%.3f,%.3f,%.3f> finalUp=<%.3f,%.3f,%.3f> overrideApplied=%s",
+			tostring(petDef and petDef.name or petId),
+			tostring(rootPath),
+			parts, anchored, transparent, ltmNonZero,
+			samplePos.X, samplePos.Y, samplePos.Z,
+			attachCF.LookVector.X, attachCF.LookVector.Y, attachCF.LookVector.Z,
+			attachCF.UpVector.X, attachCF.UpVector.Y, attachCF.UpVector.Z,
+			tostring(PET_DETERMINISTIC_ROTATION_OVERRIDES[petId] ~= nil)
+		))
+	end
 
 	-- ── FOLLOW + BOBBLE LOOP ───────────────────────────────────────
 	-- Position is lerped for smooth motion; orientation is rebuilt fresh
@@ -695,9 +995,19 @@ local function spawnPetFor(player: Player, petId: string)
 		local finalCF = uprightCF
 			* (PET_EQUIP_OFFSET_CFRAME[petId] or CFrame.new())
 			* (PET_ROTATION_FIX[petId] or CFrame.new())
+		if deterministicTarget then
+			finalCF = finalCF * (PET_DETERMINISTIC_ROTATION_OVERRIDES[petId] or CFrame.new())
+		end
 
 		-- 5) Apply
-		if clone:IsA("Model") then
+		if deterministicTarget and clone:IsA("Model") then
+			local root = clone.PrimaryPart or pickDeterministicVisualRoot(clone) or ensureDeterministicPrimaryPart(clone)
+			if not root then
+				clone:PivotTo(finalCF)
+			elseif not moveModelByRootDelta(clone, finalCF) then
+				clone:PivotTo(finalCF)
+			end
+		elseif clone:IsA("Model") then
 			clone:PivotTo(finalCF)
 		elseif clone:IsA("BasePart") then
 			clone.CFrame = finalCF

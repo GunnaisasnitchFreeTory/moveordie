@@ -1082,6 +1082,13 @@ local function populatePetsTab()
 				buyBtn.BackgroundColor3 = C.DisabledBtn
 				buyBtn.TextColor3 = Color3.fromRGB(210, 215, 230)
 				buyBtn.AutoButtonColor = false
+			elseif okBuy and result and result.reason == "INSUFFICIENT_COINS" then
+				local productId = tonumber(result.productId)
+				if productId and productId > 0 then
+					MarketplaceService:PromptProductPurchase(LocalPlayer, productId)
+				else
+					warn("[ShopPanel] Missing top-up productId for insufficient FNAF item coins")
+				end
 			end
 		end)
 	end
@@ -1234,7 +1241,6 @@ local function populateCards(filterType: string)
 				local ownedSet = getOwnedSet(attrKey)
 				isOwned = (_locallyOwned[item.id] == true) or (ownedSet[item.id] == true)
 			end
-
 			local actionText
 			local actionColor
 			if isOwned then

@@ -370,7 +370,7 @@ end
 -- HELPER: build icon inside a parent frame
 -- Supports: static image, ThumbnailRenderer (ViewportFrame for pets), emoji fallback
 -- ═══════════════════════════════════════════
-local function buildIcon(parent, resolvedImage, fallbackEmoji, fallbackColor, posY, iconSize, zIdx, catalogEntry)
+local function buildIcon(parent, resolvedImage, fallbackEmoji, fallbackColor, posY, iconSize, zIdx, catalogEntry, imageScaleType)
 	if resolvedImage and resolvedImage ~= "" then
 		local icon = Instance.new("ImageLabel")
 		icon.Name = "RewardIcon"
@@ -380,7 +380,7 @@ local function buildIcon(parent, resolvedImage, fallbackEmoji, fallbackColor, po
 		icon.BackgroundTransparency = 1
 		icon.Image = resolvedImage
 		icon.ImageTransparency = 0
-		icon.ScaleType = Enum.ScaleType.Fit
+		icon.ScaleType = imageScaleType or Enum.ScaleType.Fit
 		icon.Visible = true
 		icon.ZIndex = zIdx
 		icon.Parent = parent
@@ -570,7 +570,11 @@ function RewardPopup.Show(data)
 	hs.Thickness = 2
 	hs.Parent = header
 
-	buildIcon(card, resolvedImage, fallbackEmoji, fallbackColor, 55, 90, 52, catalogEntry)
+	local isCoinReward = (data.itemType == "Coins" or data.itemType == "FateCoins")
+	local iconY = isCoinReward and 34 or 55
+	local iconSize = isCoinReward and 140 or 90
+	local imageScaleType = isCoinReward and Enum.ScaleType.Crop or Enum.ScaleType.Fit
+	buildIcon(card, resolvedImage, fallbackEmoji, fallbackColor, iconY, iconSize, 52, catalogEntry, imageScaleType)
 
 	local nameLbl = Instance.new("TextLabel")
 	nameLbl.Name = "Name"
@@ -791,7 +795,10 @@ function RewardPopup.ShowBatch(items)
 		cardStroke.Parent = card
 
 		-- Icon
-		buildIcon(card, resolvedImage, fallbackEmoji, fallbackColor, 12, 60, 54, catalogEntry)
+		local isCoinReward = (item.itemType == "Coins" or item.itemType == "FateCoins")
+		local iconSize = isCoinReward and 78 or 60
+		local imageScaleType = isCoinReward and Enum.ScaleType.Crop or Enum.ScaleType.Fit
+		buildIcon(card, resolvedImage, fallbackEmoji, fallbackColor, 12, iconSize, 54, catalogEntry, imageScaleType)
 
 		-- Name
 		local nameLbl = Instance.new("TextLabel")

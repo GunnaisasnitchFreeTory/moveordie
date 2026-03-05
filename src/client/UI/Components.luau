@@ -1392,14 +1392,14 @@ local function getModelBounds(model: Instance): (Vector3, Vector3)
 	return minBound, maxBound
 end
 
-local function setupViewportCamera(viewport: ViewportFrame, model: Instance)
+local function setupViewportCamera(viewport: ViewportFrame, model: Instance, distanceMult: number?)
 	local minB, maxB = getModelBounds(model)
 	local center = (minB + maxB) / 2
 	local size = maxB - minB
 	local maxDim = math.max(size.X, size.Y, size.Z, 1)
 
 	-- Wider framing: pull camera back so items are not overly zoomed in
-	local distance = maxDim * 2.0
+	local distance = maxDim * (distanceMult or 2.0)
 	local cameraPos = center + Vector3.new(distance * 0.5, distance * 0.35, distance * 0.8)
 
 	local cam = Instance.new("Camera")
@@ -1467,8 +1467,12 @@ local CARD_THUMBNAIL_OFFSET_CFRAME: { [string]: CFrame } = {
 	pet_chica_plush = CFrame.Angles(0, math.rad(180), 0),
 	pet_freddy_plush = CFrame.Angles(0, math.rad(180), 0),
 	pet_bonnie_plush = CFrame.Angles(0, math.rad(180), 0),
-	pet_fredbear_plush = CFrame.Angles(0, math.rad(180), 0),
-	pet_huggy_wuggy = CFrame.Angles(0, math.rad(180), 0),
+	pet_fredbear_plush = CFrame.new(),
+	pet_huggy_wuggy = CFrame.new(),
+}
+
+local CARD_THUMBNAIL_DISTANCE_MULT: { [string]: number } = {
+	pet_fredbear_plush = 2.8,
 }
 
 function Components.CreateViewportItemCard(parent: Instance, data): Frame
@@ -1583,9 +1587,16 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 				clone.CFrame = thumbOffset * clone.CFrame
 			end
 		end
+		local distMult = CARD_THUMBNAIL_DISTANCE_MULT[data.id or ""] or 2.0
+		if data.id == "pet_fredbear_plush" or data.id == "pet_huggy_wuggy" then
+			print(string.format("[ThumbRender] pet=%s yaw=%d scale=%.2f",
+				tostring(data.name or data.id),
+				thumbYaw,
+				distMult))
+		end
 
 		clone.Parent = vpFrame
-		setupViewportCamera(vpFrame, clone)
+		setupViewportCamera(vpFrame, clone, distMult)
 	end
 
 	if data.locked then

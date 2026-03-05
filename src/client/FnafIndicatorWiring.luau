@@ -174,10 +174,12 @@ local function createPromptPart(model: Instance): BasePart?
 	end
 
 	local promptPart = parent:FindFirstChild("PromptPart")
+	local created = false
 	if not (promptPart and promptPart:IsA("BasePart")) then
 		promptPart = Instance.new("Part")
 		promptPart.Name = "PromptPart"
 		promptPart.Parent = parent
+		created = true
 	end
 	promptPart.Name = "PromptPart"
 	promptPart.Size = Vector3.new(2, 2, 2)
@@ -186,7 +188,11 @@ local function createPromptPart(model: Instance): BasePart?
 	promptPart.CanQuery = true
 	promptPart.CanTouch = false
 	promptPart.Transparency = 1
-	promptPart.Position = origin
+	-- Keep anchor stable once created; do not keep re-positioning every rewire cycle.
+	-- Reposition only when first created or currently invalid.
+	if created or (promptPart.Position.X ~= promptPart.Position.X) then
+		promptPart.Position = origin
+	end
 	return promptPart
 end
 
@@ -403,11 +409,6 @@ local function wireNow()
 		if not anchor then
 			warn("[FNAFWire] FNAF anchor part not found")
 			return
-		end
-
-		local modelAsModel = if fnafModel:IsA("Model") then fnafModel else nil
-		if modelAsModel and not modelAsModel.PrimaryPart then
-			modelAsModel.PrimaryPart = anchor
 		end
 
 		print(string.format("[FNAFAnchor] Using anchor=%s pos=%s",

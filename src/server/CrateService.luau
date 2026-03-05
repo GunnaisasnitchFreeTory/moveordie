@@ -464,6 +464,10 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 			log(string.format("%s opened %s — already owned: %s (%s)",
 				player.Name, crateId, itemId, category))
 		else
+			if category == "Crowns" then
+				print(string.format("[CrateOpen] reward type=Crown id=%s", tostring(itemId)))
+				print(string.format("[GrantCrown] START id=%s", tostring(itemId)))
+			end
 			local grantType = (category == "Crowns") and "Crown" or "Pet"
 			local grantRes = grant.GrantItem(player, grantType, itemId, "Crate", {
 				fireReward = false,
@@ -477,7 +481,12 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 					name = result.displayName,
 				},
 			})
-			if grantRes.success then
+			local ownsAfterGrant = false
+			local inv = getInventory()
+			if inv then
+				ownsAfterGrant = inv.OwnsItem(player, category, itemId) == true
+			end
+			if grantRes.success and (category ~= "Crowns" or ownsAfterGrant) then
 				result.grantSuccess = true
 				table.insert(grantedPopupItems, {
 					type = grantType,
@@ -487,11 +496,19 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 					rarity = result.rarity,
 					name = result.displayName,
 				})
+				if category == "Crowns" then
+					print(string.format("[GrantCrown] SUCCESS id=%s (owned=%s)", tostring(itemId), tostring(ownsAfterGrant)))
+				end
 			else
 				result.grantSuccess = false
-				result.grantFailReason = grantRes.reason or "UNKNOWN"
+				result.grantFailReason = grantRes.reason or (category == "Crowns" and "OWNERSHIP_NOT_PERSISTED") or "UNKNOWN"
 				warn(string.format("[CrateService] Grant failed player=%s crate=%s roll=%d item=%s reason=%s",
 					player.Name, crateId, rollIndex, itemId, tostring(grantRes.reason)))
+				if category == "Crowns" then
+					print(string.format("[GrantCrown] FAIL id=%s reason=%s",
+						tostring(itemId),
+						tostring(result.grantFailReason)))
+				end
 			end
 			local entry = ItemCatalog.Get(category, itemId)
 			log(string.format("%s opened %s — got %s (%s)",
@@ -555,6 +572,10 @@ function CrateService.RollCrateFree(player: Player, crateId: string, quantity: n
 			log(string.format("%s FREE roll #%d %s — already owned: %s (%s)",
 				player.Name, i, crateId, itemId, category))
 		else
+			if category == "Crowns" then
+				print(string.format("[CrateOpen] reward type=Crown id=%s", tostring(itemId)))
+				print(string.format("[GrantCrown] START id=%s", tostring(itemId)))
+			end
 			local grantType = (category == "Crowns") and "Crown" or "Pet"
 			local grantRes = grant.GrantItem(player, grantType, itemId, "Crate", {
 				fireReward = false,
@@ -568,7 +589,12 @@ function CrateService.RollCrateFree(player: Player, crateId: string, quantity: n
 					name = result.displayName,
 				},
 			})
-			if grantRes.success then
+			local ownsAfterGrant = false
+			local inv = getInventory()
+			if inv then
+				ownsAfterGrant = inv.OwnsItem(player, category, itemId) == true
+			end
+			if grantRes.success and (category ~= "Crowns" or ownsAfterGrant) then
 				result.grantSuccess = true
 				table.insert(grantedPopupItems, {
 					type = grantType,
@@ -578,11 +604,19 @@ function CrateService.RollCrateFree(player: Player, crateId: string, quantity: n
 					rarity = result.rarity,
 					name = result.displayName,
 				})
+				if category == "Crowns" then
+					print(string.format("[GrantCrown] SUCCESS id=%s (owned=%s)", tostring(itemId), tostring(ownsAfterGrant)))
+				end
 			else
 				result.grantSuccess = false
-				result.grantFailReason = grantRes.reason or "UNKNOWN"
+				result.grantFailReason = grantRes.reason or (category == "Crowns" and "OWNERSHIP_NOT_PERSISTED") or "UNKNOWN"
 				warn(string.format("[CrateService] Free grant failed player=%s crate=%s roll=%d item=%s reason=%s",
 					player.Name, crateId, i, itemId, tostring(grantRes.reason)))
+				if category == "Crowns" then
+					print(string.format("[GrantCrown] FAIL id=%s reason=%s",
+						tostring(itemId),
+						tostring(result.grantFailReason)))
+				end
 			end
 			log(string.format("%s FREE roll #%d %s — got %s (%s)",
 				player.Name, i, crateId, catalogEntry and catalogEntry.name or itemId, category))

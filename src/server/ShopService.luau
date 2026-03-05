@@ -56,22 +56,35 @@ local TYPE_TO_CATEGORY = {
 local BUNDLE_ALIASES: { [string]: string } = {
 	fnaf_all = "fnaf_pets_bundle",
 	fnaf_pets_bundle = "fnaf_pets_bundle",
+	brainrot_all = "brainrot_bundle",
+	brainrot_bundle = "brainrot_bundle",
 }
 
-local FNAF_BUNDLE_ID = "fnaf_pets_bundle"
-local FNAF_BUNDLE_REQUEST_ID = "fnaf_all"
-local FNAF_BASE_PRICE = 150000
-local FNAF_PER_OWNED_DISCOUNT = 0.10
-
-local FNAF_BUNDLE_PET_IDS = {
-	"pet_freddy_fazbear",
-	"pet_bonnie",
-	"pet_chica",
-	"pet_foxy",
-	"pet_golden_freddy",
-	"pet_the_puppet",
-	"pet_cupcake",
+local COIN_BUNDLE_CONFIG: { [string]: { requestId: string, logId: string, basePrice: number, perOwnedDiscount: number, successName: string } } = {
+	fnaf_pets_bundle = {
+		requestId = "fnaf_all",
+		logId = "fnaf_all",
+		basePrice = 150000,
+		perOwnedDiscount = 0.10,
+		successName = "All FNAF pets unlocked",
+	},
+	brainrot_bundle = {
+		requestId = "brainrot_all",
+		logId = "brainrot",
+		basePrice = 150000,
+		perOwnedDiscount = 0.10,
+		successName = "Brainrot Bundle",
+	},
 }
+local BRAINROT_BUNDLE_ID = "brainrot_bundle"
+local BRAINROT_ITEM_PRICE = 75000
+
+local function toGrantType(category: string): string?
+	if category == "Pets" then return "Pet" end
+	if category == "Crowns" then return "Crown" end
+	if category == "IconImages" then return "IconImage" end
+	return nil
+end
 
 local function findTopUpProduct(shortage: number): (number?, number?)
 	local bestProductId: number? = nil
@@ -90,22 +103,33 @@ local function findTopUpProduct(shortage: number): (number?, number?)
 	return bestProductId, bestAmount
 end
 
-local function getFnafQuote(player: Player): { ok: boolean, reason: string?, price: number, ownedCount: number, totalCount: number, missingCount: number }
+local function getCoinBundleQuote(player: Player, bundleId: string): { ok: boolean, reason: string?, price: number, ownedCount: number, totalCount: number, missingCount: number }
+	local cfg = COIN_BUNDLE_CONFIG[bundleId]
+	local bundle = BundleCatalog.Get(bundleId)
+	if not cfg or not bundle then
+		return { ok = false, reason = "BUNDLE_NOT_SUPPORTED", price = 0, ownedCount = 0, totalCount = 0, missingCount = 0 }
+	end
+
 	local IS = getInventory()
 	if not IS then
-		return { ok = false, reason = "InventoryService unavailable", price = FNAF_BASE_PRICE, ownedCount = 0, totalCount = #FNAF_BUNDLE_PET_IDS, missingCount = #FNAF_BUNDLE_PET_IDS }
+		local total = #(bundle.includes or {})
+		return { ok = false, reason = "InventoryService unavailable", price = cfg.basePrice, ownedCount = 0, totalCount = total, missingCount = total }
 	end
 
 	local ownedCount = 0
-	local totalCount = #FNAF_BUNDLE_PET_IDS
-	for _, petId in ipairs(FNAF_BUNDLE_PET_IDS) do
-		if IS.OwnsItem(player, "Pets", petId) then
-			ownedCount += 1
+	local totalCount = 0
+	for _, inc in ipairs(bundle.includes or {}) do
+		local grantType = toGrantType(inc.category)
+		if grantType and inc.itemId then
+			totalCount += 1
+			if IS.OwnsItem(player, inc.category, inc.itemId) then
+				ownedCount += 1
+			end
 		end
 	end
 	local missingCount = math.max(0, totalCount - ownedCount)
 	if missingCount == 0 then
-		print(string.format("[BundleQuote] bundle=%s owned=%d/%d price=0", FNAF_BUNDLE_REQUEST_ID, ownedCount, totalCount))
+		print(string.format("[BundleQuote] bundle=%s owned=%d/%d price=0", cfg.logId, ownedCount, totalCount))
 		return {
 			ok = false,
 			reason = "ALREADY_OWNED",
@@ -116,11 +140,11 @@ local function getFnafQuote(player: Player): { ok: boolean, reason: string?, pri
 		}
 	end
 
-	local discountPercent = ownedCount * FNAF_PER_OWNED_DISCOUNT
-	local finalPrice = math.floor(FNAF_BASE_PRICE * (1 - discountPercent))
+	local discountPercent = ownedCount * cfg.perOwnedDiscount
+	local finalPrice = math.floor(cfg.basePrice * (1 - discountPercent))
 	finalPrice = math.max(0, finalPrice)
 
-	print(string.format("[BundleQuote] bundle=%s owned=%d/%d price=%d", FNAF_BUNDLE_REQUEST_ID, ownedCount, totalCount, finalPrice))
+	print(string.format("[BundleQuote] bundle=%s owned=%d/%d price=%d", cfg.logId, ownedCount, totalCount, finalPrice))
 	return {
 		ok = true,
 		price = finalPrice,
@@ -132,17 +156,18 @@ end
 
 function ShopService.GetBundleQuote(player: Player, requestBundleId: string)
 	local bundleId = BUNDLE_ALIASES[requestBundleId] or requestBundleId
-	if bundleId == FNAF_BUNDLE_ID then
-		return getFnafQuote(player)
+	if COIN_BUNDLE_CONFIG[bundleId] then
+		return getCoinBundleQuote(player, bundleId)
 	end
 	return { ok = false, reason = "BUNDLE_NOT_SUPPORTED", price = 0, ownedCount = 0, totalCount = 0, missingCount = 0 }
 end
 
 local function buyBundleWithCoins(player: Player, requestBundleId: string): { success: boolean, reason: string?, grantedCount: number?, grantedItemIds: {string}?, productId: number?, shortage: number?, recommendedCoins: number? }
 	local bundleId = BUNDLE_ALIASES[requestBundleId] or requestBundleId
+	local cfg = COIN_BUNDLE_CONFIG[bundleId]
 	local bundle = BundleCatalog.Get(bundleId)
-	if not bundle then
-		return { success = false, reason = "Bundle not found" }
+	if not bundle or not cfg then
+		return { success = false, reason = "Bundle is not available for Fate Coins" }
 	end
 
 	local inFlightKey = player.UserId
@@ -159,50 +184,35 @@ local function buyBundleWithCoins(player: Player, requestBundleId: string): { su
 		return { success = false, reason = "Shop services unavailable" }
 	end
 
-	if bundleId ~= FNAF_BUNDLE_ID then
-		_bundleBuyInFlight[inFlightKey] = nil
-		return { success = false, reason = "Bundle is not available for Fate Coins" }
-	end
-
-	local quote = getFnafQuote(player)
-	local ownedPetsCount = quote.ownedCount
-	local totalPetsCount = quote.totalCount
-	local missingPetsCount = quote.missingCount
+	local quote = getCoinBundleQuote(player, bundleId)
+	local ownedCount = quote.ownedCount
+	local totalCount = quote.totalCount
+	local missingCount = quote.missingCount
 	local finalCost = quote.price
 	if not quote.ok then
-		print(string.format("[BundleBuy] bundle=%s owned=%d missing=%d cost=%d result=FAIL reason=%s",
-			FNAF_BUNDLE_REQUEST_ID, ownedPetsCount, missingPetsCount, finalCost, tostring(quote.reason)))
+		print(string.format("[BundleBuy] bundle=%s cost=%d result=FAIL reason=%s",
+			cfg.logId, finalCost, tostring(quote.reason)))
 		_bundleBuyInFlight[inFlightKey] = nil
 		return {
 			success = false,
 			reason = quote.reason or "ALREADY_OWNED",
 			finalCost = finalCost,
-			missingPetsCount = missingPetsCount,
-			ownedPetsCount = ownedPetsCount,
-			totalPetsCount = totalPetsCount,
+			missingCount = missingCount,
+			ownedCount = ownedCount,
+			totalCount = totalCount,
 		}
 	end
 
-	local totalPetsCount = 0
-	local ownedPetsCount = 0
-	local missingPetsCount = 0
 	local toGrant = {}
 	for _, inc in ipairs(bundle.includes or {}) do
-		if inc.category == "Pets" and inc.itemId then
-			totalPetsCount += 1
-			if IS.OwnsItem(player, inc.category, inc.itemId) then
-				ownedPetsCount += 1
-			else
-				missingPetsCount += 1
-			end
-		end
-		if inc.category and inc.itemId and not IS.OwnsItem(player, inc.category, inc.itemId) then
+		local grantType = toGrantType(inc.category)
+		if grantType and inc.itemId and not IS.OwnsItem(player, inc.category, inc.itemId) then
 			table.insert(toGrant, inc)
 		end
 	end
-	if missingPetsCount <= 0 or #toGrant == 0 then
-		print(string.format("[BundleBuy] bundle=%s owned=%d missing=%d cost=%d result=FAIL reason=ALREADY_OWNED",
-			FNAF_BUNDLE_REQUEST_ID, ownedPetsCount, missingPetsCount, finalCost))
+	if #toGrant == 0 then
+		print(string.format("[BundleBuy] bundle=%s cost=%d result=FAIL reason=ALREADY_OWNED",
+			cfg.logId, finalCost))
 		_bundleBuyInFlight[inFlightKey] = nil
 		return { success = false, reason = "ALREADY_OWNED" }
 	end
@@ -211,8 +221,10 @@ local function buyBundleWithCoins(player: Player, requestBundleId: string): { su
 	if balance < finalCost then
 		local shortage = finalCost - balance
 		local productId, recommendedCoins = findTopUpProduct(shortage)
-		print(string.format("[BundleBuy] bundle=%s owned=%d missing=%d cost=%d result=FAIL reason=INSUFFICIENT_COINS",
-			FNAF_BUNDLE_REQUEST_ID, ownedPetsCount, missingPetsCount, finalCost))
+		print(string.format("[BundleBuy] bundle=%s cost=%d result=FAIL reason=INSUFFICIENT_COINS",
+			cfg.logId, finalCost))
+		print(string.format("[BundleBuy] insufficient coins shortage=%d suggestedProductId=%s",
+			shortage, tostring(productId)))
 		_bundleBuyInFlight[inFlightKey] = nil
 		return {
 			success = false,
@@ -221,9 +233,9 @@ local function buyBundleWithCoins(player: Player, requestBundleId: string): { su
 			shortage = shortage,
 			recommendedCoins = recommendedCoins,
 			finalCost = finalCost,
-			missingPetsCount = missingPetsCount,
-			ownedPetsCount = ownedPetsCount,
-			totalPetsCount = totalPetsCount,
+			missingCount = missingCount,
+			ownedCount = ownedCount,
+			totalCount = totalCount,
 		}
 	end
 
@@ -235,57 +247,126 @@ local function buyBundleWithCoins(player: Player, requestBundleId: string): { su
 
 	local grantedCount = 0
 	local grantedItemIds = {}
-	local grantedRewards = {}
 	for _, inc in ipairs(toGrant) do
-		local grantType = (inc.category == "Crowns") and "Crown" or "Pet"
-		local grantRes = GS.GrantItem(player, grantType, inc.itemId, "Bundle", {
-			fireReward = false,
-			idempotencyKey = string.format("bundle:%s:%s:%s", tostring(player.UserId), bundleId, inc.itemId),
-		})
-		if grantRes.success then
-			grantedCount += 1
-			table.insert(grantedItemIds, inc.itemId)
-			table.insert(grantedRewards, {
-				type = grantType,
-				id = inc.itemId,
-				category = inc.category,
-				source = "Bundle",
+		local grantType = toGrantType(inc.category)
+		if grantType then
+			local grantRes = GS.GrantItem(player, grantType, inc.itemId, "Bundle", {
+				fireReward = false,
+				idempotencyKey = string.format("bundle:%s:%s:%s", tostring(player.UserId), bundleId, inc.itemId),
 			})
+			if grantRes.success then
+				grantedCount += 1
+				table.insert(grantedItemIds, inc.itemId)
+			end
 		end
 	end
 
 	if grantedCount == 0 then
 		ES.AwardCoins(player, finalCost, "BundleRefund:" .. bundleId, true)
 		_bundleBuyInFlight[inFlightKey] = nil
+		print(string.format("[BundleBuy] bundle=%s cost=%d result=FAIL reason=FAILED_TO_GRANT",
+			cfg.logId, finalCost))
 		return { success = false, reason = "Failed to grant bundle items" }
 	end
 
-	print(string.format("[BundleBuy] bundle=%s owned=%d missing=%d cost=%d result=SUCCESS",
-		FNAF_BUNDLE_REQUEST_ID, ownedPetsCount, missingPetsCount, finalCost))
-	if #grantedRewards > 0 then
-		GS.EmitBundlePurchaseConfirmed(player, FNAF_BUNDLE_REQUEST_ID, {
-			token = HttpService:GenerateGUID(false),
-			title = "PURCHASED!",
-			name = "All FNAF pets unlocked",
-			itemType = "Bundle",
-			itemId = FNAF_BUNDLE_REQUEST_ID,
-			icon = bundle.coverImage,
-			okText = "NICE!",
-		})
-	end
+	print(string.format("[BundleBuy] bundle=%s cost=%d result=SUCCESS", cfg.logId, finalCost))
+	GS.EmitBundlePurchaseConfirmed(player, cfg.requestId, {
+		token = HttpService:GenerateGUID(false),
+		title = "PURCHASED!",
+		name = cfg.successName,
+		itemType = "Bundle",
+		itemId = cfg.requestId,
+		rarityText = (cfg.logId == "brainrot") and "Legendary" or "Common",
+		icon = bundle.coverImage,
+		okText = "NICE!",
+	})
 	_bundleBuyInFlight[inFlightKey] = nil
 	return {
 		success = true,
 		grantedCount = grantedCount,
 		grantedItemIds = grantedItemIds,
 		finalCost = finalCost,
-		missingPetsCount = missingPetsCount,
-		ownedPetsCount = ownedPetsCount,
-		totalPetsCount = totalPetsCount,
+		missingCount = missingCount,
+		ownedCount = ownedCount,
+		totalCount = totalCount,
 	}
 end
 
-function ShopService.BuyWithCoins(player: Player, itemId: string, itemType: string): { success: boolean, reason: string? }
+local function getBundleInclude(bundleId: string, itemId: string)
+	local bundle = BundleCatalog.Get(bundleId)
+	if not bundle then return nil end
+	for _, inc in ipairs(bundle.includes or {}) do
+		if inc.itemId == itemId then
+			return inc
+		end
+	end
+	return nil
+end
+
+function ShopService.BuyBrainrotItem(player: Player, itemId: string): { success: boolean, reason: string?, productId: number?, shortage: number?, recommendedCoins: number? }
+	if type(itemId) ~= "string" or itemId == "" then
+		return { success = false, reason = "Invalid item" }
+	end
+	local include = getBundleInclude(BRAINROT_BUNDLE_ID, itemId)
+	if not include then
+		return { success = false, reason = "Item not in brainrot bundle" }
+	end
+
+	local grantType = toGrantType(include.category)
+	if not grantType then
+		return { success = false, reason = "Unsupported bundle item category" }
+	end
+
+	local ES = getEconomy()
+	local IS = getInventory()
+	local GS = getGrant()
+	if not ES or not IS or not GS then
+		return { success = false, reason = "Shop services unavailable" }
+	end
+
+	if IS.OwnsItem(player, include.category, itemId) then
+		print(string.format("[ItemBuy] bundle=brainrot item=%s cost=%d result=FAIL reason=ALREADY_OWNED", itemId, BRAINROT_ITEM_PRICE))
+		return { success = false, reason = "ALREADY_OWNED" }
+	end
+
+	local balance = ES.GetCoins(player)
+	if balance < BRAINROT_ITEM_PRICE then
+		local shortage = BRAINROT_ITEM_PRICE - balance
+		local productId, recommendedCoins = findTopUpProduct(shortage)
+		print(string.format("[ItemBuy] bundle=brainrot item=%s cost=%d result=FAIL reason=INSUFFICIENT_COINS", itemId, BRAINROT_ITEM_PRICE))
+		return {
+			success = false,
+			reason = "INSUFFICIENT_COINS",
+			productId = productId,
+			shortage = shortage,
+			recommendedCoins = recommendedCoins,
+		}
+	end
+
+	local deducted = ES.DeductCoins(player, BRAINROT_ITEM_PRICE, "BundleItemPurchase:" .. itemId)
+	if not deducted then
+		print(string.format("[ItemBuy] bundle=brainrot item=%s cost=%d result=FAIL reason=DEDUCT_FAILED", itemId, BRAINROT_ITEM_PRICE))
+		return { success = false, reason = "Failed to deduct coins" }
+	end
+
+	local grantRes = GS.GrantItem(player, grantType, itemId, "BundleItem", {
+		fireReward = false,
+		idempotencyKey = string.format("bundleitem:%s:%s", tostring(player.UserId), itemId),
+	})
+	if not grantRes.success then
+		ES.AwardCoins(player, BRAINROT_ITEM_PRICE, "BundleItemRefund:" .. itemId, true)
+		print(string.format("[ItemBuy] bundle=brainrot item=%s cost=%d result=FAIL reason=%s", itemId, BRAINROT_ITEM_PRICE, tostring(grantRes.reason)))
+		return { success = false, reason = tostring(grantRes.reason or "Grant failed") }
+	end
+	if grantRes.payload and type(GS.EmitPurchaseGranted) == "function" then
+		GS.EmitPurchaseGranted(player, grantRes.payload)
+	end
+
+	print(string.format("[ItemBuy] bundle=brainrot item=%s cost=%d result=SUCCESS", itemId, BRAINROT_ITEM_PRICE))
+	return { success = true }
+end
+
+function ShopService.BuyWithCoins(player: Player, itemId: string, itemType: string): { success: boolean, reason: string?, productId: number?, shortage: number?, recommendedCoins: number? }
 	if not itemId or not itemType then
 		return { success = false, reason = "Invalid request" }
 	end
@@ -329,7 +410,15 @@ function ShopService.BuyWithCoins(player: Player, itemId: string, itemType: stri
 
 	local balance = ES.GetCoins(player)
 	if balance < price then
-		return { success = false, reason = string.format("Not enough Fate Coins (%d needed, %d owned)", price, balance) }
+		local shortage = price - balance
+		local productId, recommendedCoins = findTopUpProduct(shortage)
+		return {
+			success = false,
+			reason = "INSUFFICIENT_COINS",
+			productId = productId,
+			shortage = shortage,
+			recommendedCoins = recommendedCoins,
+		}
 	end
 
 	local deducted = ES.DeductCoins(player, price, "ShopPurchase:" .. itemId)
@@ -339,12 +428,16 @@ function ShopService.BuyWithCoins(player: Player, itemId: string, itemType: stri
 
 	local grantType = (category == "Crowns") and "Crown" or "Pet"
 	local grantRes = GS.GrantItem(player, grantType, itemId, "Shop", {
+		fireReward = false,
 		idempotencyKey = string.format("shop:%s:%s:%s", tostring(player.UserId), category, itemId),
 	})
 	if not grantRes.success then
 		-- Refund on grant failure
 		ES.AwardCoins(player, price, "ShopRefund:" .. itemId, true)
 		return { success = false, reason = "Failed to grant item: " .. tostring(grantRes.reason) }
+	end
+	if grantRes.payload and type(GS.EmitPurchaseGranted) == "function" then
+		GS.EmitPurchaseGranted(player, grantRes.payload)
 	end
 
 	print(string.format("[ShopService] %s purchased %s/%s for %d Fate Coins", player.Name, category, itemId, price))
@@ -376,6 +469,12 @@ function ShopService.Init()
 		quoteRF.Name = "Shop_GetBundleQuote"
 		quoteRF.Parent = remotes
 	end
+	local buyBrainrotItemRF = remotes:FindFirstChild("BuyBrainrotItem")
+	if not buyBrainrotItemRF then
+		buyBrainrotItemRF = Instance.new("RemoteFunction")
+		buyBrainrotItemRF.Name = "BuyBrainrotItem"
+		buyBrainrotItemRF.Parent = remotes
+	end
 
 	buyRF.OnServerInvoke = function(player: Player, itemId: string, itemType: string)
 		local ok, result = pcall(ShopService.BuyWithCoins, player, itemId, itemType)
@@ -389,6 +488,12 @@ function ShopService.Init()
 		if ok then return result end
 		warn("[ShopService] GetBundleQuote error:", result)
 		return { ok = false, reason = "Internal error", price = 0, ownedCount = 0, totalCount = 0, missingCount = 0 }
+	end
+	buyBrainrotItemRF.OnServerInvoke = function(player: Player, itemId: string)
+		local ok, result = pcall(ShopService.BuyBrainrotItem, player, itemId)
+		if ok then return result end
+		warn("[ShopService] BuyBrainrotItem error:", result)
+		return { success = false, reason = "Internal error" }
 	end
 
 	print("[ShopService] Initialized")

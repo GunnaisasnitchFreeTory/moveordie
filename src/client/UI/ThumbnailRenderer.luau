@@ -78,8 +78,14 @@ local THUMBNAIL_OFFSET_CFRAME: { [string]: CFrame } = {
 	pet_chica_plush = CFrame.Angles(0, math.rad(180), 0),
 	pet_freddy_plush = CFrame.Angles(0, math.rad(180), 0),
 	pet_bonnie_plush = CFrame.Angles(0, math.rad(180), 0),
-	pet_fredbear_plush = CFrame.Angles(0, math.rad(180), 0),
-	pet_huggy_wuggy = CFrame.Angles(0, math.rad(180), 0),
+	pet_fredbear_plush = CFrame.new(),
+	pet_huggy_wuggy = CFrame.new(),
+}
+
+-- Per-item camera distance multiplier overrides (thumbnail only).
+-- Higher value = smaller rendered model footprint in the card.
+local THUMBNAIL_DISTANCE_MULT_OVERRIDES: { [string]: number } = {
+	pet_fredbear_plush = 2.8,
 }
 
 local KEEP_CLASSES = {
@@ -308,7 +314,12 @@ function ThumbnailRenderer.RenderItemToViewport(
 	local opts = options or {}
 	local angle = opts.cameraAngle or DEFAULT_CAMERA_ANGLE
 	local fov = opts.fov or DEFAULT_FOV
-	local dist = (opts.distanceMultiplier or DEFAULT_DISTANCE_MULT) * maxDim
+	local distanceMult = opts.distanceMultiplier or DEFAULT_DISTANCE_MULT
+	local perItemDist = THUMBNAIL_DISTANCE_MULT_OVERRIDES[itemDef.id or ""]
+	if perItemDist then
+		distanceMult = perItemDist
+	end
+	local dist = distanceMult * maxDim
 
 	local cam = Instance.new("Camera")
 	cam.CameraType = Enum.CameraType.Scriptable

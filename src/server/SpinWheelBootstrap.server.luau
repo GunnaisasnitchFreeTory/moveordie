@@ -24,6 +24,7 @@ local Players = game:GetService("Players")
 local ServerScriptService = game:GetService("ServerScriptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
+local RunService = game:GetService("RunService")
 
 -- Ensure Remotes folder
 local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
@@ -31,6 +32,12 @@ if not remotesFolder then
 	remotesFolder = Instance.new("Folder")
 	remotesFolder.Name = "Remotes"
 	remotesFolder.Parent = ReplicatedStorage
+end
+local purchaseGrantedRE = remotesFolder:FindFirstChild("PurchaseGranted")
+if not purchaseGrantedRE then
+	purchaseGrantedRE = Instance.new("RemoteEvent")
+	purchaseGrantedRE.Name = "PurchaseGranted"
+	purchaseGrantedRE.Parent = remotesFolder
 end
 
 -- Create RemoteFunctions
@@ -167,6 +174,38 @@ local function notifyClient(player: Player, reason: string, data: any?)
 	local invUpdate = remotes and remotes:FindFirstChild("InventoryUpdated")
 	if invUpdate then
 		invUpdate:FireClient(player, reason, data)
+	end
+end
+
+local function toRewardTypeFromCategory(category: string): string
+	if category == "Crowns" then return "Crown" end
+	if category == "Pets" then return "Pet" end
+	if category == "IconImages" then return "IconImage" end
+	return "Pet"
+end
+
+local function emitShopPurchaseGranted(player: Player, gamepassId: number, reward: { [string]: any })
+	if reward.type == "Bundle" then
+		return
+	end
+	local itemCatalog = getItemCatalog()
+	local category = tostring(reward.category or "")
+	local itemId = tostring(reward.itemId or "")
+	local entry = itemCatalog and itemCatalog.Get and itemCatalog.Get(category, itemId) or nil
+	local payload = {
+		type = toRewardTypeFromCategory(category),
+		id = itemId,
+		category = category,
+		name = entry and entry.name or tostring(reward.label or itemId),
+		rarity = entry and entry.rarity or "Common",
+		imageAssetId = entry and entry.image or "",
+		source = "GamePass",
+		gamepassId = gamepassId,
+	}
+	print(string.format("[ShopGrant] type=%s id=%s passId=%d result=SUCCESS",
+		tostring(payload.type), itemId, tonumber(gamepassId) or 0))
+	if purchaseGrantedRE then
+		purchaseGrantedRE:FireClient(player, payload)
 	end
 end
 
@@ -317,7 +356,7 @@ local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 -- GAMEPASS GRANT LOGIC
 -- ═══════════════════════════════════════════════════════════════════
 
-local function grantGamepassReward(player: Player, gamepassId: number): boolean
+local function grantGamepassReward(player: Player, gamepassId: number, emitPurchaseGranted: boolean?): boolean
 	local reward = GAMEPASS_REWARD_MAP[gamepassId]
 	if not reward then return false end
 
@@ -358,12 +397,16 @@ local function grantGamepassReward(player: Player, gamepassId: number): boolean
 	else
 		local grantType = (reward.category == "Crowns") and "Crown" or "Pet"
 		local okGrant = grant.GrantItem(player, grantType, reward.itemId, "GamePass", {
+			fireReward = false,
 			idempotencyKey = string.format("gamepass:%d:%d:%s", player.UserId, gamepassId, reward.itemId),
 		})
 		if not okGrant.success then
 			warn(string.format("[PurchaseSystem] Gamepass grant failed: %s/%s for %s reason=%s",
 				reward.category, reward.itemId, player.Name, tostring(okGrant.reason)))
 			return false
+		end
+		if emitPurchaseGranted == true and not okGrant.alreadyOwned then
+			emitShopPurchaseGranted(player, gamepassId, reward)
 		end
 	end
 
@@ -379,7 +422,7 @@ local function checkGamepassOwnership(player: Player)
 			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
 		end)
 		if ok and owns then
-			grantGamepassReward(player, gamepassId)
+			grantGamepassReward(player, gamepassId, false)
 		elseif not ok then
 			warn(string.format("[PurchaseSystem] UserOwnsGamePassAsync failed for %s gamepass %d: %s",
 				player.Name, gamepassId, tostring(owns)))
@@ -399,7 +442,7 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Playe
 		return
 	end
 	if GAMEPASS_REWARD_MAP[gamepassId] then
-		local granted = grantGamepassReward(player, gamepassId)
+		local granted = grantGamepassReward(player, gamepassId, true)
 		if not granted then
 			warn(string.format("[GamePass] Grant failed passId=%d player=%s", gamepassId, player.Name))
 		end
@@ -425,7 +468,7 @@ gamepassVerifyRF.OnServerInvoke = function(player: Player, gamepassId: number)
 	end)
 
 	if ok and owns then
-		local granted = grantGamepassReward(player, gamepassId)
+		local granted = grantGamepassReward(player, gamepassId, true)
 		if granted then
 			return { success = true }
 		end

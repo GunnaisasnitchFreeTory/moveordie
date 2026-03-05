@@ -26,6 +26,7 @@ local _SpinWheelService = nil
 local _inventoryUpdatedRE: RemoteEvent? = nil
 local _rewardGrantedRE: RemoteEvent? = nil
 local _bundlePurchaseConfirmedRE: RemoteEvent? = nil
+local _purchaseGrantedRE: RemoteEvent? = nil
 
 local function getInventory()
 	if _InventoryService then return _InventoryService end
@@ -80,9 +81,16 @@ local function ensureRemotes()
 		bundleConfirmed.Name = "BundlePurchaseConfirmed"
 		bundleConfirmed.Parent = remotes
 	end
+	local purchaseGranted = remotes:FindFirstChild("PurchaseGranted")
+	if not purchaseGranted then
+		purchaseGranted = Instance.new("RemoteEvent")
+		purchaseGranted.Name = "PurchaseGranted"
+		purchaseGranted.Parent = remotes
+	end
 	_inventoryUpdatedRE = inv
 	_rewardGrantedRE = reward
 	_bundlePurchaseConfirmedRE = bundleConfirmed
+	_purchaseGrantedRE = purchaseGranted
 end
 
 local function toCatalogCategory(itemType: string): string?
@@ -112,11 +120,13 @@ local function makeDefaultPayload(itemType: string, itemIdOrAmount: any, source:
 		local entry = category and ItemCatalog.Get(category, tostring(itemIdOrAmount)) or nil
 		return {
 			type = itemType,
+			grantType = itemType,
 			id = tostring(itemIdOrAmount),
 			category = category,
 			name = entry and entry.name or tostring(itemIdOrAmount),
 			rarity = entry and entry.rarity or "Common",
 			popupImageOverride = entry and entry.image or nil,
+			imageAssetId = entry and entry.image or nil,
 			source = source,
 		}
 	end
@@ -147,6 +157,15 @@ function GrantService.EmitBundlePurchaseConfirmed(player: Player, bundleId: stri
 	end
 end
 
+function GrantService.EmitPurchaseGranted(player: Player, payload: any)
+	if not _purchaseGrantedRE then
+		ensureRemotes()
+	end
+	if _purchaseGrantedRE then
+		_purchaseGrantedRE:FireClient(player, payload)
+	end
+end
+
 function GrantService.Init()
 	if initialized then return end
 	initialized = true
@@ -173,9 +192,21 @@ function GrantService.GrantItem(player: Player, itemType: string, itemIdOrAmount
 	if type(idemKey) == "string" and idemKey ~= "" and data then
 		local processed = data.ProcessedGrants
 		if type(processed) == "table" and processed[idemKey] then
-			local payload = meta.payload or makeDefaultPayload(itemType, itemIdOrAmount, source)
-			print(string.format("[Grant] player=%s type=%s id=%s source=%s result=SUCCESS alreadyProcessed=true", player.Name, tostring(itemType), itemIdText, tostring(source)))
-			return { success = true, alreadyProcessed = true, payload = payload }
+			local allowReplay = false
+			if itemType == "Pet" or itemType == "Crown" or itemType == "IconImage" then
+				local category = toCatalogCategory(itemType)
+				local inv = getInventory()
+				if category and inv and not inv.OwnsItem(player, category, itemIdText) then
+					allowReplay = true
+					print(string.format("[Grant] player=%s type=%s id=%s source=%s staleIdempotencyKey=%s -> replay",
+						player.Name, tostring(itemType), itemIdText, tostring(source), idemKey))
+				end
+			end
+			if not allowReplay then
+				local payload = meta.payload or makeDefaultPayload(itemType, itemIdOrAmount, source)
+				print(string.format("[Grant] player=%s type=%s id=%s source=%s result=SUCCESS alreadyProcessed=true", player.Name, tostring(itemType), itemIdText, tostring(source)))
+				return { success = true, alreadyProcessed = true, payload = payload }
+			end
 		end
 	end
 

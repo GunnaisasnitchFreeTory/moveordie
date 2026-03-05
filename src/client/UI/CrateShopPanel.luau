@@ -203,6 +203,10 @@ local function showCrateRewards(results)
 	end
 	local revealItems = {}
 	for _, r in ipairs(results or {}) do
+		local shouldShow = (r.grantSuccess == true) or (r.isDuplicate == true)
+		if not shouldShow then
+			continue
+		end
 		local entry = ItemCatalog.Get(r.category, r.itemId)
 		table.insert(revealItems, {
 			name = entry and entry.name or r.itemId,

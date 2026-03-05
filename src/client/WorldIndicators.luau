@@ -91,9 +91,36 @@ local function log(...)
 end
 
 local function findTargetByNameHint(targetName: string): Instance?
+	local exactTop = workspace:FindFirstChild(targetName)
+	if exactTop then return exactTop end
+
 	local exact = workspace:FindFirstChild(targetName, true)
 	if exact then return exact end
 	local lowerTarget = string.lower(targetName)
+	if targetName == "Brainrot Game Bun" then
+		local best: Instance? = nil
+		local bestParts = -1
+		local bestTopY = -math.huge
+		for _, d in ipairs(workspace:GetDescendants()) do
+			if d.Name == targetName and (d:IsA("Model") or d:IsA("Folder")) then
+				local _, _, topY = computeBounds(d)
+				local parts = 0
+				for _, p in ipairs(d:GetDescendants()) do
+					if p:IsA("BasePart") then
+						parts += 1
+					end
+				end
+				if parts > bestParts or (parts == bestParts and (topY or -math.huge) > bestTopY) then
+					best = d
+					bestParts = parts
+					bestTopY = topY or -math.huge
+				end
+			end
+		end
+		if best then
+			return best
+		end
+	end
 	if string.find(lowerTarget, "fnaf", 1, true) and string.find(lowerTarget, "bun", 1, true) then
 		for _, d in ipairs(workspace:GetDescendants()) do
 			local n = string.lower(d.Name)
@@ -103,6 +130,23 @@ local function findTargetByNameHint(targetName: string): Instance?
 		end
 	end
 	return nil
+end
+
+local function cleanupDuplicateIndicators(text: string, keepAnchor: BasePart)
+	local keepGui = "WorldIndicator_" .. text:gsub("%s+", "")
+	for _, d in ipairs(workspace:GetDescendants()) do
+		if d:IsA("BillboardGui") then
+			if d.Name == keepGui then
+				local label = d:FindFirstChild("Badge")
+				label = label and label:FindFirstChild("Label")
+				local sameText = label and label:IsA("TextLabel") and label.Text == text
+				local sameAnchor = (d.Parent == keepAnchor)
+				if sameText and not sameAnchor then
+					d:Destroy()
+				end
+			end
+		end
+	end
 end
 
 --- Compute axis-aligned bounding box from ALL descendant BaseParts.
@@ -308,6 +352,7 @@ function WorldIndicators.Init()
 			end
 
 			local billboard = createBadge(anchor, cfg.text, cfg.icon)
+			cleanupDuplicateIndicators(cfg.text, anchor)
 			if cfg.pulse then
 				startPulse(billboard)
 			end

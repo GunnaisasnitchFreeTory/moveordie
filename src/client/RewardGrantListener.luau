@@ -40,6 +40,7 @@ local function mapSinglePayload(payload)
 			okText = "NICE!",
 		}
 	end
+	local iconAsset = payload.imageAssetId or payload.popupImageOverride or ""
 	return {
 		title = "PURCHASED!",
 		name = payload.name or payload.id or "Reward",
@@ -47,7 +48,7 @@ local function mapSinglePayload(payload)
 		itemId = payload.id or "",
 		category = payload.category or "",
 		rarityText = payload.rarity or "Common",
-		icon = payload.popupImageOverride or "",
+		icon = iconAsset,
 		okText = "NICE!",
 	}
 end
@@ -59,6 +60,7 @@ function RewardGrantListener.Init()
 	local remotes = ReplicatedStorage:WaitForChild("Remotes", 15)
 	local rewardRE = remotes and remotes:WaitForChild("RewardGranted", 15)
 	local bundleConfirmedRE = remotes and remotes:WaitForChild("BundlePurchaseConfirmed", 15)
+	local purchaseGrantedRE = remotes and remotes:FindFirstChild("PurchaseGranted")
 	if not rewardRE or not rewardRE:IsA("RemoteEvent") then
 		warn("[RewardGrantListener] RewardGranted remote missing")
 		return
@@ -77,6 +79,17 @@ function RewardGrantListener.Init()
 			print("[BundlePopup] BLOCKED reason=INIT_OR_OWNED_STATE")
 			return
 		end
+		local source = tostring(payload.source or "")
+		local pType = tostring(payload.type or payload.grantType or "")
+		if (source == "Shop" or source == "GamePass" or source == "DevProduct")
+			and (pType == "Crown" or pType == "Pet" or pType == "IconImage")
+		then
+			print(string.format("[ShopGrantPopup] type=%s id=%s image=%s rarity=%s",
+				pType,
+				tostring(payload.id or ""),
+				tostring(payload.imageAssetId or payload.popupImageOverride or ""),
+				tostring(payload.rarity or "Common")))
+		end
 
 		if type(payload.batchItems) == "table" and #payload.batchItems > 0 then
 			local items = {}
@@ -88,6 +101,45 @@ function RewardGrantListener.Init()
 			RewardPopup.Show(mapSinglePayload(payload))
 		end
 	end)
+
+	local purchaseListenerConnected = false
+	local function connectPurchaseGranted(remote: Instance?)
+		if purchaseListenerConnected then
+			return
+		end
+		if not remote or not remote:IsA("RemoteEvent") then
+			return
+		end
+		purchaseListenerConnected = true
+		remote.OnClientEvent:Connect(function(payload)
+			local RewardPopup = getRewardPopup()
+			if not RewardPopup then
+				warn("[RewardGrantListener] RewardPopup unavailable")
+				return
+			end
+			if type(payload) ~= "table" then
+				return
+			end
+			local pType = tostring(payload.type or payload.grantType or "")
+			if pType ~= "Crown" and pType ~= "Pet" and pType ~= "IconImage" then
+				return
+			end
+			print(string.format("[ShopGrantPopup] type=%s id=%s image=%s",
+				pType,
+				tostring(payload.id or ""),
+				tostring(payload.imageAssetId or payload.popupImageOverride or "")))
+			RewardPopup.Show(mapSinglePayload(payload))
+		end)
+	end
+
+	connectPurchaseGranted(purchaseGrantedRE)
+	if remotes then
+		remotes.ChildAdded:Connect(function(child)
+			if child.Name == "PurchaseGranted" then
+				connectPurchaseGranted(child)
+			end
+		end)
+	end
 
 	if not bundleConfirmedRE or not bundleConfirmedRE:IsA("RemoteEvent") then
 		warn("[RewardGrantListener] BundlePurchaseConfirmed remote missing")
@@ -115,6 +167,7 @@ function RewardGrantListener.Init()
 			name = tostring(data.name or "Bundle purchase completed"),
 			itemType = tostring(data.itemType or "Bundle"),
 			itemId = tostring(data.itemId or bundleKey),
+			rarityText = tostring(data.rarityText or "Common"),
 			icon = data.icon or "",
 			okText = tostring(data.okText or "NICE!"),
 		})

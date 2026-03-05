@@ -70,6 +70,12 @@ local _equipDebounce = false  -- prevents double-fire + preserves optimistic equ
 
 local PetsPanel = {}
 
+-- Pet UI-only thumbnail overrides (bypass viewport renderer for specific pets).
+local PetThumbnailOverrides: { [string]: string } = {
+	FredbearPlush = "rbxassetid://74636973353299",
+	HuggyWuggy = "rbxassetid://135200249029461",
+}
+
 local function getOwnedPetSet(): { [string]: boolean }
 	local json = player:GetAttribute("OwnedPets") or "[]"
 	local ok, list = pcall(HttpService.JSONDecode, HttpService, json)
@@ -116,6 +122,27 @@ local function refresh()
 		local resolved = ItemCatalog.ResolveCrownOrPetImage and ItemCatalog.ResolveCrownOrPetImage(pet.id, "PET") or nil
 		local resolvedImage = (resolved and resolved.mode == "STATIC" and resolved.image) or ItemCatalog.GetImage(pet)
 		local resolvedModelPath = (resolved and resolved.mode == "RENDERER" and resolved.rendererKey) or nil
+		local forcedThumb = PetThumbnailOverrides[pet.name]
+		if forcedThumb and forcedThumb ~= "" then
+			resolvedImage = forcedThumb
+			resolvedModelPath = nil
+		end
+		if pet.id == "pet_fredbear_plush" or pet.id == "pet_huggy_wuggy" then
+			local source = "CatalogImage"
+			if resolved and resolved.mode == "STATIC" then
+				source = "ResolveCrownOrPetImage:STATIC"
+			elseif resolved and resolved.mode == "RENDERER" then
+				source = "ResolveCrownOrPetImage:RENDERER"
+			end
+			if forcedThumb then
+				source = "PetThumbnailOverrides"
+			end
+			print(string.format("[PetThumb] pet=%s source=%s image=%s modelPath=%s",
+				tostring(pet.name or pet.id),
+				source,
+				tostring(resolvedImage or ""),
+				tostring(resolvedModelPath or "")))
+		end
 		local actionText = nil
 		local actionColor = nil
 		local subLabel = nil

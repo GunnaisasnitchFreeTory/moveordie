@@ -63,6 +63,11 @@ local _bundles = {
 		coverImage   = "rbxassetid://137027689618122",
 		isAvailable  = true,
 		isLimited    = false,
+		priceFateCoins = 150000,
+		coinPricing = {
+			baseCost = 150000,
+			maxDiscountPercent = COIN_PRICING_DEFAULTS.maxDiscountPercent,
+		},
 		priceRobux   = 800,
 		gamepassId   = 1714491142,
 		productId    = nil,
