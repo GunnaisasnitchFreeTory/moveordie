@@ -455,24 +455,28 @@ local function buildOneRow(sf, questData, rowIndex)
 					elseif rw.type == "Crate" then
 						local questReward = { type = "Crate", crateId = rw.crateId, count = rw.count }
 						local extra = result.extra
-						if extra and extra.crateGrant and not extra.crateGrant.isDuplicate then
+						if extra and extra.crateGrant then
 							local cg = extra.crateGrant
+							local isCrown = cg.category == "Crowns"
+							local grantLabel = if cg.isDuplicate then " (Already Owned)" else ""
 							RewardPopup.Show({
 								title      = "QUEST COMPLETE!",
-								name       = cg.displayName or (rw.crateId == "crate_crown" and "Crown" or "Pet"),
+								name       = (cg.displayName or (isCrown and "Crown" or "Pet")) .. grantLabel,
 								itemId     = cg.itemId,
-								itemType   = cg.category == "Crowns" and "Crown" or "Pet",
+								itemType   = isCrown and "Crown" or "Pet",
 								icon       = QuestRewardIconResolver.GetQuestRewardIcon(questReward),
 								questReward = questReward,
 								rarityText = cg.rarity or "Common",
 								okText     = "CLAIM!",
 							})
 						else
-							local crateName = rw.crateId == "crate_crown" and "Crown Crate" or "Pet Crate"
+							local crateId = rw.crateId or "crate_crown"
+							local crateDef = ItemCatalog.Crates and ItemCatalog.Crates[crateId]
+							local crateName = (crateDef and crateDef.name) or (crateId == "crate_crown" and "Crown Crate" or "Pet Crate")
 							RewardPopup.Show({
 								title      = "QUEST COMPLETE!",
 								name       = "1 " .. crateName .. " Opened!",
-								itemId     = rw.crateId or "crate_crown",
+								itemId     = crateId,
 								itemType   = "Crate",
 								icon       = QuestRewardIconResolver.GetQuestRewardIcon(questReward),
 								questReward = questReward,

@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+local HttpService = game:GetService("HttpService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
@@ -38,16 +39,21 @@ local ORBIT_PETS: { [string]: boolean } = {
 }
 
 local YAW_OVERRIDE_RAD: { [string]: number } = {
-	pet_pink_butterfly = 0,
+	pet_pink_butterfly = math.rad(-90),
 	pet_glitched_dragon = math.rad(90),
 	pet_dark_winged_dragon = 0,
 	pet_dark_falcon = math.rad(180),
 }
 
+local PINK_BUTTERFLY_FLAP_SPEED = 8.0
+local PINK_BUTTERFLY_FLAP_AMP_RAD = math.rad(35)
+
 type MotorInfo = {
 	motor: Motor6D,
+	baseC0: CFrame,
 	mode: "wing_h" | "wing_v" | "arm",
 	sign: number,
+	wingRole: "primary" | "secondary" | nil,
 }
 
 type ActiveEntry = {
@@ -60,11 +66,30 @@ type ActiveEntry = {
 	orbitEnabled: boolean,
 	t0: number,
 	phase: number,
+	animDebugLogged: boolean,
 }
 
 local _active: { [Player]: ActiveEntry } = {}
 local _scaleApplyCountByModel: { [string]: number } = {}
 local _spawnLoopCountByPlayer: { [number]: number } = {}
+
+local function normalizedName(name: string): string
+	return string.lower((string.gsub(name, "^%s*(.-)%s*$", "%1")))
+end
+
+local function isAnimatedTargetPart(petId: string, part: BasePart): boolean
+	local name = normalizedName(part.Name)
+	if petId == "pet_pink_butterfly" then
+		return name == "butterflywing"
+	elseif petId == "pet_glitched_dragon" then
+		return name == "wingsfloatdrag"
+	elseif petId == "pet_dark_winged_dragon" then
+		return name == "wingsfloat"
+	elseif petId == "pet_dark_falcon" then
+		return string.find(name, "arm", 1, true) ~= nil
+	end
+	return false
+end
 
 local function getRootFolder(): Folder
 	local root = Workspace:FindFirstChild(ROOT_FOLDER_NAME)
@@ -104,6 +129,10 @@ local function chooseRoot(model: Model): BasePart?
 	local bestVolume = -1
 	for _, d in ipairs(model:GetDescendants()) do
 		if d:IsA("BasePart") then
+			local n = normalizedName(d.Name)
+			if n == "butterflywing" or n == "wingsfloatdrag" or n == "wingsfloat" then
+				continue
+			end
 			local v = d.Size.X * d.Size.Y * d.Size.Z
 			if v > bestVolume then
 				bestVolume = v
@@ -175,6 +204,78 @@ local function getMaxDim(model: Model): number
 	return math.max(size.X, size.Y, size.Z, 0.01)
 end
 
+local function ensurePinkButterflyVfxAttachment(model: Model, root: BasePart)
+	if model:GetAttribute("_pinkVfxFixed") == true then
+		return
+	end
+
+	local anchor = root:FindFirstChild("VFX_Attachment")
+	if anchor and not anchor:IsA("Attachment") then
+		anchor:Destroy()
+		anchor = nil
+	end
+	if not anchor then
+		local newAnchor = Instance.new("Attachment")
+		newAnchor.Name = "VFX_Attachment"
+		-- Keep the effect attached near the butterfly body (not on ground).
+		newAnchor.Position = Vector3.new(0, -0.35, -0.45)
+		newAnchor.Parent = root
+		anchor = newAnchor
+	end
+
+	-- Move invalid/orphan VFX under a rig-bound Attachment so it follows the pet.
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("Attachment") then
+			local parent = d.Parent
+			if not (parent and parent:IsA("BasePart")) then
+				local hasVfxChild = false
+				for _, child in ipairs(d:GetChildren()) do
+					if child:IsA("ParticleEmitter") or child:IsA("Beam") or child:IsA("Trail") then
+						hasVfxChild = true
+						break
+					end
+				end
+				if hasVfxChild then
+					pcall(function()
+						d.Parent = root
+					end)
+				end
+			end
+		elseif d:IsA("ParticleEmitter") then
+			local hostPart = d:FindFirstAncestorWhichIsA("BasePart")
+			local hostAttachment = d:FindFirstAncestorWhichIsA("Attachment")
+			if not hostPart and not hostAttachment then
+				pcall(function()
+					d.Parent = anchor
+				end)
+			end
+		end
+	end
+
+	model:SetAttribute("_pinkVfxFixed", true)
+end
+
+local function getRigInstanceId(model: Model): string
+	local existing = model:GetAttribute("RigInstanceGuid")
+	if type(existing) == "string" and existing ~= "" then
+		return existing
+	end
+
+	local guid: string? = nil
+	local ok, generated = pcall(HttpService.GenerateGUID, HttpService, false)
+	if ok and type(generated) == "string" and generated ~= "" then
+		guid = generated
+	else
+		-- Fallback is runtime-safe and avoids plugin-only APIs.
+		guid = string.format("%s|%s", model.Name, tostring(model))
+	end
+
+	pcall(function()
+		model:SetAttribute("RigInstanceGuid", guid)
+	end)
+	return guid
+end
+
 local function applyDeterministicScale(model: Model, petId: string)
 	local baselineScale = model:GetAttribute("_baselineScale")
 	if type(baselineScale) ~= "number" then
@@ -199,20 +300,23 @@ local function applyDeterministicScale(model: Model, petId: string)
 	model:SetAttribute("_appliedScale", targetScale)
 	model:SetAttribute("_scaleAppliedOnce", true)
 
-	local key = tostring(model:GetDebugId())
+	local key = getRigInstanceId(model)
 	_scaleApplyCountByModel[key] = (_scaleApplyCountByModel[key] or 0) + 1
 
 	if DEBUG_SPECIAL_PET_RIG and TARGET_PETS[petId] then
-		local _, box = model:GetBoundingBox()
-		local primarySize = model.PrimaryPart and model.PrimaryPart.Size or Vector3.zero
-		print(string.format(
-			"[PetScaleDbg] pet=%s scale=%.3f primarySize=<%.2f,%.2f,%.2f> bounds=<%.2f,%.2f,%.2f> appliedCount=%d",
-			tostring(petId),
-			targetScale,
-			primarySize.X, primarySize.Y, primarySize.Z,
-			box.X, box.Y, box.Z,
-			_scaleApplyCountByModel[key]
-		))
+		pcall(function()
+			local _, box = model:GetBoundingBox()
+			local primarySize = model.PrimaryPart and model.PrimaryPart.Size or Vector3.zero
+			print(string.format(
+				"[PetScaleDbg] pet=%s guid=%s scale=%.3f primarySize=<%.2f,%.2f,%.2f> bounds=<%.2f,%.2f,%.2f> appliedCount=%d",
+				tostring(petId),
+				key,
+				targetScale,
+				primarySize.X, primarySize.Y, primarySize.Z,
+				box.X, box.Y, box.Z,
+				_scaleApplyCountByModel[key]
+			))
+		end)
 	end
 end
 
@@ -227,6 +331,50 @@ local function motorFromRoot(root: BasePart, part: BasePart, name: string): Moto
 	return m
 end
 
+local function findDarkGoblemHead(model: Model): BasePart?
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local n = normalizedName(d.Name)
+			if string.find(n, "head", 1, true) then
+				return d
+			end
+			if d:FindFirstChild("Eyes") then
+				return d
+			end
+		end
+	end
+	return nil
+end
+
+local function ensureDarkGoblemHead(model: Model, root: BasePart): BasePart?
+	local head = findDarkGoblemHead(model)
+	if not head then
+		return nil
+	end
+	head.Transparency = math.min(head.Transparency, 0)
+	head.Anchored = false
+
+	local hasRootJoint = false
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("Weld") or d:IsA("WeldConstraint") or d:IsA("Motor6D") then
+			local p0 = (d :: any).Part0
+			local p1 = (d :: any).Part1
+			if (p0 == root and p1 == head) or (p0 == head and p1 == root) then
+				hasRootJoint = true
+				break
+			end
+		end
+	end
+	if not hasRootJoint then
+		local wc = Instance.new("WeldConstraint")
+		wc.Name = "_PetHeadWeld"
+		wc.Part0 = root
+		wc.Part1 = head
+		wc.Parent = root
+	end
+	return head
+end
+
 local function collectAnimatedParts(model: Model, petId: string): ({ BasePart }, { MotorInfo })
 	local parts: { BasePart } = {}
 	local motors: { MotorInfo } = {}
@@ -236,61 +384,196 @@ local function collectAnimatedParts(model: Model, petId: string): ({ BasePart },
 	end
 
 	local function addPart(part: BasePart, mode: "wing_h" | "wing_v" | "arm")
+		if part == root then
+			return
+		end
 		removePartJoints(model, part)
+		part.Anchored = false
 		local localPos = root.CFrame:PointToObjectSpace(part.Position)
 		local sign = localPos.X >= 0 and 1 or -1
 		local m = motorFromRoot(root, part, "_PetAnimMotor_" .. part.Name)
+		pcall(function()
+			m:SetAttribute("MotionRole", mode)
+			m:SetAttribute("MotionTargetPart", part.Name)
+		end)
 		table.insert(parts, part)
 		table.insert(motors, {
 			motor = m,
+			baseC0 = m.C0,
 			mode = mode,
 			sign = sign,
+			wingRole = nil,
 		})
 	end
 
-	if petId == "pet_pink_butterfly" then
-		for _, d in ipairs(model:GetDescendants()) do
-			if d:IsA("BasePart") and d.Name == "ButterFlyWing" then
-				addPart(d, "wing_h")
-			end
-		end
-		if #motors == 0 then
-			warn("[PetRigWarn] pet=Pink Butterfly missingPart=ButterFlyWing")
-		end
-	elseif petId == "pet_glitched_dragon" then
-		local found = 0
-		for _, d in ipairs(model:GetDescendants()) do
-			if d:IsA("BasePart") and d.Name == "WingsFloatDrag" then
-				addPart(d, "wing_v")
-				found += 1
-			end
-		end
-		if found == 0 then
-			warn("[PetRigWarn] pet=Glitched Dragon missingPart=WingsFloatDrag")
-		end
-	elseif petId == "pet_dark_winged_dragon" then
-		local found = 0
-		for _, d in ipairs(model:GetDescendants()) do
-			if d:IsA("BasePart") and (d.Name == "WingsFloat" or d.Name == "WingsFloat ") then
-				addPart(d, "wing_v")
-				found += 1
-			end
-		end
-		if found == 0 then
-			warn("[PetRigWarn] pet=Music Winged Dragon missingPart=WingsFloat")
-		end
+	local wantedMode: "wing_h" | "wing_v" | "arm" = "wing_h"
+	if petId == "pet_glitched_dragon" or petId == "pet_dark_winged_dragon" then
+		wantedMode = "wing_v"
 	elseif petId == "pet_dark_falcon" then
-		for _, d in ipairs(model:GetDescendants()) do
-			if d:IsA("BasePart") and string.find(string.lower(d.Name), "arm", 1, true) then
-				addPart(d, "arm")
+		wantedMode = "arm"
+	end
+
+	local found = 0
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") and isAnimatedTargetPart(petId, d) then
+			addPart(d, wantedMode)
+			found += 1
+		end
+	end
+
+	if found == 0 then
+		if petId == "pet_pink_butterfly" then
+			warn("[PetRigWarn] pet=Pink Butterfly missingPart=ButterFlyWing*")
+		elseif petId == "pet_glitched_dragon" then
+			warn("[PetRigWarn] pet=Glitched Dragon missingPart=WingsFloatDrag*")
+		elseif petId == "pet_dark_winged_dragon" then
+			warn("[PetRigWarn] pet=Music Winged Dragon missingPart=WingsFloat*")
+		elseif petId == "pet_dark_falcon" then
+			warn("[PetRigWarn] pet=Dark Goblem missingPart=*arm*")
+		end
+	end
+
+	-- Pink Butterfly: motorsCreated=8 is too broad to animate as independent flappers.
+	-- Mark one primary motor per side; all others are secondary followers.
+	if petId == "pet_pink_butterfly" and #motors > 0 then
+		local leftPrimary: MotorInfo? = nil
+		local rightPrimary: MotorInfo? = nil
+		local leftDist = -1
+		local rightDist = -1
+		for _, info in ipairs(motors) do
+			local part = info.motor.Part1
+			if part then
+				local localPos = root.CFrame:PointToObjectSpace(part.Position)
+				local lateral = math.abs(localPos.X)
+				if info.sign < 0 then
+					if lateral > leftDist then
+						leftDist = lateral
+						leftPrimary = info
+					end
+				else
+					if lateral > rightDist then
+						rightDist = lateral
+						rightPrimary = info
+					end
+				end
 			end
 		end
-		if #motors == 0 then
-			warn("[PetRigWarn] pet=Dark Goblem missingPart=Arm*")
+		for _, info in ipairs(motors) do
+			info.wingRole = "secondary"
+		end
+		if leftPrimary then
+			leftPrimary.wingRole = "primary"
+		end
+		if rightPrimary then
+			rightPrimary.wingRole = "primary"
 		end
 	end
 
 	return parts, motors
+end
+
+local function debugLogWingRigDiagnostics(petId: string, motors: { MotorInfo })
+	if not DEBUG_SPECIAL_PET_RIG then
+		return
+	end
+	if petId ~= "pet_pink_butterfly" and petId ~= "pet_glitched_dragon" then
+		return
+	end
+	local jointInfo: { string } = {}
+	for _, info in ipairs(motors) do
+		local m = info.motor
+		local p0Name = m.Part0 and m.Part0.Name or "nil"
+		local p1Name = m.Part1 and m.Part1.Name or "nil"
+		local target = m.Part1 and isAnimatedTargetPart(petId, m.Part1) or false
+		local attachedAtRest = false
+		if m.Part0 and m.Part1 then
+			local expected = (m.Part0.CFrame * m.C0 * m.Transform * m.C1:Inverse()).Position
+			attachedAtRest = (expected - m.Part1.Position).Magnitude <= 0.2
+		end
+		table.insert(jointInfo, string.format(
+			"%s parent=%s p0=%s p1=%s mode=%s target=%s restAttached=%s C0=%s C1=%s",
+			m.Name,
+			m.Parent and m.Parent.Name or "nil",
+			p0Name,
+			p1Name,
+			info.mode,
+			tostring(target),
+			tostring(attachedAtRest),
+			tostring(m.C0),
+			tostring(m.C1)
+		))
+	end
+	print(string.format("[PetWingRigDbg] pet=%s movingJoints=%d", petId, #motors))
+	if #jointInfo > 0 then
+		print("[PetWingRigDbg] joints:", table.concat(jointInfo, " | "))
+	end
+	if petId == "pet_glitched_dragon" then
+		print("[PetWingRigDbg] glitchedMovingJointsChosen=true")
+	end
+end
+
+local function ensurePinkFaceAttachment(model: Model, root: BasePart)
+	local face = model:FindFirstChild("AnimatedFace", true)
+	if not (face and face:IsA("BasePart")) then
+		return
+	end
+
+	-- Ensure the face/body piece remains rigidly attached to the pet root.
+	removePartJoints(model, face)
+	local wc = Instance.new("WeldConstraint")
+	wc.Name = "_PetPinkFaceWeld"
+	wc.Part0 = root
+	wc.Part1 = face
+	wc.Parent = root
+end
+
+local function debugLogRigAssembly(
+	model: Model,
+	petId: string,
+	motors: { MotorInfo },
+	orientationApplied: boolean,
+	headExists: boolean
+)
+	if not DEBUG_SPECIAL_PET_RIG or not TARGET_PETS[petId] then
+		return
+	end
+	if model:GetAttribute("_rigAssemblyLogged") == true then
+		return
+	end
+
+	local basePartList: { string } = {}
+	local motorList: { string } = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			table.insert(basePartList, d.Name .. "@" .. d:GetFullName())
+		elseif d:IsA("Motor6D") then
+			local p0 = d.Part0 and d.Part0.Name or "nil"
+			local p1 = d.Part1 and d.Part1.Name or "nil"
+			table.insert(motorList, string.format("%s p0=%s p1=%s parent=%s", d.Name, p0, p1, d.Parent and d.Parent.Name or "nil"))
+		end
+	end
+
+	local resolvedMotors: { string } = {}
+	for _, info in ipairs(motors) do
+		local m = info.motor
+		local p0 = m.Part0 and m.Part0.Name or "nil"
+		local p1 = m.Part1 and m.Part1.Name or "nil"
+		table.insert(resolvedMotors, string.format("%s(%s) p0=%s p1=%s", m.Name, info.mode, p0, p1))
+	end
+
+	pcall(function()
+		print(string.format(
+			"[PetRigDbg] pet=%s orientationApplied=%s headExists=%s resolvedMovingJoints=%d",
+			petId,
+			tostring(orientationApplied),
+			tostring(headExists),
+			#resolvedMotors
+		))
+		print("[PetRigDbg] movingJoints:", table.concat(resolvedMotors, " | "))
+		print("[PetRigDbg] baseParts:", table.concat(basePartList, " | "))
+		print("[PetRigDbg] motors:", table.concat(motorList, " | "))
+	end)
+	model:SetAttribute("_rigAssemblyLogged", true)
 end
 
 local function petDisplayName(petId: string): string
@@ -355,6 +638,10 @@ local function spawnFor(player: Player, petId: string)
 		destroyFor(player)
 		return
 	end
+	local existing = _active[player]
+	if existing and existing.petId == petId and existing.model and existing.model.Parent then
+		return
+	end
 
 	local char = player.Character
 	local ownerHrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -415,7 +702,14 @@ local function spawnFor(player: Player, petId: string)
 	for _, p in ipairs(animatedParts) do
 		skip[p] = true
 	end
+	if petId == "pet_pink_butterfly" then
+		ensurePinkFaceAttachment(model, root)
+	end
 	ensureStaticWelds(model, root, skip)
+	if petId == "pet_pink_butterfly" then
+		ensurePinkButterflyVfxAttachment(model, root)
+	end
+	local head = if petId == "pet_dark_falcon" then ensureDarkGoblemHead(model, root) else nil
 
 	local rootWeld = makeRootWeld(ownerHrp, root)
 	root.CFrame = ownerHrp.CFrame * rootWeld.C0
@@ -428,6 +722,11 @@ local function spawnFor(player: Player, petId: string)
 	print(string.format("[PetOrbit] pet=%s orbitEnabled=%s attachType=weld",
 		petDisplayName(petId),
 		tostring(ORBIT_PETS[petId] == true)))
+	if petId == "pet_glitched_dragon" then
+		print("[PetAnimCfg] pet=pet_glitched_dragon flapDisabled=true")
+	end
+	debugLogRigAssembly(model, petId, motors, YAW_OVERRIDE_RAD[petId] ~= nil, head ~= nil)
+	debugLogWingRigDiagnostics(petId, motors)
 
 	_active[player] = {
 		player = player,
@@ -439,6 +738,7 @@ local function spawnFor(player: Player, petId: string)
 		orbitEnabled = ORBIT_PETS[petId] == true,
 		t0 = tick(),
 		phase = (player.UserId % 37) * 0.17,
+		animDebugLogged = false,
 	}
 
 	_spawnLoopCountByPlayer[player.UserId] = (_spawnLoopCountByPlayer[player.UserId] or 0) + 1
@@ -484,17 +784,53 @@ local function updateEntry(entry: ActiveEntry, dt: number)
 		entry.rootWeld.C0 = CFrame.new(3, 2.8, 2) * CFrame.Angles(0, yaw, 0)
 	end
 
+	local applied = 0
 	for _, info in ipairs(entry.motors) do
+		if not info.motor.Parent or not info.motor.Part0 or not info.motor.Part1 then
+			continue
+		end
+		if not info.motor.Part1:IsDescendantOf(entry.model) or info.motor.Part1.Anchored then
+			continue
+		end
+		if not isAnimatedTargetPart(entry.petId, info.motor.Part1) then
+			continue
+		end
 		if info.mode == "wing_h" then
-			local flap = math.sin(t * 8.0) * math.rad(35)
-			info.motor.Transform = CFrame.Angles(0, flap, 0)
+			if entry.petId == "pet_pink_butterfly" then
+				-- Pink Butterfly: explicit assembly groups, same direction sync.
+				local flap = math.sin(t * PINK_BUTTERFLY_FLAP_SPEED) * PINK_BUTTERFLY_FLAP_AMP_RAD
+				local ampMul = if info.wingRole == "secondary" then 0.55 else 1.0
+				info.motor.C0 = CFrame.Angles(0, flap * ampMul, 0) * info.baseC0
+			else
+				local flap = math.sin(t * 8.0) * math.rad(35)
+				info.motor.C0 = info.baseC0 * CFrame.Angles(0, flap, 0)
+			end
+			applied += 1
 		elseif info.mode == "wing_v" then
+			-- Music Winged Dragon reference behavior; Glitched Dragon shares this exactly.
+			if entry.petId == "pet_glitched_dragon" then
+				-- Explicit no-flap rule: keep orbit/spawn/orientation but no wing/arm motion updates.
+				info.motor.C0 = info.baseC0
+				continue
+			end
 			local flap = math.sin(t * 7.0) * math.rad(30)
-			info.motor.Transform = CFrame.Angles(flap * info.sign, 0, 0)
+			info.motor.C0 = info.baseC0 * CFrame.Angles(flap * info.sign, 0, 0)
+			applied += 1
 		elseif info.mode == "arm" then
 			local sway = math.sin(t * 3.8 + info.sign * 0.2) * math.rad(18)
-			info.motor.Transform = CFrame.Angles(0, 0, sway * info.sign)
+			info.motor.C0 = info.baseC0 * CFrame.Angles(0, 0, sway * info.sign)
+			applied += 1
 		end
+	end
+
+	if DEBUG_SPECIAL_PET_RIG and not entry.animDebugLogged and TARGET_PETS[entry.petId] then
+		entry.animDebugLogged = true
+		print(string.format(
+			"[PetAnimDbg] pet=%s animationLoopStarted=true movingJoints=%d appliedThisTick=%d",
+			entry.petId,
+			#entry.motors,
+			applied
+		))
 	end
 end
 

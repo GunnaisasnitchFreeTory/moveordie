@@ -33,6 +33,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Server = ServerScriptService:WaitForChild("Server")
 
 local DailyQuestConfig = require(Shared:WaitForChild("DailyQuestConfig"))
+local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 
 -- Lazy service loaders
 local _PDS, _Economy, _Inventory, _Crate, _Spin = nil, nil, nil, nil, nil
@@ -72,6 +73,15 @@ local claimFunc:       RemoteFunction? = nil
 local debugRemote:     RemoteFunction? = nil
 
 local function log(...) print("[DailyQuestService]", ...) end
+
+local CRATE_ID_ALIASES: { [string]: string } = {
+	crate_pet = "crate_pet_common",
+}
+
+local function resolveQuestCrateId(rawId: any): string
+	local crateId = if type(rawId) == "string" and rawId ~= "" then rawId else "crate_pet_common"
+	return CRATE_ID_ALIASES[crateId] or crateId
+end
 
 -- Today's quest cache -- regenerated when the UTC day rolls over
 local _cachedDay:    string = ""
@@ -320,20 +330,53 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 	elseif reward.type == "Crate" then
 		local crate = getCrate()
 		if crate then
-			local crateId = reward.crateId or "crate_pet"
+			local crateId = resolveQuestCrateId(reward.crateId or reward.itemId)
 			local qty     = reward.count or 1
+			local crateDefFound = ItemCatalog.Crates and ItemCatalog.Crates[crateId] ~= nil
 			local result  = crate.RollCrateFree(player, crateId, qty)
-			if result and result.success and #result.results > 0 then
-				granted = true
-				local r = result.results[1]
+			local outcomes = if result and type(result.results) == "table" then result.results else {}
+			local chosenOutcome = outcomes[1]
+			if chosenOutcome then
+				for _, r in ipairs(outcomes) do
+					if r and r.grantSuccess == true then
+						chosenOutcome = r
+						break
+					end
+				end
+			end
+
+			if result and result.success and chosenOutcome and type(chosenOutcome.itemId) == "string" and chosenOutcome.itemId ~= "" then
+				local grantSuccess = chosenOutcome.grantSuccess == true
+				local isDuplicate = chosenOutcome.isDuplicate == true
+				-- Existing crate duplicate behavior is preserved: duplicate is a valid resolved outcome.
+				granted = grantSuccess or isDuplicate
 				extra.crateGrant = {
-					itemId      = r.itemId,
-					displayName = r.displayName,
-					rarity      = r.rarity,
-					category    = r.category,
-					isDuplicate = r.isDuplicate,
+					itemId      = chosenOutcome.itemId,
+					displayName = chosenOutcome.displayName,
+					rarity      = chosenOutcome.rarity,
+					category    = chosenOutcome.category,
+					isDuplicate = isDuplicate,
+					grantSuccess = grantSuccess,
+				}
+				extra.crateResults = outcomes
+				extra.crateResolved = {
+					crateId = crateId,
+					crateDefinitionFound = crateDefFound,
+					quantity = qty,
+					rollSuccess = result.success == true,
 				}
 			end
+
+			log(string.format(
+				"[QuestCrate] quest=%s rewardType=Crate rewardId=%s resolvedCrateId=%s crateDefFound=%s granted=%s outcome=%s duplicate=%s",
+				tostring(questId),
+				tostring(reward.crateId or reward.itemId or "nil"),
+				tostring(crateId),
+				tostring(crateDefFound),
+				tostring(granted),
+				tostring(extra.crateGrant and extra.crateGrant.itemId or "nil"),
+				tostring(extra.crateGrant and extra.crateGrant.isDuplicate or false)
+			))
 		end
 
 	elseif reward.type == "Spin" then
