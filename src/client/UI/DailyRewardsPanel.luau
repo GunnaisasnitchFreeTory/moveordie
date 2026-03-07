@@ -76,6 +76,8 @@ local _timerLabel = nil
 local _dayCards = {}
 local _streakLabel = nil
 local _progressFill = nil
+local _bgImage = nil
+local _bgAnimToken = 0
 
 -- State
 local _status = nil
@@ -102,31 +104,36 @@ end
 local function log(...) print("[DailyRewardsPanel]", ...) end
 
 -- ═══════════════════════════════════════════════════════════════════
--- THEME — light blue palette (no orange / pet-ui)
+-- THEME — orange + dark/blackish palette
 -- ═══════════════════════════════════════════════════════════════════
 
-local HEADER_COLOR      = Color3.fromRGB(60, 140, 255)       -- panel header bar
-local INNER_BG_COLOR    = Color3.fromRGB(22, 35, 62)         -- inner content tint (dark blue)
-local INNER_TINT_COLOR  = Color3.fromRGB(40, 80, 140)        -- subtle blue fill behind cards
-local CARD_BG           = Color3.fromRGB(16, 22, 42)         -- card background (dark navy)
-local CARD_BORDER       = Color3.fromRGB(50, 80, 140)        -- default card border
-local PROGRESS_BG       = Color3.fromRGB(24, 30, 55)         -- progress bar bg
-local PROGRESS_FILL     = Color3.fromRGB(60, 160, 255)       -- progress bar fill
-local STREAK_TEXT       = Color3.fromRGB(130, 200, 255)       -- streak label
-local TIMER_READY       = Color3.fromRGB(80, 255, 160)       -- "available now"
-local TIMER_WAIT        = Color3.fromRGB(160, 180, 220)      -- countdown text
-local CLAIM_GREEN       = Color3.fromRGB(50, 200, 80)        -- claim button
-local CLAIM_DISABLED    = Color3.fromRGB(40, 45, 60)         -- disabled button
+local HEADER_COLOR      = Color3.fromRGB(255, 122, 22)       -- panel header bar
+local INNER_BG_COLOR    = Color3.fromRGB(14, 10, 8)          -- inner content base
+local INNER_TINT_COLOR  = Color3.fromRGB(28, 18, 12)         -- subtle warm tint behind cards
+local CARD_BG           = Color3.fromRGB(20, 14, 10)         -- card background (dark brown-black)
+local CARD_BORDER       = Color3.fromRGB(145, 88, 22)        -- default card border
+local PROGRESS_BG       = Color3.fromRGB(30, 20, 14)         -- progress bar bg
+local PROGRESS_FILL     = Color3.fromRGB(255, 178, 38)       -- progress bar fill
+local STREAK_TEXT       = Color3.fromRGB(255, 205, 92)       -- streak label
+local TIMER_READY       = Color3.fromRGB(255, 188, 70)       -- "available now"
+local TIMER_WAIT        = Color3.fromRGB(214, 188, 156)      -- countdown text
+local CLAIM_GREEN       = Color3.fromRGB(255, 145, 30)       -- claim button (kept var name for compatibility)
+local CLAIM_DISABLED    = Color3.fromRGB(44, 32, 24)         -- disabled button
+local CLAIM_DISABLED_TEXT = Color3.fromRGB(145, 125, 102)
+local LOCKED_TAG_BG     = Color3.fromRGB(88, 38, 24)
+local REWARD_LABEL_TEXT = Color3.fromRGB(238, 218, 190)
+local FALLBACK_ICON_TEXT = Color3.fromRGB(255, 195, 95)
+local CLAIM_CHECK_COLOR = Color3.fromRGB(98, 255, 165)
 
--- Per-day accent colours (blue-tinted spectrum)
+-- Per-day accent colours (orange/gold spectrum)
 local DAY_COLORS = {
-	[1] = Color3.fromRGB(80, 200, 140),
-	[2] = Color3.fromRGB(60, 160, 255),
-	[3] = Color3.fromRGB(160, 110, 255),
-	[4] = Color3.fromRGB(90, 200, 255),
-	[5] = Color3.fromRGB(255, 120, 140),
-	[6] = Color3.fromRGB(80, 220, 200),
-	[7] = Color3.fromRGB(160, 100, 255),
+	[1] = Color3.fromRGB(255, 186, 70),
+	[2] = Color3.fromRGB(255, 168, 58),
+	[3] = Color3.fromRGB(255, 152, 48),
+	[4] = Color3.fromRGB(255, 136, 38),
+	[5] = Color3.fromRGB(255, 122, 30),
+	[6] = Color3.fromRGB(242, 182, 86),
+	[7] = Color3.fromRGB(255, 208, 92),
 }
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -215,7 +222,7 @@ local function updateDayCards(status)
 		else
 			_claimButton.Text = "COME BACK LATER"
 			_claimButton.BackgroundColor3 = CLAIM_DISABLED
-			_claimButton.TextColor3 = Color3.fromRGB(100, 100, 120)
+			_claimButton.TextColor3 = CLAIM_DISABLED_TEXT
 			_claimButton.Active = false
 			_claimButton.AutoButtonColor = false
 		end
@@ -261,6 +268,35 @@ end
 
 local function stopTimerLoop()
 	if _timerConn then _timerConn:Disconnect(); _timerConn = nil end
+end
+
+local function stopBgFadeLoop()
+	_bgAnimToken += 1
+	if _bgImage then
+		_bgImage.ImageTransparency = 0.82
+	end
+end
+
+local function startBgFadeLoop()
+	if not _bgImage then return end
+	_bgAnimToken += 1
+	local token = _bgAnimToken
+	task.spawn(function()
+		while visible and _bgImage and _bgImage.Parent and token == _bgAnimToken do
+			local fadeOut = TweenService:Create(_bgImage, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+				ImageTransparency = 0.9,
+			})
+			fadeOut:Play()
+			fadeOut.Completed:Wait()
+			if not visible or token ~= _bgAnimToken then break end
+
+			local fadeIn = TweenService:Create(_bgImage, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+				ImageTransparency = 0.82,
+			})
+			fadeIn:Play()
+			fadeIn.Completed:Wait()
+		end
+	end)
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -333,7 +369,7 @@ local function onClaim()
 			if reason == "AlreadyClaimed" or reason == "On cooldown" then
 				_claimButton.Text = "ALREADY CLAIMED"
 				_claimButton.BackgroundColor3 = CLAIM_DISABLED
-				_claimButton.TextColor3 = Color3.fromRGB(100, 100, 120)
+				_claimButton.TextColor3 = CLAIM_DISABLED_TEXT
 				_claimButton.Active = false
 				_claimButton.AutoButtonColor = false
 			end
@@ -350,7 +386,7 @@ end
 
 local function buildDayCard(parent, dayNum)
 	local reward = DailyRewardConfig.Rewards[dayNum]
-	local dayColor = DAY_COLORS[dayNum] or Color3.fromRGB(100, 160, 255)
+	local dayColor = DAY_COLORS[dayNum] or Color3.fromRGB(255, 158, 52)
 
 	local card = Instance.new("Frame")
 	card.Name = "Day" .. dayNum
@@ -408,7 +444,7 @@ local function buildDayCard(parent, dayNum)
 			if ic and type(ic) == "table" then
 				iconLbl.TextColor3 = Color3.fromRGB(ic[1] or 200, ic[2] or 200, ic[3] or 200)
 			else
-				iconLbl.TextColor3 = Color3.fromRGB(130, 200, 255)
+				iconLbl.TextColor3 = FALLBACK_ICON_TEXT
 			end
 		end
 		iconLbl.Name = "RewardIcon"
@@ -430,7 +466,7 @@ local function buildDayCard(parent, dayNum)
 		rewLbl.Size = UDim2.new(1, -8, 0, 14)
 		rewLbl.BackgroundTransparency = 1
 		rewLbl.Font = Enum.Font.GothamSemibold
-		rewLbl.TextColor3 = Color3.fromRGB(190, 205, 240)
+		rewLbl.TextColor3 = REWARD_LABEL_TEXT
 		rewLbl.TextSize = 10
 		rewLbl.TextTruncate = Enum.TextTruncate.AtEnd
 		rewLbl.Text = reward.label or ""
@@ -461,7 +497,7 @@ local function buildDayCard(parent, dayNum)
 	lockedTag.AnchorPoint = Vector2.new(0.5, 0)
 	lockedTag.Position = UDim2.new(0.5, 0, 0, 20)
 	lockedTag.Size = UDim2.new(0.85, 0, 0, 16)
-	lockedTag.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
+	lockedTag.BackgroundColor3 = LOCKED_TAG_BG
 	lockedTag.Font = Enum.Font.GothamBold
 	lockedTag.TextColor3 = Color3.fromRGB(255, 255, 255)
 	lockedTag.TextSize = 9
@@ -480,7 +516,7 @@ local function buildDayCard(parent, dayNum)
 	check.Size = UDim2.fromOffset(30, 30)
 	check.BackgroundTransparency = 1
 	check.Font = Enum.Font.GothamBold
-	check.TextColor3 = Color3.fromRGB(80, 255, 160)
+	check.TextColor3 = CLAIM_CHECK_COLOR
 	check.TextSize = 24
 	check.Text = "\xE2\x9C\x93"
 	check.ZIndex = 9
@@ -517,6 +553,15 @@ function DailyRewardsPanel.Init(screenGui, onClose)
 	local content, closeBtn
 	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "DAILY REWARDS", HEADER_COLOR, "Daily")
 
+	-- Daily-only header divider tint (darker orange theme match).
+	do
+		local header = canvas and canvas:FindFirstChild("Header")
+		local divider = header and header:FindFirstChild("HighlightLine")
+		if divider and divider:IsA("Frame") then
+			divider.BackgroundColor3 = Color3.fromRGB(170, 70, 0)
+		end
+	end
+
 	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()
 		DailyRewardsPanel.Hide()
@@ -541,16 +586,35 @@ function DailyRewardsPanel.Init(screenGui, onClose)
 		content.ScrollBarThickness = 0
 	end
 
+	-- Decorative panel background (daily-only), kept subtle and behind content.
+	local bgImage = Instance.new("ImageLabel")
+	bgImage.Name = "DailyBgImage"
+	bgImage.Size = UDim2.fromScale(1, 1)
+	bgImage.Position = UDim2.fromScale(0, 0)
+	bgImage.BackgroundTransparency = 1
+	bgImage.Image = "rbxassetid://140656133488408"
+	bgImage.ImageTransparency = 0.82
+	bgImage.ScaleType = Enum.ScaleType.Crop
+	bgImage.ZIndex = 4
+	bgImage.Parent = content
+	_bgImage = bgImage
+
 	-- ── LIGHT BLUE INNER BACKGROUND ──────────────────────────────
 	local innerBg = Instance.new("Frame")
 	innerBg.Name = "InnerBg"
 	innerBg.Size = UDim2.fromScale(1, 1)
 	innerBg.BackgroundColor3 = INNER_TINT_COLOR
-	innerBg.BackgroundTransparency = 0.82
+	innerBg.BackgroundTransparency = 0.72
 	innerBg.BorderSizePixel = 0
 	innerBg.ZIndex = 5
 	innerBg.Parent = content
 	Instance.new("UICorner", innerBg).CornerRadius = UDim.new(0, 8)
+	local innerStroke = Instance.new("UIStroke")
+	innerStroke.Color = CARD_BORDER
+	innerStroke.Thickness = 1.2
+	innerStroke.Transparency = 0.55
+	innerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	innerStroke.Parent = innerBg
 
 	-- ── TOP: STREAK + PROGRESS BAR (fixed 40px strip) ───────────
 	_streakLabel = Instance.new("TextLabel")
@@ -674,7 +738,7 @@ function DailyRewardsPanel.Init(screenGui, onClose)
 	_claimButton.Parent = content
 	Instance.new("UICorner", _claimButton).CornerRadius = UDim.new(0, 10)
 	local btnStroke = Instance.new("UIStroke")
-	btnStroke.Color = Color3.fromRGB(255, 255, 255)
+	btnStroke.Color = Color3.fromRGB(255, 206, 120)
 	btnStroke.Thickness = 1.5
 	btnStroke.Transparency = 0.5
 	btnStroke.Parent = _claimButton
@@ -694,6 +758,7 @@ function DailyRewardsPanel.Show()
 	overlay.Visible = true
 	SoundUtil.Open()
 	AnimUtil.OpenPanel(canvas, uiScale)
+	startBgFadeLoop()
 
 	task.spawn(function()
 		_status = fetchStatus()
@@ -707,6 +772,7 @@ end
 function DailyRewardsPanel.Hide()
 	if not visible then return end
 	visible = false
+	stopBgFadeLoop()
 	stopTimerLoop()
 	overlay.Visible = false
 	local t = AnimUtil.ClosePanel(canvas, uiScale)

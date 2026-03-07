@@ -22,6 +22,8 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
+local Shared            = ReplicatedStorage:WaitForChild("Shared")
+local PlayerState       = require(Shared:WaitForChild("PlayerState"))
 
 local ANNOUNCEMENT_HOLD      = 3.0    -- seconds banner stays solid
 local FADE_TIME              = 0.35
@@ -286,6 +288,10 @@ local function onDespawn(showSurvival: boolean)
 	end
 end
 
+local function isLocalPlayerInMatch(): boolean
+	return localPlayer:GetAttribute("PlayerState") == PlayerState.States.InMatch
+end
+
 -- --- INIT --------------------------------------------------------------------
 
 function TungTungSahurController.Init()
@@ -306,12 +312,27 @@ function TungTungSahurController.Init()
 
 	remote.OnClientEvent:Connect(function(action: string, extraArg)
 		if action == "Spawn" then
+			if not isLocalPlayerInMatch() then
+				return
+			end
 			local dur = (type(extraArg) == "number") and extraArg or 30
 			runShowAnnouncement()
 			startCountdown(dur)
 		elseif action == "Despawn" then
+			if not isLocalPlayerInMatch() then
+				onDespawn(false)
+				return
+			end
 			local showSurvival = extraArg == true
 			onDespawn(showSurvival)
+		end
+	end)
+
+	-- Safety: if local player leaves InMatch (results/lobby transition), force-hide any
+	-- lingering TTS UI immediately even if a despawn packet was missed.
+	localPlayer:GetAttributeChangedSignal("PlayerState"):Connect(function()
+		if not isLocalPlayerInMatch() then
+			onDespawn(false)
 		end
 	end)
 end

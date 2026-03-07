@@ -18,6 +18,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local WIN_SFX_ID = "rbxassetid://111217342629113"
 local WIN_SFX_VOLUME = 0.5
@@ -31,6 +32,10 @@ local _active = false
 local _overlay: Frame? = nil
 local _onDismissCallback: (() -> ())? = nil
 local _ignoreBackdropUntil = 0
+
+local function isMobileTouchDevice(): boolean
+	return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+end
 
 -- ═══════════════════════════════════════════
 -- LAZY-LOAD ITEMCATALOG + THUMBNAILRENDERER
@@ -167,13 +172,26 @@ local function resolveIcon(data)
 		end
 	end
 
-	-- Explicit icon from caller (e.g. wheel-specific asset IDs) always wins
+	local t = string.lower(data.itemType or "")
+	local entry = lookupCatalogEntry(data)
+
+	-- For crown rewards, always resolve from the won crown id first.
+	-- This prevents stale/default wheel icon overrides from showing the wrong crown art.
+	if t == "crown" and entry then
+		if entry.image and entry.image ~= "" then
+			return entry.image, nil, nil, entry
+		end
+		if entry.modelPath and entry.modelPath ~= "" then
+			return nil, entry.iconText or data.iconText, entry.iconColor or data.iconColor, entry
+		end
+	end
+
+	-- Explicit icon from caller (e.g. wheel-specific asset IDs) is a fallback,
+	-- except when crown catalog data above was available.
 	if data.icon and data.icon ~= "" then
 		return data.icon, nil, nil, nil
 	end
 
-	local t = string.lower(data.itemType or "")
-	local entry = lookupCatalogEntry(data)
 	if entry then
 		-- If catalog has a non-empty static image, use it
 		if entry.image and entry.image ~= "" then
@@ -371,6 +389,12 @@ end
 -- Supports: static image, ThumbnailRenderer (ViewportFrame for pets), emoji fallback
 -- ═══════════════════════════════════════════
 local function buildIcon(parent, resolvedImage, fallbackEmoji, fallbackColor, posY, iconSize, zIdx, catalogEntry, imageScaleType)
+	for _, child in ipairs(parent:GetChildren()) do
+		if child.Name == "RewardIcon" then
+			child:Destroy()
+		end
+	end
+
 	if resolvedImage and resolvedImage ~= "" then
 		local icon = Instance.new("ImageLabel")
 		icon.Name = "RewardIcon"
@@ -526,6 +550,23 @@ function RewardPopup.Show(data)
 	stroke.Parent = card
 
 	AnimUtil.PopupOpen(card)
+	-- Shop purchase popups can render immediately on mobile before the tween is perceptible.
+	-- Re-trigger an explicit open tween for mobile shop/gamepass sources only.
+	do
+		local source = tostring(data.popupSource or "")
+		local isShopSource = source == "Shop" or source == "GamePass" or source == "DevProduct"
+		if isShopSource and isMobileTouchDevice() then
+			task.defer(function()
+				if not card or not card.Parent then return end
+				local sc = card:FindFirstChildOfClass("UIScale")
+				if sc then
+					sc.Scale = math.min(sc.Scale, 0.84)
+				end
+				AnimUtil.PopupOpen(card)
+				print("[ShopPopup] platform=Mobile animationPlayed=true")
+			end)
+		end
+	end
 
 	task.defer(function()
 		if card and card.Parent then

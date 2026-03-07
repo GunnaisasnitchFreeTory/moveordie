@@ -118,7 +118,7 @@ local initialized = false
 local currentPanel: string? = nil
 local matchLocked = false
 
-local MATCH_LOCKED_PANELS = { Crowns = true, Pets = true, Daily = true, Stats = true }
+local MATCH_LOCKED_PANELS = { Shop = true, Crowns = true, Pets = true, Daily = true, Stats = true, Spectate = true }
 
 local UIController = {}
 
@@ -653,10 +653,10 @@ function UIController.Init()
 		local openedByFnafPrompt = false
 
 		local brainrotFolder = nil
-		for attempt = 1, 12 do
+		for attempt = 1, 300 do
 			brainrotFolder = workspace:FindFirstChild("Brainrot Game Bun")
 			if brainrotFolder then break end
-			task.wait(2)
+			task.wait(1)
 		end
 
 		if not brainrotFolder then
@@ -664,24 +664,34 @@ function UIController.Init()
 			return
 		end
 
-		local posterPart = nil
-		for attempt = 1, 6 do
-			local posterModel = brainrotFolder:FindFirstChild("Poster")
-			if posterModel then
-				posterPart = posterModel:FindFirstChildWhichIsA("BasePart")
+		local function findBrainrotAnchorPart(folder: Instance): BasePart?
+			-- Deterministic anchor rule: use one explicit stand/root only.
+			local standPart = folder:FindFirstChild("Part")
+			if standPart and standPart:IsA("BasePart") then
+				return standPart
 			end
-			if posterPart then break end
-			task.wait(2)
+			return nil
 		end
-		if not posterPart then
-			posterPart = brainrotFolder:FindFirstChildWhichIsA("BasePart", true)
+
+		local posterPart = nil
+		local delayedForAnchor = false
+		for attempt = 1, 300 do
+			posterPart = findBrainrotAnchorPart(brainrotFolder)
+			if posterPart then break end
+			delayedForAnchor = true
+			task.wait(1)
 		end
 
 		if not posterPart then
 			log("[BrainrotBundle] No poster BasePart -- walk-up disabled")
 			return
 		end
-		log("[BrainrotBundle] Poster part found: " .. posterPart:GetFullName() .. " at " .. tostring(posterPart.Position))
+		log(string.format(
+			"[BrainrotPrompt] anchorFound=%s initDelayedUntilAnchor=%s placementSource=BrainrotStandPart finalY=%.2f",
+			posterPart:GetFullName(),
+			tostring(delayedForAnchor),
+			posterPart.Position.Y
+		))
 
 		local prompt: ProximityPrompt? = nil
 		for _, desc in ipairs(brainrotFolder:GetDescendants()) do
@@ -704,6 +714,7 @@ function UIController.Init()
 
 			log("[BrainrotBundle] Prompt parented directly to poster at " .. tostring(posterPart.Position))
 		end
+		prompt.Enabled = true
 
 		prompt.Triggered:Connect(function(playerWhoTriggered)
 			if playerWhoTriggered ~= LocalPlayer then return end
@@ -711,6 +722,46 @@ function UIController.Init()
 			openPanel("Shop")
 			if ShopPanel.ActivateBundleTab then
 				ShopPanel.ActivateBundleTab("brainrot_bundle")
+			end
+		end)
+
+		-- Keep Brainrot prompt visible/enabled if assets stream or hierarchy refreshes.
+		task.spawn(function()
+			while true do
+				if not brainrotFolder.Parent then
+					break
+				end
+				if not posterPart or not posterPart.Parent then
+					posterPart = findBrainrotAnchorPart(brainrotFolder)
+				end
+				if posterPart and posterPart.Parent then
+					if not prompt or not prompt.Parent then
+						prompt = Instance.new("ProximityPrompt")
+						prompt.Name = "BrainrotBundlePrompt"
+						prompt.ActionText = "Buy"
+						prompt.ObjectText = "Brainrot Bundle"
+						prompt.KeyboardKeyCode = Enum.KeyCode.E
+						prompt.HoldDuration = 0
+						prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE
+						prompt.RequiresLineOfSight = false
+						prompt.Parent = posterPart
+						prompt.Triggered:Connect(function(playerWhoTriggered)
+							if playerWhoTriggered ~= LocalPlayer then return end
+							bundleOpenTime = tick()
+							openPanel("Shop")
+							if ShopPanel.ActivateBundleTab then
+								ShopPanel.ActivateBundleTab("brainrot_bundle")
+							end
+						end)
+						log("[BrainrotBundle] Prompt recreated on poster")
+					else
+						if prompt.Parent ~= posterPart then
+							prompt.Parent = posterPart
+						end
+						prompt.Enabled = true
+					end
+				end
+				task.wait(6)
 			end
 		end)
 

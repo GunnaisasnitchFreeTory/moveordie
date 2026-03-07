@@ -113,6 +113,8 @@ local function setOverlayUIVisible(show: boolean)
 		if statsBtn then statsBtn.Visible = show end
 		local dailyBtn = hudGui:FindFirstChild("DailyBtn")
 		if dailyBtn then dailyBtn.Visible = show end
+		local questsBtn = hudGui:FindFirstChild("QuestsBtn")
+		if questsBtn then questsBtn.Visible = show end
 	end
 
 	local modeVoteGui = playerGui:FindFirstChild("ModeVoteGui")

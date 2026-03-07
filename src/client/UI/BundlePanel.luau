@@ -103,6 +103,7 @@ local _bundleOwnedLocal: { [string]: boolean } = {}
 local inDetailView = false
 
 local coverImage: ImageLabel? = nil
+local fnafCreditLabel: TextLabel? = nil
 local titleLabel: TextLabel? = nil
 local viewBtn: TextButton? = nil
 local buyBtn: TextButton? = nil
@@ -265,6 +266,10 @@ local function selectBundle(bundleId: string)
 			coverImage.Image = ""
 			coverImage.Visible = false
 		end
+	end
+
+	if fnafCreditLabel then
+		fnafCreditLabel.Visible = (bundle.id == FNAF_BUNDLE_ID) and (coverImage and coverImage.Visible == true)
 	end
 
 	if titleLabel then
@@ -966,6 +971,30 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 	coverImage.ScaleType = Enum.ScaleType.Crop
 	coverImage.ZIndex = 6
 	coverImage.Parent = coverContainer
+
+	fnafCreditLabel = Instance.new("TextLabel")
+	fnafCreditLabel.Name = "FnafCreditLabel"
+	fnafCreditLabel.AnchorPoint = Vector2.new(1, 1)
+	fnafCreditLabel.Position = UDim2.new(1, -10, 1, -10)
+	fnafCreditLabel.Size = UDim2.new(0.68, 0, 0, 20)
+	fnafCreditLabel.BackgroundTransparency = 1
+	fnafCreditLabel.Font = Enum.Font.Gotham
+	fnafCreditLabel.Text = "ALL credits to Scott Cawthon."
+	fnafCreditLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+	fnafCreditLabel.TextTransparency = 0.28
+	fnafCreditLabel.TextSize = 15
+	fnafCreditLabel.TextScaled = false
+	fnafCreditLabel.TextXAlignment = Enum.TextXAlignment.Right
+	fnafCreditLabel.TextYAlignment = Enum.TextYAlignment.Bottom
+	fnafCreditLabel.ZIndex = 8
+	fnafCreditLabel.Visible = false
+	fnafCreditLabel.Parent = coverContainer
+
+	local creditStroke = Instance.new("UIStroke")
+	creditStroke.Color = Color3.fromRGB(0, 0, 0)
+	creditStroke.Thickness = 1.2
+	creditStroke.Transparency = 0.25
+	creditStroke.Parent = fnafCreditLabel
 
 	local titleBg = Instance.new("Frame")
 	titleBg.Name = "TitleGradientBg"

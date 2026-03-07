@@ -51,6 +51,60 @@ local function getReasonText(reason)
 	return REASON_MAP[reason] or reason
 end
 
+local function normalizeReasonKey(rawReason: any): string
+	if typeof(rawReason) ~= "string" then
+		return tostring(rawReason or "")
+	end
+
+	local reason = rawReason
+	local lowered = string.lower(reason)
+	local compact = string.gsub(lowered, "[^%a%d]", "")
+
+	-- Normalize all Tung variants to one canonical key for mapping/color.
+	if string.find(compact, "tungtungsahur", 1, true)
+		or string.find(compact, "tungtung", 1, true)
+		or compact == "sahur"
+		or compact == "tts"
+	then
+		return "TungTungSahur"
+	end
+
+	return reason
+end
+
+local function trim(s: string): string
+	return (string.gsub(string.gsub(s, "^%s+", ""), "%s+$", ""))
+end
+
+local function resolvePlayerKillerName(rawReason: any): string?
+	local reasonType = typeof(rawReason)
+	if reasonType == "Instance" then
+		if rawReason:IsA("Player") then
+			return rawReason.Name
+		end
+		return nil
+	end
+	if reasonType == "number" then
+		local killerPlayer = Players:GetPlayerByUserId(rawReason)
+		return killerPlayer and killerPlayer.Name or nil
+	end
+	if reasonType ~= "string" then
+		return nil
+	end
+
+	local reason = trim(rawReason)
+	if reason == "" or reason == "..." then
+		return nil
+	end
+
+	local normalized = normalizeReasonKey(reason)
+	if REASON_MAP[normalized] ~= nil then
+		return nil
+	end
+
+	return reason
+end
+
 local function createFeedEntry(text, color)
 	color = color or C.TextWhite
 
@@ -159,9 +213,27 @@ function KillFeed.Init(screenGui)
 		if not remotes then return end
 		local killFeedEvent = remotes:WaitForChild("KillFeedEvent", 10)
 		if killFeedEvent then
-			killFeedEvent.OnClientEvent:Connect(function(playerName, reason)
+			killFeedEvent.OnClientEvent:Connect(function(playerName, rawReason)
+				local reason = normalizeReasonKey(rawReason)
 				local reasonText = getReasonText(reason)
-				local text = playerName .. " was eliminated by " .. reasonText
+				local killerName = resolvePlayerKillerName(rawReason)
+				local text
+				if killerName then
+					text = tostring(killerName) .. " eliminated " .. tostring(playerName)
+					print(string.format("[KillfeedPlayer] victim=%s killerRefType=%s", tostring(playerName), typeof(rawReason)))
+					print(string.format("[KillfeedPlayer] resolvedKillerName=%s", tostring(killerName)))
+					print("[KillfeedPlayer] fallbackUsed=false")
+				elseif reason == "TungTungSahur" then
+					-- Keep cause visible on narrow/mobile layouts by placing it first.
+					text = reasonText .. " eliminated " .. tostring(playerName)
+					print(string.format("[KillfeedCause] rawCause=%s", tostring(rawReason)))
+					print(string.format("[KillfeedCause] resolvedDisplayName=%s", reasonText))
+				else
+					if reasonText == nil or tostring(reasonText) == "" or tostring(reasonText) == "..." then
+						reasonText = "Unknown"
+					end
+					text = tostring(playerName) .. " was eliminated by " .. tostring(reasonText)
+				end
 				local color = REASON_COLOR[reason] or C.TextWhite
 				createFeedEntry(text, color)
 			end)

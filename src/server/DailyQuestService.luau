@@ -169,6 +169,17 @@ local function ensureQuestData(player: Player): { [string]: any }
 	return data
 end
 
+local function resolveQuestProgress(player: Player, questDef: { [string]: any }, progressState: { [string]: any }): number
+	-- Claimed quests are inactive immediately and must never continue progressing.
+	if progressState.claimed then
+		return questDef.target
+	end
+	if questDef.type == "TimePlayed" then
+		return math.min(getSessionPlayedSeconds(player), questDef.target)
+	end
+	return progressState.progress or 0
+end
+
 -- Status builder
 
 function DailyQuestService.GetStatus(player: Player)
@@ -183,11 +194,7 @@ function DailyQuestService.GetStatus(player: Player)
 	local questList = {}
 	for _, questDef in ipairs(quests) do
 		local p = data.progress[questDef.id] or { progress = 0, claimed = false }
-
-		local progress = p.progress
-		if questDef.type == "TimePlayed" then
-			progress = math.min(getSessionPlayedSeconds(player), questDef.target)
-		end
+		local progress = resolveQuestProgress(player, questDef, p)
 
 		table.insert(questList, {
 			id          = questDef.id,
@@ -293,9 +300,7 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 	end
 
 	local progress = p.progress
-	if questDef.type == "TimePlayed" then
-		progress = math.min(getSessionPlayedSeconds(player), questDef.target)
-	end
+	progress = resolveQuestProgress(player, questDef, p)
 
 	if progress < questDef.target then
 		return { success = false, reason = "Quest not completed yet" }
@@ -305,26 +310,58 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 	local reward  = questDef.reward
 	local granted = false
 	local extra   = {}
+	local failReason = "Reward grant failed"
+	local rewardType = tostring(reward and reward.type or "")
+	local rewardId = ""
+	local rewardAmount = 1
+	if rewardType == "Coins" then
+		rewardAmount = tonumber(reward.amount) or 0
+		rewardId = "fate_coins"
+	elseif rewardType == "Spin" then
+		rewardAmount = tonumber(reward.count) or 0
+		rewardId = "spin_purchased"
+	elseif rewardType == "Crate" then
+		rewardAmount = tonumber(reward.count) or 1
+		rewardId = tostring(reward.crateId or reward.itemId or "")
+	else
+		rewardAmount = 1
+		rewardId = tostring(reward and reward.itemId or "")
+	end
+	log(string.format("[DailyQuestGrant] quest=%s rewardType=%s rewardId=%s amount=%s",
+		tostring(questId), rewardType, rewardId, tostring(rewardAmount)))
 
 	if reward.type == "Coins" then
 		local eco = getEconomy()
 		if eco then
-			eco.AwardCoins(player, reward.amount, "DailyQuest_" .. questId, true)
-			granted = true
+			local ok = eco.AwardCoins(player, reward.amount, "DailyQuest_" .. questId, true)
+			granted = ok == true
+			if not granted then
+				failReason = "COIN_GRANT_FAILED"
+			end
+		else
+			failReason = "ECONOMY_UNAVAILABLE"
 		end
 
 	elseif reward.type == "Pet" then
 		local inv = getInventory()
 		if inv then
-			inv.GrantItem(player, "Pets", reward.itemId)
-			granted = true
+			granted = inv.GrantItem(player, "Pets", reward.itemId) == true
+			if not granted then
+				failReason = "PET_GRANT_FAILED"
+			end
+		else
+			failReason = "INVENTORY_UNAVAILABLE"
 		end
 
 	elseif reward.type == "Crown" then
 		local inv = getInventory()
 		if inv then
-			inv.GrantItem(player, "Crowns", reward.itemId)
-			granted = true
+			granted = inv.GrantItem(player, "Crowns", reward.itemId) == true
+			if not granted then
+				failReason = "CROWN_GRANT_FAILED"
+			end
+		else
+			failReason = "INVENTORY_UNAVAILABLE"
 		end
 
 	elseif reward.type == "Crate" then
@@ -366,6 +403,9 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 					rollSuccess = result.success == true,
 				}
 			end
+			if not granted then
+				failReason = tostring(result and result.error or "CRATE_GRANT_FAILED")
+			end
 
 			log(string.format(
 				"[QuestCrate] quest=%s rewardType=Crate rewardId=%s resolvedCrateId=%s crateDefFound=%s granted=%s outcome=%s duplicate=%s",
@@ -377,22 +417,41 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 				tostring(extra.crateGrant and extra.crateGrant.itemId or "nil"),
 				tostring(extra.crateGrant and extra.crateGrant.isDuplicate or false)
 			))
+		else
+			failReason = "CRATE_SERVICE_UNAVAILABLE"
 		end
 
 	elseif reward.type == "Spin" then
 		local sws = getSpin()
 		if sws then
-			sws.GrantRobuxSpins(player, reward.count or 1)
-			granted = true
+			if type(sws.GetPlayerData) == "function" then
+				pcall(function()
+					sws.GetPlayerData(player)
+				end)
+			end
+			granted = sws.GrantRobuxSpins(player, reward.count or 1) == true
+			if not granted then
+				failReason = "SPIN_GRANT_FAILED"
+			end
+		else
+			failReason = "SPIN_SERVICE_UNAVAILABLE"
 		end
+	else
+		failReason = "UNSUPPORTED_REWARD_TYPE"
 	end
 
 	if not granted then
-		return { success = false, reason = "Reward grant failed" }
+		log(string.format("[DailyQuestGrant] player=%s result=FAIL reason=%s",
+			player.Name, tostring(failReason)))
+		return { success = false, reason = tostring(failReason) }
 	end
 
+	-- Deactivate immediately at lifecycle level.
+	p.progress = questDef.target
 	p.claimed = true
 	saveQuestData(player, data)
+	log(string.format("[DailyQuest] quest=%s claimed=true deactivated=true", tostring(questId)))
+	log(string.format("[DailyQuest] quest=%s trackerStopped=true", tostring(questId)))
 
 	if updateRemote then
 		updateRemote:FireClient(player, DailyQuestService.GetStatus(player))
@@ -400,6 +459,7 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 
 	log(string.format("%s claimed %s (reward: %s)",
 		player.Name, questId, DailyQuestConfig.GetRewardLabel(reward)))
+	log(string.format("[DailyQuestGrant] player=%s result=SUCCESS", player.Name))
 
 	return { success = true, reward = reward, extra = extra }
 end

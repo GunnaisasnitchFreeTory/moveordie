@@ -347,6 +347,49 @@ local function getDQS()
 	return _DQS
 end
 
+local function fireMatchOnlyEvent(action: string, extraArg: any, alertType: string)
+	if not eventRemote then
+		return
+	end
+	local recipients = {}
+	local recipientNames = {}
+	for _, player in ipairs(Players:GetPlayers()) do
+		local ok, state = pcall(function()
+			return PlayerStateService.GetState(player)
+		end)
+		if ok and state == PlayerState.States.InMatch then
+			table.insert(recipients, player)
+			table.insert(recipientNames, player.Name)
+		else
+			log(string.format("[MatchAlertSkip] player=%s state=%s reason=not_in_match", player.Name, tostring(state)))
+		end
+	end
+	for _, player in ipairs(recipients) do
+		eventRemote:FireClient(player, action, extraArg)
+	end
+	log(string.format(
+		"[MatchAlert] type=%s recipients=%s",
+		alertType,
+		(#recipientNames > 0) and table.concat(recipientNames, ",") or "none"
+	))
+end
+
+local function fireCleanupEventAll(action: string, extraArg: any, alertType: string)
+	if not eventRemote then
+		return
+	end
+	local recipients = {}
+	for _, player in ipairs(Players:GetPlayers()) do
+		table.insert(recipients, player.Name)
+		eventRemote:FireClient(player, action, extraArg)
+	end
+	log(string.format(
+		"[TungCleanup] reason=%s activeBefore=true timerStopped=true npcDespawned=true uiHidden=true recipients=%s",
+		alertType,
+		(#recipients > 0) and table.concat(recipients, ",") or "none"
+	))
+end
+
 local function despawn(reason: string)
 	if not active then return end
 	active = false
@@ -364,9 +407,9 @@ local function despawn(reason: string)
 	end
 	npcModel = nil
 
-	if eventRemote then
-		eventRemote:FireAllClients("Despawn", reason == "timer")
-	end
+	-- Despawn/cleanup must reach everyone, including players already moved out of InMatch,
+	-- so stale countdown UI cannot persist into results/lobby.
+	fireCleanupEventAll("Despawn", reason == "timer", "TungTungSahurDespawn")
 
 	-- Quest: reward all alive InMatch players when TTS ends due timer OR round-6 cleanup.
 	if reason == "timer" or reason == "round6" then
@@ -648,10 +691,7 @@ local function spawnNpc(roundNumber: number)
 	startChaseLoop()
 	startDurationTimer()
 
-	if eventRemote then
-		eventRemote:FireAllClients("Spawn", Config.DurationSeconds)
-	end
-	log("Fired Spawn event to all clients")
+	fireMatchOnlyEvent("Spawn", Config.DurationSeconds, "TungTungSahurSpawn")
 end
 
 -- --- PUBLIC API ---------------------------------------------------------------

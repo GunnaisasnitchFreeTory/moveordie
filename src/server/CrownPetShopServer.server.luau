@@ -59,6 +59,7 @@ end
 local Players = game:GetService("Players")
 
 local AFK_BILLBOARD_NAME = "AFKBillboard"
+local PLAYER_NAME_BILLBOARD_NAME = "PlayerNameBillboard"
 
 local function createAFKBillboard(character: Model)
 	if not character then return end
@@ -101,6 +102,70 @@ local function removeAFKBillboard(character: Model)
 	local existing = character:FindFirstChild(AFK_BILLBOARD_NAME)
 	if existing then
 		existing:Destroy()
+	end
+end
+
+local function applyStyledPlayerNameplate(player: Player, character: Model)
+	if not player or not character then return end
+
+	local head = character:FindFirstChild("Head")
+	if not head then return end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		-- Hide Roblox default overhead name so only the styled tag is visible.
+		humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	end
+
+	local existing = character:FindFirstChild(PLAYER_NAME_BILLBOARD_NAME)
+	if existing then
+		existing:Destroy()
+	end
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = PLAYER_NAME_BILLBOARD_NAME
+	billboard.Adornee = head
+	billboard.Size = UDim2.fromOffset(170, 28)
+	billboard.StudsOffset = Vector3.new(0, 2.25, 0)
+	billboard.AlwaysOnTop = true
+	billboard.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	billboard.MaxDistance = 120
+	billboard.Parent = character
+
+	local label = Instance.new("TextLabel")
+	label.Name = "NameLabel"
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.Text = player.Name
+	label.TextColor3 = Color3.fromRGB(255, 165, 45)
+	label.TextSize = 15
+	label.TextScaled = false
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.TextTruncate = Enum.TextTruncate.AtEnd
+	label.Parent = billboard
+
+	local textStroke = Instance.new("UIStroke")
+	textStroke.Color = Color3.fromRGB(0, 0, 0)
+	textStroke.Thickness = 1.8
+	textStroke.Transparency = 0.1
+	textStroke.Parent = label
+end
+
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(character)
+		task.defer(function()
+			applyStyledPlayerNameplate(player, character)
+		end)
+	end)
+end)
+
+for _, player in ipairs(Players:GetPlayers()) do
+	if player.Character then
+		task.defer(function()
+			applyStyledPlayerNameplate(player, player.Character)
+		end)
 	end
 end
 

@@ -25,7 +25,9 @@ export type EliminationRecord = {
 	playerId: number,
 	eliminationTime: number,
 	roundNumber: number,
-	reason: string,        -- "Beam", "OOB", "Disconnect"
+	reason: string,        -- "Beam", "OOB", "Sword", "Disconnect", etc.
+	killerName: string?,   -- Set for player-attributed eliminations (e.g. Sword)
+	killerId: number?,
 }
 
 export type PlayerEntry = {
@@ -44,6 +46,7 @@ export type PlacementGroup = {
 --[[ INTERNAL STATE ]]
 local eliminations: { EliminationRecord } = {}
 local matchPlayerIds: { [number]: boolean } = {}  -- userId set for validation
+local eliminatedByPlayerId: { [number]: EliminationRecord } = {}
 local matchId: number = 0
 local awarded: boolean = false
 
@@ -80,6 +83,7 @@ end
 function EliminationTracker.Reset(players: { Player })
 	eliminations = {}
 	matchPlayerIds = {}
+	eliminatedByPlayerId = {}
 	awarded = false
 	matchId = matchId + 1
 	
@@ -94,17 +98,15 @@ end
 	Record a player elimination.
 	Idempotent: ignores duplicate calls for the same player.
 ]]
-function EliminationTracker.RecordElimination(player: Player, roundNumber: number, reason: string)
+function EliminationTracker.RecordElimination(player: Player, roundNumber: number, reason: string, killer: Player?)
 	-- Ignore if player wasn't in this match
 	if not matchPlayerIds[player.UserId] then
 		return
 	end
 	
 	-- Prevent duplicate recording for same player
-	for _, record in ipairs(eliminations) do
-		if record.playerId == player.UserId then
-			return
-		end
+	if eliminatedByPlayerId[player.UserId] then
+		return
 	end
 	
 	local record: EliminationRecord = {
@@ -114,9 +116,12 @@ function EliminationTracker.RecordElimination(player: Player, roundNumber: numbe
 		eliminationTime = os.clock(),
 		roundNumber = roundNumber,
 		reason = reason,
+		killerName = if killer then killer.Name else nil,
+		killerId = if killer then killer.UserId else nil,
 	}
 	
 	table.insert(eliminations, record)
+	eliminatedByPlayerId[player.UserId] = record
 	log(string.format("Recorded: %s eliminated (round %d, %s) — #%d this match",
 		player.Name, roundNumber, reason, #eliminations))
 
@@ -132,9 +137,17 @@ function EliminationTracker.RecordElimination(player: Player, roundNumber: numbe
 	if remotes then
 		local killFeedEvent = remotes:FindFirstChild("KillFeedEvent")
 		if killFeedEvent then
-			killFeedEvent:FireAllClients(player.Name, reason)
+			if reason == "Sword" and record.killerName and record.killerName ~= "" then
+				killFeedEvent:FireAllClients(player.Name, record.killerName)
+			else
+				killFeedEvent:FireAllClients(player.Name, reason)
+			end
 		end
 	end
+end
+
+function EliminationTracker.IsEliminated(player: Player): boolean
+	return eliminatedByPlayerId[player.UserId] ~= nil
 end
 
 --[[

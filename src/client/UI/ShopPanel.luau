@@ -19,6 +19,7 @@ local Players            = game:GetService("Players")
 local HttpService        = game:GetService("HttpService")
 local RunService         = game:GetService("RunService")
 local ContentProvider    = game:GetService("ContentProvider")
+local UserInputService   = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
@@ -79,6 +80,10 @@ local CATEGORIES = {
 }
 
 local ShopPanel = {}
+
+local function isMobileTouchDevice(): boolean
+	return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+end
 
 local _bundlePanelOk, _BundlePanel = false, nil
 do
@@ -694,6 +699,7 @@ local function populatePetsTab()
 	setCoinsBgVisible(false)
 	setCrownBgVisible(false)
 	setPetsBgVisible(true)
+	local mobileLayout = isMobileTouchDevice()
 
 	-- Rebuild pets content with ONE vertical UIListLayout:
 	--   1) TopRow      (4 cards)
@@ -713,7 +719,7 @@ local function populatePetsTab()
 	list.SortOrder = Enum.SortOrder.LayoutOrder
 	list.FillDirection = Enum.FillDirection.Vertical
 	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	list.Padding = UDim.new(0, 12)
+	list.Padding = UDim.new(0, mobileLayout and 10 or 12)
 	list.Parent = contentFrame
 
 	local FNAF_H = 280
@@ -856,10 +862,14 @@ local function populatePetsTab()
 	topSection.Parent           = contentFrame
 
 	local grid = Instance.new("UIGridLayout")
-	grid.CellSize              = UDim2.fromOffset(S.CardWidth, S.CardHeight)
+	local topCellW = mobileLayout and math.floor(S.CardWidth * 0.78) or S.CardWidth
+	local topCellH = mobileLayout and math.floor(S.CardHeight * 0.9) or S.CardHeight
+	local topCols = mobileLayout and 2 or 4
+	grid.CellSize              = UDim2.fromOffset(topCellW, topCellH)
 	grid.CellPadding           = UDim2.fromOffset(S.CardPad, S.CardPad)
 	grid.SortOrder             = Enum.SortOrder.LayoutOrder
 	grid.FillDirection         = Enum.FillDirection.Horizontal
+	grid.FillDirectionMaxCells = topCols
 	grid.HorizontalAlignment   = Enum.HorizontalAlignment.Center
 	grid.Parent                = topSection
 
@@ -867,16 +877,20 @@ local function populatePetsTab()
 		createPetCard(topSection, item, i, false, false)
 	end
 
-	-- Tighten TopRow height to the ACTUAL rendered grid content size.
-	task.defer(function()
-		if topSection.Parent and grid.Parent then
-			local contentY = grid.AbsoluteContentSize.Y
-			if contentY and contentY > 0 then
-				-- Add a small safety buffer so card strokes/shadows never overlap next section.
-				topSection.Size = UDim2.new(1, 0, 0, contentY + 8)
-			end
-		end
-	end)
+	-- Reserve a deterministic row band for top cards on mobile so the next
+	-- section header never shares the same vertical space.
+	local topRows = math.max(1, math.ceil(#topPets / topCols))
+	local reservedTopH = topRows * topCellH + math.max(0, topRows - 1) * S.CardPad
+	topSection.Size = UDim2.new(1, 0, 0, reservedTopH + (mobileLayout and 28 or 10))
+
+	if mobileLayout then
+		local topSpacer = Instance.new("Frame")
+		topSpacer.Name = "TopToFNAFSpacer"
+		topSpacer.Size = UDim2.new(1, 0, 0, 10)
+		topSpacer.BackgroundTransparency = 1
+		topSpacer.LayoutOrder = 2
+		topSpacer.Parent = contentFrame
+	end
 
 	local fnafHeader = Instance.new("Frame")
 	fnafHeader.Name = "FNAFHeader"
@@ -884,7 +898,8 @@ local function populatePetsTab()
 	fnafHeader.BackgroundColor3 = Color3.fromRGB(10, 12, 24)
 	fnafHeader.BackgroundTransparency = 0.25
 	fnafHeader.BorderSizePixel = 0
-	fnafHeader.LayoutOrder = 2
+	fnafHeader.LayoutOrder = mobileLayout and 3 or 2
+	fnafHeader.ZIndex = 8
 	fnafHeader.Parent = contentFrame
 	Instance.new("UICorner", fnafHeader).CornerRadius = UDim.new(0, 8)
 	local headerStroke = Instance.new("UIStroke")
@@ -903,6 +918,7 @@ local function populatePetsTab()
 	headerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	headerLabel.TextSize = 16
 	headerLabel.TextXAlignment = Enum.TextXAlignment.Left
+	headerLabel.ZIndex = 9
 	headerLabel.Parent = fnafHeader
 	local headerTextStroke = Instance.new("UIStroke")
 	headerTextStroke.Color = Color3.fromRGB(0, 0, 0)
@@ -919,32 +935,42 @@ local function populatePetsTab()
 	end
 
 	-- Slightly taller banner to reduce top-edge crop while keeping Crop fill.
-	local BANNER_H = 196
-	local GRID_COLS = 4
-	local TILE_W = 156
-	local TILE_H = 130
+	local BANNER_H = mobileLayout and 148 or 196
+	local TILE_W = mobileLayout and 128 or 156
+	local TILE_H = mobileLayout and 120 or 130
 	local TILE_PAD = 10
-	local GRID_ROWS = math.max(1, math.ceil(#fnafPets / GRID_COLS))
-	local GRID_H = GRID_ROWS * TILE_H + math.max(0, GRID_ROWS - 1) * TILE_PAD
-	local BUY_ALL_H = 42
-	local INNER_PAD = 8
+	local BUY_ALL_H = mobileLayout and 40 or 42
+	local INNER_PAD = mobileLayout and 10 or 8
 	local SECTION_GAP = 12
-	local fnafSectionH = BANNER_H + SECTION_GAP + GRID_H + SECTION_GAP + BUY_ALL_H + INNER_PAD
 
 	local fnafSection = Instance.new("Frame")
 	fnafSection.Name = "FNAFSection"
-	fnafSection.Size = UDim2.new(1, 0, 0, fnafSectionH)
+	fnafSection.Size = UDim2.new(1, 0, 0, 0)
+	fnafSection.AutomaticSize = Enum.AutomaticSize.Y
 	fnafSection.BackgroundTransparency = 1
-	fnafSection.LayoutOrder = 3
+	fnafSection.LayoutOrder = mobileLayout and 4 or 3
 	fnafSection.Parent = contentFrame
+
+	local fnafPadding = Instance.new("UIPadding")
+	fnafPadding.PaddingLeft = UDim.new(0, 8)
+	fnafPadding.PaddingRight = UDim.new(0, 8)
+	fnafPadding.PaddingBottom = UDim.new(0, INNER_PAD)
+	fnafPadding.Parent = fnafSection
+
+	local fnafLayout = Instance.new("UIListLayout")
+	fnafLayout.FillDirection = Enum.FillDirection.Vertical
+	fnafLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	fnafLayout.Padding = UDim.new(0, SECTION_GAP)
+	fnafLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	fnafLayout.Parent = fnafSection
 
 	local bannerContainer = Instance.new("Frame")
 	bannerContainer.Name = "FNAFBanner"
-	bannerContainer.Size = UDim2.new(1, -16, 0, BANNER_H)
-	bannerContainer.Position = UDim2.fromOffset(8, 0)
+	bannerContainer.Size = UDim2.new(1, 0, 0, BANNER_H)
 	bannerContainer.BackgroundColor3 = Color3.fromRGB(10, 12, 24)
 	bannerContainer.BorderSizePixel = 0
 	bannerContainer.ClipsDescendants = true
+	bannerContainer.LayoutOrder = 1
 	bannerContainer.Parent = fnafSection
 	Instance.new("UICorner", bannerContainer).CornerRadius = UDim.new(0, 10)
 	local bannerStroke = Instance.new("UIStroke")
@@ -971,7 +997,7 @@ local function populatePetsTab()
 	bannerTitle.Font = Enum.Font.GothamBold
 	bannerTitle.Text = "FNAF Pets"
 	bannerTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-	bannerTitle.TextSize = 32
+	bannerTitle.TextSize = mobileLayout and 26 or 32
 	bannerTitle.TextXAlignment = Enum.TextXAlignment.Left
 	bannerTitle.ZIndex = 2
 	bannerTitle.Parent = bannerContainer
@@ -984,14 +1010,16 @@ local function populatePetsTab()
 	local gridHost = Instance.new("Frame")
 	gridHost.Name = "FNAFPetGrid"
 	gridHost.BackgroundTransparency = 1
-	gridHost.Position = UDim2.fromOffset(8, BANNER_H + SECTION_GAP)
-	gridHost.Size = UDim2.new(1, -16, 0, GRID_H)
+	gridHost.Size = UDim2.new(1, 0, 0, 0)
+	gridHost.AutomaticSize = Enum.AutomaticSize.Y
+	gridHost.LayoutOrder = 2
 	gridHost.Parent = fnafSection
 
 	local fnafGrid = Instance.new("UIGridLayout")
 	fnafGrid.CellSize = UDim2.fromOffset(TILE_W, TILE_H)
 	fnafGrid.CellPadding = UDim2.fromOffset(TILE_PAD, TILE_PAD)
 	fnafGrid.FillDirection = Enum.FillDirection.Horizontal
+	fnafGrid.FillDirectionMaxCells = mobileLayout and 2 or 4
 	fnafGrid.SortOrder = Enum.SortOrder.LayoutOrder
 	fnafGrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	fnafGrid.Parent = gridHost
@@ -1097,12 +1125,12 @@ local function populatePetsTab()
 	buyAllBtn.Name = "BuyAllFNAFBtn"
 	buyAllBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 30)
 	buyAllBtn.BorderSizePixel = 0
-	buyAllBtn.Position = UDim2.fromOffset(8, BANNER_H + SECTION_GAP + GRID_H + SECTION_GAP)
-	buyAllBtn.Size = UDim2.new(1, -16, 0, BUY_ALL_H)
+	buyAllBtn.Size = UDim2.new(1, 0, 0, BUY_ALL_H)
+	buyAllBtn.LayoutOrder = 3
 	buyAllBtn.Text = "Buy All FNAF Pets — 150,000 Fate Coins"
 	buyAllBtn.TextColor3 = Color3.fromRGB(20, 14, 0)
 	buyAllBtn.Font = Enum.Font.GothamBold
-	buyAllBtn.TextSize = 18
+	buyAllBtn.TextSize = mobileLayout and 15 or 18
 	buyAllBtn.Parent = fnafSection
 	Instance.new("UICorner", buyAllBtn).CornerRadius = UDim.new(0, 10)
 	local buyAllStroke = Instance.new("UIStroke")
@@ -1438,7 +1466,7 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	coinsBgArt.Size = content.Size
 	coinsBgArt.BackgroundTransparency = 1
 	coinsBgArt.Image = "rbxassetid://92371827400252"
-	coinsBgArt.ImageTransparency = 0.55     -- subtle, won't compete with cards
+	coinsBgArt.ImageTransparency = 0.55
 	coinsBgArt.ScaleType = Enum.ScaleType.Crop  -- cover-fill, no distortion
 	coinsBgArt.ZIndex = 4                   -- below contentFrame (ZIndex 5)
 	coinsBgArt.Visible = true               -- Coins is the default tab
@@ -1556,17 +1584,30 @@ function ShopPanel.ActivateBundleTab(bundleId: string?)
 	local BUNDLE_TAB = 4
 	activeTab = BUNDLE_TAB
 	if _setActiveTab then _setActiveTab(BUNDLE_TAB) end
+	-- Prompt-open path can bypass tab callback; force-clear stale tab backgrounds.
+	setCoinsBgVisible(false)
+	setCrownBgVisible(false)
+	setPetsBgVisible(false)
+	print("[BundlePanel] source=GameBun coinBgHidden=true")
 	clearCards()
+	if _BundlePanel and _BundlePanel.ClearContent then
+		_BundlePanel.ClearContent()
+	end
 	if _BundlePanel and _BundlePanel.PopulateInto then
 		_BundlePanel.PopulateInto(contentFrame)
 	end
 	if bundleId and _BundlePanel and _BundlePanel.SelectBundle then
 		_BundlePanel.SelectBundle(bundleId)
 	end
+	print("[BundlePanel] openStateClean=true")
 end
 
 function ShopPanel.Show()
 	if visible then return end
+	if LocalPlayer:GetAttribute("PlayerState") == "InMatch" then
+		print("[ShopPanel] Blocked Show while InMatch")
+		return
+	end
 	visible = true
 	overlay.Visible = true
 	SoundUtil.Open()

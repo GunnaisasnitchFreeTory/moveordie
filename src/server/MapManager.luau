@@ -248,6 +248,11 @@ end
 	Eliminate a player who is out of bounds.
 ]]
 local function eliminateOutOfBounds(player: Player)
+	if EliminationTracker.IsEliminated(player) then
+		shrinkLog(string.format("[ElimSkip] player=%s skippedCause=Barrier reason=already_eliminated", player.Name))
+		return
+	end
+
 	local character = player.Character
 	if not character then return end
 	

@@ -24,6 +24,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local UIConfig = require(Shared:WaitForChild("UIConfig"))
@@ -37,6 +38,10 @@ local C = UIConfig.Colors
 local S = UIConfig.Sizes
 
 local LocalPlayer = Players.LocalPlayer
+
+local function isMobileTouchDevice(): boolean
+	return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+end
 
 local canvas: CanvasGroup = nil
 local uiScale: UIScale = nil
@@ -213,12 +218,14 @@ function StatsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		end
 	end
 
-	-- Disable scroll — we have a fixed list
+	local mobileLayout = isMobileTouchDevice()
 	if content then
-		content.ScrollingEnabled = false
-		content.AutomaticCanvasSize = Enum.AutomaticSize.None
+		-- Mobile needs vertical scrolling to reach lower stat rows; desktop keeps fixed list behavior.
+		content.ScrollingEnabled = mobileLayout
+		content.AutomaticCanvasSize = mobileLayout and Enum.AutomaticSize.Y or Enum.AutomaticSize.None
 		content.CanvasSize = UDim2.fromScale(0, 0)
-		content.ScrollBarThickness = 0
+		content.ScrollingDirection = Enum.ScrollingDirection.Y
+		content.ScrollBarThickness = mobileLayout and 6 or 0
 	end
 
 	-- Inner content padding
@@ -232,6 +239,7 @@ function StatsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	listPad.PaddingLeft = UDim.new(0, 10)
 	listPad.PaddingRight = UDim.new(0, 10)
 	listPad.PaddingTop = UDim.new(0, 12)
+	listPad.PaddingBottom = UDim.new(0, mobileLayout and 14 or 0)
 	listPad.Parent = content
 
 	-- Build stat rows

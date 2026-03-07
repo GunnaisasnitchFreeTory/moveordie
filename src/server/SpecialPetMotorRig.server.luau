@@ -32,6 +32,11 @@ local TARGET_PETS: { [string]: boolean } = {
 	pet_dark_falcon = true, -- Dark Goblem
 }
 
+-- Pets in this set should keep spawn/orbit/weld behavior but never create animated Motor6D joints.
+local STATIC_SPECIAL_PETS_NO_MOTOR: { [string]: boolean } = {
+	pet_dark_falcon = true, -- Dark Goblem
+}
+
 local ORBIT_PETS: { [string]: boolean } = {
 	pet_pink_butterfly = true,
 	pet_glitched_dragon = true,
@@ -47,6 +52,11 @@ local YAW_OVERRIDE_RAD: { [string]: number } = {
 
 local PINK_BUTTERFLY_FLAP_SPEED = 8.0
 local PINK_BUTTERFLY_FLAP_AMP_RAD = math.rad(35)
+local DARK_GOBLEM_BOB_AMP = 0.55
+local DARK_GOBLEM_BOB_SPEED = 2.4
+local DARK_GOBLEM_SWAY_AMP = 0.22
+local DARK_GOBLEM_SWAY_SPEED = 1.6
+local DARK_GOBLEM_YAW_BOB_AMP_RAD = math.rad(6)
 
 type MotorInfo = {
 	motor: Motor6D,
@@ -199,6 +209,67 @@ local function ensureStaticWelds(model: Model, root: BasePart, skipParts: { [Bas
 	end
 end
 
+local function enforceDarkGoblemFullAssembly(model: Model, root: BasePart)
+	-- Dark Goblem is a static special pet now; force a rigid root assembly
+	-- so no body chunks are left disconnected by legacy intra-model joints.
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") and d ~= root then
+			removePartJoints(model, d)
+			d.Anchored = false
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.Massless = true
+
+			local wc = Instance.new("WeldConstraint")
+			wc.Name = "_DarkGoblemFullBodyWeld"
+			wc.Part0 = root
+			wc.Part1 = d
+			wc.Parent = root
+		end
+	end
+end
+
+local function getPartNameCounts(inst: Instance?): { [string]: number }
+	local counts: { [string]: number } = {}
+	if not inst then
+		return counts
+	end
+	for _, d in ipairs(inst:GetDescendants()) do
+		if d:IsA("BasePart") then
+			counts[d.Name] = (counts[d.Name] or 0) + 1
+		end
+	end
+	return counts
+end
+
+local function countParts(inst: Instance?): number
+	local n = 0
+	if not inst then
+		return n
+	end
+	for _, d in ipairs(inst:GetDescendants()) do
+		if d:IsA("BasePart") then
+			n += 1
+		end
+	end
+	return n
+end
+
+local function darkGoblemMissingParts(sourceInst: Instance?, equippedModel: Model): string
+	local src = getPartNameCounts(sourceInst)
+	local eq = getPartNameCounts(equippedModel)
+	local missing: { string } = {}
+	for name, sourceCount in pairs(src) do
+		local equippedCount = eq[name] or 0
+		if equippedCount < sourceCount then
+			table.insert(missing, string.format("%s x%d", name, sourceCount - equippedCount))
+		end
+	end
+	table.sort(missing)
+	return (#missing > 0) and table.concat(missing, ", ") or "none"
+end
+
 local function getMaxDim(model: Model): number
 	local _, size = model:GetBoundingBox()
 	return math.max(size.X, size.Y, size.Z, 0.01)
@@ -207,6 +278,47 @@ end
 local function ensurePinkButterflyVfxAttachment(model: Model, root: BasePart)
 	if model:GetAttribute("_pinkVfxFixed") == true then
 		return
+	end
+
+	local function asPath(inst: Instance?): string
+		if not inst then
+			return "nil"
+		end
+		local ok, full = pcall(function()
+			return inst:GetFullName()
+		end)
+		return (ok and full) and full or inst.Name
+	end
+
+	local function isValidLocalAttachment(att: Attachment?): boolean
+		if not att then
+			return false
+		end
+		local parent = att.Parent
+		return parent ~= nil and parent:IsA("BasePart") and att:IsDescendantOf(model)
+	end
+
+	local function findAttachmentCandidate(name: string?): Attachment?
+		if type(name) ~= "string" or name == "" then
+			return nil
+		end
+		for _, d in ipairs(model:GetDescendants()) do
+			if d:IsA("Attachment") and d.Name == name and isValidLocalAttachment(d) then
+				return d
+			end
+		end
+		return nil
+	end
+
+	local function logPinkBeam(beam: Beam, valid: boolean, action: string)
+		print(string.format(
+			"[PinkButterflyBeam] beamValid=%s attachment0=%s attachment1=%s action=%s beam=%s",
+			tostring(valid),
+			asPath(beam.Attachment0),
+			asPath(beam.Attachment1),
+			action,
+			asPath(beam)
+		))
 	end
 
 	local anchor = root:FindFirstChild("VFX_Attachment")
@@ -249,6 +361,73 @@ local function ensurePinkButterflyVfxAttachment(model: Model, root: BasePart)
 					d.Parent = anchor
 				end)
 			end
+		end
+	end
+
+	-- Pink Butterfly only: strict beam validation/rebinding on the LIVE clone.
+	for _, d in ipairs(model:GetDescendants()) do
+		if not d:IsA("Beam") then
+			continue
+		end
+		local beam = d
+		local wantedEnabled = beam.Enabled
+		beam.Enabled = false
+
+		local action = "kept"
+		local a0 = beam.Attachment0
+		local a1 = beam.Attachment1
+		local originalA0 = a0
+		local originalA1 = a1
+
+		if not isValidLocalAttachment(a0) then
+			local rebound = findAttachmentCandidate(a0 and a0.Name or nil)
+			if rebound then
+				beam.Attachment0 = rebound
+			end
+		end
+		if not isValidLocalAttachment(a1) then
+			local rebound = findAttachmentCandidate(a1 and a1.Name or nil)
+			if rebound then
+				beam.Attachment1 = rebound
+			end
+		end
+
+		a0 = beam.Attachment0
+		a1 = beam.Attachment1
+		if (a0 ~= originalA0) or (a1 ~= originalA1) then
+			action = "rebound"
+		end
+
+		local validNow = isValidLocalAttachment(a0) and isValidLocalAttachment(a1)
+		if not validNow then
+			logPinkBeam(beam, false, "destroyed")
+			beam:Destroy()
+		else
+			beam.Enabled = wantedEnabled
+			logPinkBeam(beam, true, action)
+
+			local alive = true
+			local function enforceRuntime()
+				if not alive or not beam.Parent then
+					alive = false
+					return
+				end
+				local ok = isValidLocalAttachment(beam.Attachment0) and isValidLocalAttachment(beam.Attachment1)
+				if not ok then
+					logPinkBeam(beam, false, "destroyed")
+					alive = false
+					beam:Destroy()
+				end
+			end
+			beam:GetPropertyChangedSignal("Attachment0"):Connect(enforceRuntime)
+			beam:GetPropertyChangedSignal("Attachment1"):Connect(enforceRuntime)
+			if beam.Attachment0 then
+				beam.Attachment0.AncestryChanged:Connect(enforceRuntime)
+			end
+			if beam.Attachment1 then
+				beam.Attachment1.AncestryChanged:Connect(enforceRuntime)
+			end
+			beam.AncestryChanged:Connect(enforceRuntime)
 		end
 	end
 
@@ -380,6 +559,9 @@ local function collectAnimatedParts(model: Model, petId: string): ({ BasePart },
 	local motors: { MotorInfo } = {}
 	local root = model.PrimaryPart
 	if not root then
+		return parts, motors
+	end
+	if STATIC_SPECIAL_PETS_NO_MOTOR[petId] then
 		return parts, motors
 	end
 
@@ -706,6 +888,9 @@ local function spawnFor(player: Player, petId: string)
 		ensurePinkFaceAttachment(model, root)
 	end
 	ensureStaticWelds(model, root, skip)
+	if petId == "pet_dark_falcon" then
+		enforceDarkGoblemFullAssembly(model, root)
+	end
 	if petId == "pet_pink_butterfly" then
 		ensurePinkButterflyVfxAttachment(model, root)
 	end
@@ -722,6 +907,16 @@ local function spawnFor(player: Player, petId: string)
 	print(string.format("[PetOrbit] pet=%s orbitEnabled=%s attachType=weld",
 		petDisplayName(petId),
 		tostring(ORBIT_PETS[petId] == true)))
+	if petId == "pet_dark_falcon" then
+		local sourceParts = countParts(source)
+		local equippedParts = countParts(model)
+		local missing = darkGoblemMissingParts(source, model)
+		local result = if missing == "none" then "SUCCESS" else "FAIL"
+		print(string.format("[DarkGoblemBuild] sourceParts=%d", sourceParts))
+		print(string.format("[DarkGoblemBuild] equippedParts=%d", equippedParts))
+		print(string.format("[DarkGoblemBuild] missingParts=%s", missing))
+		print(string.format("[DarkGoblemBuild] result=%s", result))
+	end
 	if petId == "pet_glitched_dragon" then
 		print("[PetAnimCfg] pet=pet_glitched_dragon flapDisabled=true")
 	end
@@ -781,7 +976,16 @@ local function updateEntry(entry: ActiveEntry, dt: number)
 		local y = 2.6 + math.sin(t * bobSpeed + entry.phase) * bobAmp
 		entry.rootWeld.C0 = CFrame.new(x, y, z) * CFrame.Angles(0, yaw, 0)
 	else
-		entry.rootWeld.C0 = CFrame.new(3, 2.8, 2) * CFrame.Angles(0, yaw, 0)
+		if entry.petId == "pet_dark_falcon" then
+			-- Dark Goblem: floating/bobbling idle at a fixed follow offset (no orbit).
+			local sx = math.sin(t * DARK_GOBLEM_SWAY_SPEED + entry.phase) * DARK_GOBLEM_SWAY_AMP
+			local sy = math.sin(t * DARK_GOBLEM_BOB_SPEED + entry.phase) * DARK_GOBLEM_BOB_AMP
+			local sz = math.cos(t * (DARK_GOBLEM_SWAY_SPEED * 0.9) + entry.phase) * (DARK_GOBLEM_SWAY_AMP * 0.7)
+			local yawBob = math.sin(t * 1.2 + entry.phase) * DARK_GOBLEM_YAW_BOB_AMP_RAD
+			entry.rootWeld.C0 = CFrame.new(3 + sx, 2.8 + sy, 2 + sz) * CFrame.Angles(0, yaw + yawBob, 0)
+		else
+			entry.rootWeld.C0 = CFrame.new(3, 2.8, 2) * CFrame.Angles(0, yaw, 0)
+		end
 	end
 
 	local applied = 0

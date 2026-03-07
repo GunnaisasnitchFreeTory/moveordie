@@ -15,6 +15,8 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local PlayerState = require(Shared:WaitForChild("PlayerState"))
 
 local SwordPickupController = {}
 
@@ -164,6 +166,10 @@ local function showAnnouncement(data)
 	end)
 end
 
+local function isLocalPlayerInMatch(): boolean
+	return Players.LocalPlayer:GetAttribute("PlayerState") == PlayerState.States.InMatch
+end
+
 local function showDeniedMessage()
 	local player = Players.LocalPlayer
 	local playerGui = player:FindFirstChild("PlayerGui")
@@ -231,6 +237,9 @@ function SwordPickupController.Init()
 				if data.denied then
 					showDeniedMessage()
 				else
+					if data.matchOnly and not isLocalPlayerInMatch() then
+						return
+					end
 					showAnnouncement(data)
 				end
 			end

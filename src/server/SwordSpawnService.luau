@@ -29,6 +29,9 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Server = ServerScriptService:WaitForChild("Server")
 local MapManager = require(Server:WaitForChild("MapManager"))
 local EconomyService = require(Server:WaitForChild("EconomyService"))
+local PlayerState = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("PlayerState"))
+local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
+local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
 
 local MAX_SPAWN_ROUND = 7
 local SWORD_LIFESPAN_ROUNDS = 2
@@ -78,6 +81,7 @@ local swordHolders: { [Player]: { tool: Tool, spawnRound: number, deathConn: RBX
 
 local swordSpawnedRemote: RemoteEvent? = nil
 local swordDeniedCooldowns: { [number]: number } = {}
+local fireSwordSpawnMatchAlert: (() -> ())? = nil
 
 local _spawnLoopActive = false
 local _currentRound = 0
@@ -419,7 +423,7 @@ local function spawnSwordPickup(roundNumber: number)
 	))
 
 	if swordSpawnedRemote then
-		swordSpawnedRemote:FireAllClients({ soundId = SOUND_ID })
+		fireSwordSpawnMatchAlert()
 	end
 end
 
@@ -460,9 +464,54 @@ local function onAnyPlayerDied(victim: Player)
 	local killer = creatorTag.Value
 	if not killer or not killer:IsA("Player") then return end
 
-	if swordHolders[killer] then
-		onSwordKill(killer, victim)
+	if PlayerStateService.GetState(victim) ~= PlayerState.States.InMatch then
+		return
 	end
+	if EliminationTracker.IsEliminated(victim) then
+		log(string.format("[ElimSkip] player=%s skippedCause=Sword reason=already_eliminated", victim.Name))
+		return
+	end
+
+	local round = math.max(_currentRound, 1)
+	EliminationTracker.RecordElimination(victim, round, "Sword", killer)
+	PlayerStateService.SetState(victim, PlayerState.States.Lobby)
+
+	local aliveCount = #PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+	log(string.format("[SwordElim] killer=%s victim=%s authoritative=true", killer.Name, victim.Name))
+	log(string.format("[RoundAlive] aliveCount=%d", aliveCount))
+	if aliveCount <= 1 then
+		log("[RoundEnd] triggerCause=SwordFinalKill")
+	end
+
+	onSwordKill(killer, victim)
+end
+
+fireSwordSpawnMatchAlert = function()
+	if not swordSpawnedRemote then
+		return
+	end
+	local recipients = {}
+	local recipientNames = {}
+	for _, player in ipairs(Players:GetPlayers()) do
+		local state = PlayerStateService.GetState(player)
+		if state == PlayerState.States.InMatch then
+			table.insert(recipients, player)
+			table.insert(recipientNames, player.Name)
+		else
+			log(string.format("[MatchAlertSkip] player=%s state=%s reason=not_in_match", player.Name, tostring(state)))
+		end
+	end
+	for _, player in ipairs(recipients) do
+		swordSpawnedRemote:FireClient(player, {
+			soundId = SOUND_ID,
+			matchOnly = true,
+			alertType = "SwordSpawn",
+		})
+	end
+	log(string.format(
+		"[MatchAlert] type=SwordSpawn recipients=%s",
+		(#recipientNames > 0) and table.concat(recipientNames, ",") or "none"
+	))
 end
 
 function SwordSpawnService.Init()

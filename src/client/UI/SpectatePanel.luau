@@ -438,6 +438,10 @@ end
 
 function SpectatePanel.Show()
 	if visible then return end
+	if LocalPlayer:GetAttribute("PlayerState") == "InMatch" then
+		log("Blocked Show while InMatch")
+		return
+	end
 	visible = true
 	overlay.Visible = true
 	refresh()

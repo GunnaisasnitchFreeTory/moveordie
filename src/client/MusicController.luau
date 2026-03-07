@@ -26,6 +26,8 @@ local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local PlayerState = require(Shared:WaitForChild("PlayerState"))
 
 local MusicController = {}
 
@@ -77,6 +79,7 @@ local bgmGroup: SoundGroup       = nil
 local activeSound: Sound?        = nil   -- the ONE playing music Sound
 local activeFadeTween: Tween?    = nil
 local currentContext: string?    = nil   -- "lobby" | "map"
+local lastLoggedPlayerState: string? = nil
 local intermissionWarned         = false
 local _initialized               = false
 
@@ -293,20 +296,32 @@ end
 -- CONTEXT DETECTION
 -- ═══════════════════════════════════════════════════════════════════
 
+local function resolveContextFromPlayerState(state: string?): string
+	if state == PlayerState.States.InMatch then
+		return "map"
+	end
+	-- Lobby/Waiting/AFK/Spectating/default all route to lobby music.
+	return "lobby"
+end
+
 local function updateContext()
 	local state = LocalPlayer:GetAttribute("PlayerState")
-	if state == "InMatch" then
+	local targetContext = resolveContextFromPlayerState(state)
+	if targetContext == "map" then
 		startMap()
 	else
 		startLobby()
 	end
-end
 
-local function onMatchStateChanged(matchState: string)
-	if matchState == "Playing" then
-		startMap()
-	else
-		startLobby()
+	if state ~= lastLoggedPlayerState then
+		lastLoggedPlayerState = state
+		local activeTrack = if targetContext == "map" then "Map" else "Lobby"
+		log(string.format(
+			"[MusicState] player=%s state=%s activeTrack=%s",
+			LocalPlayer.Name,
+			tostring(state),
+			activeTrack
+		))
 	end
 end
 
@@ -405,7 +420,9 @@ function MusicController.Init()
 
 		if stateVal then
 		stateVal.Changed:Connect(function()
-			onMatchStateChanged(stateVal.Value)
+			-- MatchStatus is global; do not drive per-player music from it.
+			-- Re-evaluate using local authoritative PlayerState only.
+			updateContext()
 			-- Reset flag so the next intermission cycle can trigger the SFX
 			intermissionWarned = false
 			-- If leaving intermission, hard-stop any playing countdown SFX

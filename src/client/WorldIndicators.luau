@@ -100,20 +100,17 @@ local function findTargetByNameHint(targetName: string): Instance?
 	if targetName == "Brainrot Game Bun" then
 		local best: Instance? = nil
 		local bestParts = -1
-		local bestTopY = -math.huge
 		for _, d in ipairs(workspace:GetDescendants()) do
 			if d.Name == targetName and (d:IsA("Model") or d:IsA("Folder")) then
-				local _, _, topY = computeBounds(d)
 				local parts = 0
 				for _, p in ipairs(d:GetDescendants()) do
 					if p:IsA("BasePart") then
 						parts += 1
 					end
 				end
-				if parts > bestParts or (parts == bestParts and (topY or -math.huge) > bestTopY) then
+				if parts > bestParts then
 					best = d
 					bestParts = parts
-					bestTopY = topY or -math.huge
 				end
 			end
 		end
@@ -175,23 +172,52 @@ local function computeBounds(instance: Instance): (number?, number?, number?, Ve
 	return (minX + maxX) / 2, (minZ + maxZ) / 2, maxY, size
 end
 
+local function computeAnchorPosition(target: Instance, padding: number): (Vector3?, Vector3?)
+	local cx, cz, topY, bboxSize = computeBounds(target)
+	if not cx then
+		return nil, nil
+	end
+	return Vector3.new(cx, topY + padding, cz), bboxSize
+end
+
+local function findBrainrotAnchorPart(target: Instance): BasePart?
+	-- Deterministic Brainrot anchor rule:
+	-- use one explicit stable display part only, never generic/floor/top-extents fallback.
+	-- This keeps the badge above/on the visible Brainrot bun (matching Crate/Spin style).
+	local displayPart = target:FindFirstChild("Steve Harrington Icon Image")
+	if displayPart and displayPart:IsA("BasePart") then
+		return displayPart
+	end
+	return nil
+end
+
 --- Find or create an invisible anchor Part at the bounding-box top-center.
 --- Reuses existing anchor if already present (streaming/respawn safe).
 local function getOrCreateAnchor(target: Instance, targetName: string, padding: number): BasePart?
 	local anchorName = ANCHOR_PREFIX .. targetName
 
-	-- Reuse existing anchor
-	local existing = target:FindFirstChild(anchorName)
-	if existing and existing:IsA("BasePart") then
-		return existing
+	local anchorPos, bboxSize
+	if targetName == "Brainrot Game Bun" then
+		local brainrotPart = findBrainrotAnchorPart(target)
+		if not brainrotPart then
+			return nil
+		end
+		local topY = brainrotPart.Position.Y + brainrotPart.Size.Y * 0.5
+		anchorPos = Vector3.new(brainrotPart.Position.X, topY + padding, brainrotPart.Position.Z)
+		bboxSize = brainrotPart.Size
+	else
+		-- Always recompute desired position from LIVE bounds so streaming cannot leave a stale anchor.
+		anchorPos, bboxSize = computeAnchorPosition(target, padding)
+		if not anchorPos then return nil end
 	end
 
-	-- Compute bounding box from all descendant parts
-	local cx, cz, topY, bboxSize = computeBounds(target)
-	if not cx then return nil end
-
-	-- Position at horizontal center, vertical top + padding
-	local anchorPos = Vector3.new(cx, topY + padding, cz)
+	-- Reuse existing anchor, but refresh position to live bounds.
+	local existing = target:FindFirstChild(anchorName)
+	if existing and existing:IsA("BasePart") then
+		-- Keep a single authoritative placement source; always snap to its live value.
+		existing.Position = anchorPos
+		return existing
+	end
 
 	local anchor = Instance.new("Part")
 	anchor.Name = anchorName
@@ -320,6 +346,7 @@ function WorldIndicators.Init()
 			-- Find target with retries (streaming)
 			local target = nil
 			local retries = cfg.retries or 12
+			local initDelayedUntilAnchor = false
 			for attempt = 1, retries do
 				target = findTargetByNameHint(cfg.targetName)
 				if target then break end
@@ -333,11 +360,27 @@ function WorldIndicators.Init()
 
 			-- Wait for descendant BaseParts to stream in, then create anchor
 			local anchor = nil
-			for attempt = 1, 10 do
+			if cfg.targetName == "Brainrot Game Bun" then
+				local anchorPart = nil
+				for attempt = 1, 120 do
+					anchorPart = findBrainrotAnchorPart(target)
+					if anchorPart then break end
+					initDelayedUntilAnchor = true
+					log("[BrainrotPrompt] anchorFound=false placementSource=BrainrotDisplayPart initDelayedUntilAnchor=true")
+					task.wait(1)
+				end
+				if anchorPart then
+					log(string.format("[BrainrotPrompt] anchorFound=%s placementSource=BrainrotDisplayPart initDelayedUntilAnchor=%s",
+						anchorPart:GetFullName(), tostring(initDelayedUntilAnchor)))
+				end
 				anchor = getOrCreateAnchor(target, cfg.targetName, cfg.extraPadding or 3)
-				if anchor then break end
-				log(cfg.targetName .. " not ready — retrying...")
-				task.wait(1)
+			else
+				for attempt = 1, 10 do
+					anchor = getOrCreateAnchor(target, cfg.targetName, cfg.extraPadding or 3)
+					if anchor then break end
+					log(cfg.targetName .. " not ready — retrying...")
+					task.wait(1)
+				end
 			end
 			if not anchor then
 				warn("[WorldIndicators] " .. cfg.targetName .. " missing BasePart — skipped")
@@ -355,6 +398,10 @@ function WorldIndicators.Init()
 			cleanupDuplicateIndicators(cfg.text, anchor)
 			if cfg.pulse then
 				startPulse(billboard)
+			end
+			-- Brainrot indicator is fixed-anchor only (no runtime re-position loop).
+			if cfg.targetName == "Brainrot Game Bun" then
+				log(string.format("[BrainrotPrompt] finalY=%.2f placementSource=BrainrotDisplayPart", anchor.Position.Y))
 			end
 			successCount += 1
 			log(string.format("Created: %s above %s", cfg.text, cfg.targetName))

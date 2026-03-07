@@ -54,6 +54,8 @@ local intermissionVisible = false
 local bannerOverrideHidden = false
 
 local HUDPanel = {}
+local isMobileTouch = UserInputService.TouchEnabled
+local coinRestScale = 1
 
 local function formatCoins(n: number): string
 	if n >= 1000000 then return string.format("%.1fM", n / 1000000) end
@@ -124,9 +126,8 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	coinScale = Instance.new("UIScale")
 	coinScale.Parent = coinFrame
 	-- Mobile: shrink the coin frame so it doesn't crowd the sidebar
-	if UserInputService.TouchEnabled then
-		coinScale.Scale = 0.75
-	end
+	coinRestScale = isMobileTouch and 0.75 or 1
+	coinScale.Scale = coinRestScale
 
 	local coinIcon = Instance.new("TextLabel")
 	coinIcon.Name = "CoinIcon"
@@ -574,7 +575,19 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		local newText = formatCoins(coins)
 		if coinLabel.Text ~= newText then
 			coinLabel.Text = newText
-			AnimUtil.Bump(coinScale)
+			-- Always return to the platform's resting scale after each pulse.
+			coinScale.Scale = coinRestScale
+			local bumpPeak = coinRestScale * (UIConfig.Anim.CoinBumpScale or 1.15)
+			AnimUtil.Bump(coinScale, bumpPeak, UIConfig.Anim.CoinBumpDuration, coinRestScale)
+			if isMobileTouch then
+				print(string.format(
+					"[CoinFrameAnim] platform=Mobile start=%.3f animated=%.3f final=%.3f",
+					coinRestScale,
+					bumpPeak,
+					coinRestScale
+				))
+				print("[CoinFrameAnim] resetToMobileRestingState=true")
+			end
 			SoundUtil.CoinCollect()
 		end
 	end

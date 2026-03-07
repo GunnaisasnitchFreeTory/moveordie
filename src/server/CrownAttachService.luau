@@ -41,6 +41,51 @@ local function log(...)
 	print(TAG, ...)
 end
 
+local function ensureValidBeam(beam: Beam): boolean
+	local function invalidate()
+		if beam.Parent then
+			beam:Destroy()
+		end
+	end
+	local function isAttachmentValid(att: Attachment?): boolean
+		return att ~= nil and att.Parent ~= nil and att:IsDescendantOf(game)
+	end
+	local function validateNow()
+		if not beam.Parent then
+			return false
+		end
+		local a0 = beam.Attachment0
+		local a1 = beam.Attachment1
+		if not isAttachmentValid(a0) or not isAttachmentValid(a1) then
+			invalidate()
+			return false
+		end
+		return true
+	end
+
+	if not validateNow() then
+		return false
+	end
+
+	beam:GetPropertyChangedSignal("Attachment0"):Connect(validateNow)
+	beam:GetPropertyChangedSignal("Attachment1"):Connect(validateNow)
+	local a0 = beam.Attachment0
+	local a1 = beam.Attachment1
+	if a0 then
+		a0.AncestryChanged:Connect(validateNow)
+	end
+	if a1 then
+		a1.AncestryChanged:Connect(validateNow)
+	end
+	beam.AncestryChanged:Connect(function()
+		if beam.Parent then
+			validateNow()
+		end
+	end)
+
+	return true
+end
+
 -- =====================================================================
 -- HELPERS
 -- =====================================================================
@@ -183,8 +228,10 @@ local function attachCrown(character: Model, crownId: string)
 			desc.Enabled = true
 			vfxCount += 1
 		elseif desc:IsA("Beam") then
-			desc.Enabled = true
-			vfxCount += 1
+			if ensureValidBeam(desc) then
+				desc.Enabled = true
+				vfxCount += 1
+			end
 		elseif desc:IsA("Fire") or desc:IsA("Sparkles") or desc:IsA("Smoke") then
 			desc.Enabled = true
 			vfxCount += 1

@@ -103,7 +103,7 @@ local PET_NO_ROLL_WOBBLE: { [string]: boolean } = {
 local PET_SCALE_OVERRIDES: { [string]: number } = {
 	-- Keep base normalization path unchanged for these; massive scaling is applied
 	-- later at final spawn stage so it cannot be re-normalized back down.
-	pet_huggy_wuggy = 2.2,
+	pet_huggy_wuggy = 1.0,
 	pet_glitched_dragon = 1.0,
 	pet_dark_falcon = 1.0,        -- Dark Goblem
 	pet_pink_butterfly = 1.0,
@@ -118,7 +118,7 @@ local PET_MASSIVE_SCALE_TARGETS: { [string]: boolean } = {
 }
 
 local PET_FINAL_SPAWN_SCALE_MULTIPLIER: { [string]: number } = {
-	pet_huggy_wuggy = 3.2,
+	pet_huggy_wuggy = 1.8,
 	pet_glitched_dragon = 3.5, -- slight shrink only
 	pet_dark_falcon = 2.8,        -- Dark Goblem
 	pet_pink_butterfly = 2.6,

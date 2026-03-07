@@ -764,6 +764,11 @@ function HazardManager.Strike(): number
 	
 	-- Check each player for beam intersection
 	for _, player in ipairs(inMatchPlayers) do
+		if EliminationTracker.IsEliminated(player) then
+			log(string.format("[ElimSkip] player=%s skippedCause=Barrier reason=already_eliminated", player.Name))
+			continue
+		end
+
 		local character = player.Character
 		if not character then continue end
 		

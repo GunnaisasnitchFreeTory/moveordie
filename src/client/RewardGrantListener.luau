@@ -27,6 +27,7 @@ local function mapSinglePayload(payload)
 			rarityText = "Common",
 			icon = payload.popupImageOverride or "rbxassetid://72345557707985",
 			okText = "NICE!",
+			popupSource = tostring(payload.source or ""),
 		}
 	elseif rewardType == "Spin" then
 		local amount = tonumber(payload.amount) or 0
@@ -38,6 +39,7 @@ local function mapSinglePayload(payload)
 			rarityText = "Rare",
 			icon = payload.popupImageOverride or "",
 			okText = "NICE!",
+			popupSource = tostring(payload.source or ""),
 		}
 	end
 	local iconAsset = payload.imageAssetId or payload.popupImageOverride or ""
@@ -50,6 +52,7 @@ local function mapSinglePayload(payload)
 		rarityText = payload.rarity or "Common",
 		icon = iconAsset,
 		okText = "NICE!",
+		popupSource = tostring(payload.source or ""),
 	}
 end
 
@@ -123,6 +126,9 @@ function RewardGrantListener.Init()
 			local pType = tostring(payload.type or payload.grantType or "")
 			if pType ~= "Crown" and pType ~= "Pet" and pType ~= "IconImage" then
 				return
+			end
+			if not payload.source or payload.source == "" then
+				payload.source = "Shop"
 			end
 			print(string.format("[ShopGrantPopup] type=%s id=%s image=%s",
 				pType,

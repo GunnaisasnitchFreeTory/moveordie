@@ -227,17 +227,18 @@ end
 
 --[[
 	Quick scale "bump" (e.g. coin counter update).
-	Scales up then back to 1.
+	Scales up then back to a caller-defined rest scale.
 ]]
-function AnimUtil.Bump(uiScale: UIScale, peakScale: number?, duration: number?)
+function AnimUtil.Bump(uiScale: UIScale, peakScale: number?, duration: number?, restScale: number?)
 	peakScale = peakScale or cfg.CoinBumpScale
 	duration = duration or cfg.CoinBumpDuration
+	restScale = restScale or 1
 
 	local half = duration * 0.4
 	local t = AnimUtil.Tween(uiScale, { Scale = peakScale }, half, Enum.EasingStyle.Back)
 	task.spawn(function()
 		t.Completed:Wait()
-		AnimUtil.Tween(uiScale, { Scale = 1 }, duration - half, Enum.EasingStyle.Quad)
+		AnimUtil.Tween(uiScale, { Scale = restScale }, duration - half, Enum.EasingStyle.Quad)
 	end)
 end
 

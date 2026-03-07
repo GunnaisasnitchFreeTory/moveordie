@@ -280,6 +280,23 @@ local function safeTeleport(player: Player, targetCFrame: CFrame): boolean
 	return true
 end
 
+local function restoreLobbyHealth(player: Player)
+	local character = player.Character
+	if not character then
+		return
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+	if humanoid.MaxHealth <= 0 then
+		return
+	end
+	local before = humanoid.Health
+	humanoid.Health = humanoid.MaxHealth
+	log(string.format("Lobby health restore: %s %.0f->%.0f", player.Name, before, humanoid.Health))
+end
+
 local function teleportPlayersToArena(players: { Player })
 	if #players == 0 then return end
 	
@@ -355,11 +372,13 @@ local function teleportPlayersToLobby(players: { Player })
 		
 		if safeTeleport(player, targetCFrame) then
 			teleported = teleported + 1
+			restoreLobbyHealth(player)
 		else
 			task.spawn(function()
 				for _ = 1, SpawnConfig.MaxTeleportRetries do
 					task.wait(SpawnConfig.TeleportRetryDelay)
 					if safeTeleport(player, targetCFrame) then
+						restoreLobbyHealth(player)
 						break
 					end
 				end
@@ -424,6 +443,7 @@ local function setMatchPlayersToLobby()
 	
 	for _, player in ipairs(inMatchPlayers) do
 		PlayerStateService.SetState(player, PlayerState.States.Lobby)
+		restoreLobbyHealth(player)
 	end
 	
 	log(string.format("Returned %d remaining players to Lobby", #inMatchPlayers))
