@@ -452,6 +452,19 @@ local function buildOneRow(sf, questData, rowIndex)
 							rarityText = petDef and petDef.rarity or "Epic",
 							okText     = "CLAIM!",
 						})
+					elseif rw.type == "IconImage" then
+						local iconDef = ItemCatalog.IconImages and ItemCatalog.IconImages[rw.itemId]
+						local questReward = { type = "IconImage", itemId = rw.itemId }
+						RewardPopup.Show({
+							title      = "QUEST COMPLETE!",
+							name       = iconDef and iconDef.name or rw.itemId,
+							itemId     = rw.itemId,
+							itemType   = "IconImage",
+							icon       = QuestRewardIconResolver.GetQuestRewardIcon(questReward),
+							questReward = questReward,
+							rarityText = iconDef and iconDef.rarity or "Legendary",
+							okText     = "CLAIM!",
+						})
 					elseif rw.type == "Crate" then
 						local questReward = { type = "Crate", crateId = rw.crateId, count = rw.count }
 						local extra = result.extra
@@ -532,6 +545,42 @@ local function buildQuestRows(quests, day)
 	_builtForDay = day
 end
 
+local function shouldRebuildRows(status)
+	if not status or type(status.quests) ~= "table" then
+		return false
+	end
+	if _builtForDay ~= status.day or next(_questRows) == nil then
+		return true
+	end
+
+	local rowCount = 0
+	for _ in pairs(_questRows) do
+		rowCount += 1
+	end
+	if rowCount ~= #status.quests then
+		return true
+	end
+	for _, quest in ipairs(status.quests) do
+		if not _questRows[quest.id] then
+			return true
+		end
+	end
+	return false
+end
+
+local function syncEmptyStateLabel()
+	if not scrollFrame then return end
+	local lbl = scrollFrame:FindFirstChild("LoadingLabel")
+	if not lbl or not lbl:IsA("TextLabel") then return end
+	if next(_questRows) == nil then
+		lbl.Text = "No active quests right now."
+		lbl.Visible = true
+	else
+		lbl.Text = "Loading quests..."
+		lbl.Visible = false
+	end
+end
+
 -- FULL UI REFRESH
 
 local function refreshUI()
@@ -539,9 +588,10 @@ local function refreshUI()
 	if not status or not status.quests or not status.dataLoaded then return end
 	_status = status
 
-	if _builtForDay ~= status.day or next(_questRows) == nil then
+	if shouldRebuildRows(status) then
 		clearQuestRows()
 		buildQuestRows(status.quests, status.day)
+		syncEmptyStateLabel()
 	else
 		for _, quest in ipairs(status.quests) do
 			local rowData = _questRows[quest.id]
@@ -828,13 +878,10 @@ function QuestsPanel.Init(screenGui, onClose)
 			_updateRemote.OnClientEvent:Connect(function(status)
 				_status = status
 				if not status or not status.quests then return end
-				if _builtForDay ~= status.day or next(_questRows) == nil then
+				if shouldRebuildRows(status) then
 					clearQuestRows()
 					buildQuestRows(status.quests, status.day)
-					if scrollFrame then
-						local lbl = scrollFrame:FindFirstChild("LoadingLabel")
-						if lbl then lbl.Visible = false end
-					end
+					syncEmptyStateLabel()
 				elseif visible then
 					for _, quest in ipairs(status.quests) do
 						local rowData = _questRows[quest.id]

@@ -46,10 +46,16 @@ local LOBBY_TRACK_B_ID      = "rbxassetid://100199384595840"
 local LOBBY_TRACK_B_START   = 10
 local LOBBY_TRACK_B_VOLUME  = 1.0
 
--- Map music (ONLY this track — no others)
-local MAP_TRACK_ID          = "rbxassetid://79513722933054"
-local MAP_TRACK_START       = 32
-local MAP_TRACK_VOLUME      = 0.48
+-- Match music (mode-aware)
+-- Normal mode keeps existing track ID as requested.
+local NORMAL_MAP_TRACK_ID       = "rbxassetid://79513722933054"
+local NORMAL_MAP_TRACK_START    = 32
+local NORMAL_MAP_TRACK_VOLUME   = 0.48
+
+-- Save a Brainrot mode track (new)
+local BRAINROT_MAP_TRACK_ID     = "rbxassetid://81348512826018"
+local BRAINROT_MAP_TRACK_START  = 0
+local BRAINROT_MAP_TRACK_VOLUME = 0.48
 
 -- Crossfade transition (both tracks overlap — no silent gap)
 local CROSSFADE_TIME        = 1.2
@@ -78,10 +84,12 @@ local LEGACY_SOUND_NAMES = {
 local bgmGroup: SoundGroup       = nil
 local activeSound: Sound?        = nil   -- the ONE playing music Sound
 local activeFadeTween: Tween?    = nil
-local currentContext: string?    = nil   -- "lobby" | "map"
+local currentContext: string?    = nil   -- "lobby" | "normal_match" | "brainrot_match"
 local lastLoggedPlayerState: string? = nil
+local lastLoggedAudioState: string? = nil
 local intermissionWarned         = false
 local _initialized               = false
+local matchStatusModeValue: StringValue? = nil
 
 -- SFX sounds (persistent, not part of single-channel)
 local winSfx: Sound?             = nil
@@ -213,6 +221,7 @@ local function crossfadeTo(newName: string, newId: string, newStart: number, new
 	activeSound = nil
 
 	if oldSound and oldSound.Parent then
+		log(string.format("Previous track stopping: name=%s id=%s", oldSound.Name, oldSound.SoundId))
 		_fadingOutSound = oldSound
 		local fadeOut = TweenService:Create(oldSound, TweenInfo.new(CROSSFADE_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 			Volume = 0,
@@ -241,6 +250,7 @@ local function crossfadeTo(newName: string, newId: string, newStart: number, new
 	activeSound = newSound
 
 	newSound:Play()
+	log(string.format("New track started: name=%s id=%s looped=%s", newName, newId, tostring(looped)))
 
 	local fadeIn = TweenService:Create(newSound, TweenInfo.new(CROSSFADE_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		Volume = newVolume,
@@ -284,43 +294,59 @@ end
 -- MAP MUSIC
 -- ═══════════════════════════════════════════════════════════════════
 
-local function startMap()
-	if currentContext == "map" then return end
-	currentContext = "map"
-	log("Context → map")
+local function startNormalMap()
+	if currentContext == "normal_match" then return end
+	currentContext = "normal_match"
+	log("Context → normal_match")
+	crossfadeTo("MapMusic_Normal", NORMAL_MAP_TRACK_ID, NORMAL_MAP_TRACK_START, NORMAL_MAP_TRACK_VOLUME, true)
+end
 
-	crossfadeTo("MapMusic", MAP_TRACK_ID, MAP_TRACK_START, MAP_TRACK_VOLUME, true)
+local function startBrainrotMap()
+	if currentContext == "brainrot_match" then return end
+	currentContext = "brainrot_match"
+	log("Context → brainrot_match")
+	-- Smooth transition requirement: fade from lobby -> brainrot (and any context switch) via crossfade.
+	crossfadeTo("MapMusic_Brainrot", BRAINROT_MAP_TRACK_ID, BRAINROT_MAP_TRACK_START, BRAINROT_MAP_TRACK_VOLUME, true)
 end
 
 -- ═══════════════════════════════════════════════════════════════════
 -- CONTEXT DETECTION
 -- ═══════════════════════════════════════════════════════════════════
 
-local function resolveContextFromPlayerState(state: string?): string
+local function resolveAudioStateFromContext(state: string?): string
+	-- Only players actively in the match hear match music.
 	if state == PlayerState.States.InMatch then
-		return "map"
+		local mode = matchStatusModeValue and matchStatusModeValue.Value or "Normal"
+		if mode == "Brainrot" then
+			return "BrainrotMatch"
+		end
+		return "NormalMatch"
 	end
-	-- Lobby/Waiting/AFK/Spectating/default all route to lobby music.
-	return "lobby"
+	-- Lobby/Waiting/AFK/Spectating/default: lobby music only.
+	return "Lobby"
 end
 
 local function updateContext()
 	local state = LocalPlayer:GetAttribute("PlayerState")
-	local targetContext = resolveContextFromPlayerState(state)
-	if targetContext == "map" then
-		startMap()
+	local audioState = resolveAudioStateFromContext(state)
+	if audioState == "NormalMatch" then
+		startNormalMap()
+	elseif audioState == "BrainrotMatch" then
+		startBrainrotMap()
 	else
 		startLobby()
 	end
 
-	if state ~= lastLoggedPlayerState then
+	if state ~= lastLoggedPlayerState or audioState ~= lastLoggedAudioState then
 		lastLoggedPlayerState = state
-		local activeTrack = if targetContext == "map" then "Map" else "Lobby"
+		lastLoggedAudioState = audioState
+		local selectedMusicId = activeSound and activeSound.SoundId or "none"
 		log(string.format(
-			"[MusicState] player=%s state=%s activeTrack=%s",
+			"[MusicState] player=%s audioState=%s playerState=%s selectedMusicId=%s",
 			LocalPlayer.Name,
+			audioState,
 			tostring(state),
-			activeTrack
+			tostring(selectedMusicId)
 		))
 	end
 end
@@ -417,6 +443,14 @@ function MusicController.Init()
 
 		local stateVal    = matchStatus:WaitForChild("State", 10)
 		local phaseEndVal = matchStatus:WaitForChild("PhaseEndTime", 10)
+		local modeVal     = matchStatus:WaitForChild("Mode", 10)
+		if modeVal and modeVal:IsA("StringValue") then
+			matchStatusModeValue = modeVal
+			modeVal.Changed:Connect(function()
+				-- Re-evaluate per-player routing when selected match mode changes.
+				updateContext()
+			end)
+		end
 
 		if stateVal then
 		stateVal.Changed:Connect(function()

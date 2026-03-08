@@ -62,6 +62,8 @@ local Config = {
 	Damage          = 55,    -- per hit; two hits to kill a 100-HP player
 	WalkSpeed       = 26,    -- noticeably faster than a running player (default 16)
 	AttackRange     = 5,     -- studs: distance that triggers a swing
+	AttackResolveRange = 6.0, -- studs: guaranteed close-range kill handoff radius
+	AttackProximityFallbackRange = 6.5, -- studs: per-tick radial fallback so overlap always resolves
 	AttackCooldown  = 1.25,  -- seconds between attacks on same player
 	ChaseInterval   = 0.2,   -- re-evaluate target every 0.2s (logic still throttles MoveTo calls)
 	RepathInterval  = 0.45,  -- minimum interval between MoveTo updates
@@ -82,6 +84,24 @@ local Config = {
 	WalkAnimId      = "rbxassetid://507777826",
 	NpcFolderName   = "TungTungSahurNPC",
 	RemoteName      = "TungTungSahurEvent",
+	-- Brainrot-only NPC presentation + obstacle jump tuning
+	BrainrotScale   = 1.85,  -- clear visual size increase for Save a Brainrot
+	ObstacleJumpEnabled = true,
+	ObstacleJumpCooldown = 1.2,
+	ObstacleProbeDistance = 6.0,
+	ObstacleProbeHeights = { 1.2, 2.6, 4.0 }, -- multi-height forward probes for varied obstacle heights
+	ObstacleBlockedForwardSpeedThreshold = 2.2, -- forward speed considered "stuck"
+	ObstacleBlockedChecksRequired = 2,   -- require repeated obstruction checks
+	ObstacleBlockedResetSeconds = 0.8,
+	ObstacleJumpPower = 72,
+	ObstacleMinStepHeight = 1.1,         -- ignore tiny edges/steps
+	ObstacleMaxJumpHeight = 7.5,         -- ignore very tall blockers for jump trigger
+	-- Close-range anti-jitter tuning
+	CloseRangeHoldEnterDistance = 6.5,   -- enter close-hold when within this range
+	CloseRangeHoldExitDistance = 8.0,    -- exit hold only after this distance (hysteresis)
+	ChaseStandOffDistance = 4.2,         -- keep pressure without pushing into target center
+	CloseRangeNoJumpDistance = 8.0,      -- blocked-path jump disabled near target
+	StateLogInterval = 0.8,              -- throttle debug state logs
 }
 
 -- --- INTERNAL STATE -----------------------------------------------------------
@@ -105,6 +125,10 @@ local eventRemote: RemoteEvent?          = nil
 local killFeedRemote: RemoteEvent?       = nil
 local hasSpawnedThisMatch: boolean       = false
 local spawnCountThisMatch: number        = 0
+local lastObstacleJumpAt: number         = 0
+local lastBlockedObstacleKey: string?    = nil
+local blockedObstacleChecks: number      = 0
+local lastBlockedCheckAt: number         = 0
 
 local TungTungSahurService = {}
 
@@ -318,6 +342,178 @@ local function setupNameplate()
 	log("[TTS Nameplate] default hidden, custom active")
 end
 
+local function applyBrainrotScale()
+	if not npcModel then return end
+	local scale = Config.BrainrotScale or 1
+	if scale <= 1 then return end
+
+	local appliedWithModelScale = false
+	local okScale, errScale = pcall(function()
+		npcModel:ScaleTo(scale)
+		appliedWithModelScale = true
+	end)
+	if not okScale then
+		warn("[TungTungSahur] Model:ScaleTo failed, using fallback part scaling:", tostring(errScale))
+	end
+
+	-- Fallback for rigs/templates that do not respond reliably to ScaleTo at runtime.
+	if not appliedWithModelScale then
+		for _, desc in ipairs(npcModel:GetDescendants()) do
+			if desc:IsA("BasePart") then
+				desc.Size = desc.Size * scale
+			end
+		end
+	end
+
+	-- Do NOT scale HipHeight directly; that can create hover/floating behavior.
+
+	local reportedScale = 0
+	local okGetScale, gotScale = pcall(function()
+		return npcModel:GetScale()
+	end)
+	if okGetScale and type(gotScale) == "number" then
+		reportedScale = gotScale
+	end
+	log(string.format(
+		"[TTS Scale] applied mode=Brainrot requested=%.2f reported=%.2f method=%s",
+		scale, reportedScale, appliedWithModelScale and "ScaleTo" or "FallbackParts"
+	))
+end
+
+local function isHumanoidGrounded(hum: Humanoid): boolean
+	if hum.FloorMaterial == Enum.Material.Air then
+		return false
+	end
+	local st = hum:GetState()
+	if st == Enum.HumanoidStateType.Jumping
+		or st == Enum.HumanoidStateType.Freefall
+		or st == Enum.HumanoidStateType.FallingDown
+	then
+		return false
+	end
+	return true
+end
+
+local function getCharacterOwnerFromPart(part: Instance?): Player?
+	if not part then return nil end
+	local model = part:FindFirstAncestorOfClass("Model")
+	if not model then return nil end
+	return Players:GetPlayerFromCharacter(model)
+end
+
+local function maybeJumpObstacle(hum: Humanoid, targetPos: Vector3, distToTarget: number?)
+	if not Config.ObstacleJumpEnabled then return end
+	if not npcModel or not npcModel.PrimaryPart then return end
+	if distToTarget and distToTarget <= Config.CloseRangeNoJumpDistance then
+		lastBlockedObstacleKey = nil
+		blockedObstacleChecks = 0
+		return
+	end
+	local now = tick()
+	if (now - lastObstacleJumpAt) < Config.ObstacleJumpCooldown then
+		return
+	end
+	if not isHumanoidGrounded(hum) then
+		log(string.format("[TTS Obstacle] jump request blocked state=airborne dist=%.2f",
+			(distToTarget or -1)))
+		return
+	end
+
+	local root = npcModel.PrimaryPart
+	local toTarget = targetPos - root.Position
+	local flatToTarget = Vector3.new(toTarget.X, 0, toTarget.Z)
+	local flatDistance = flatToTarget.Magnitude
+	if flatDistance < 1 then return end
+
+	local direction = flatToTarget.Unit
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { npcModel }
+
+	local hit = nil
+	for _, probeY in ipairs(Config.ObstacleProbeHeights) do
+		local origin = root.Position + Vector3.new(0, probeY, 0)
+		local r = Workspace:Raycast(origin, direction * Config.ObstacleProbeDistance, params)
+		if r and r.Instance then
+			hit = r
+			break
+		end
+	end
+
+	if not hit or not hit.Instance then
+		lastBlockedObstacleKey = nil
+		blockedObstacleChecks = 0
+		return
+	end
+
+	local owner = getCharacterOwnerFromPart(hit.Instance)
+	if owner then
+		log(string.format("[TTS Obstacle] player obstruction ignored player=%s part=%s",
+			owner.Name, hit.Instance.Name))
+		lastBlockedObstacleKey = nil
+		blockedObstacleChecks = 0
+		return
+	end
+
+	if hit.Instance:IsA("BasePart") and not hit.Instance.CanCollide then
+		return
+	end
+
+	local blockerClass = hit.Instance.ClassName
+	local blockerType = "world_geometry"
+	local obstacleHeight = 0
+	local rootBottomY = root.Position.Y - (root.Size.Y * 0.5)
+	if hit.Instance:IsA("BasePart") then
+		local topY = hit.Instance.Position.Y + (hit.Instance.Size.Y * 0.5)
+		obstacleHeight = topY - rootBottomY
+	end
+	if obstacleHeight > 0 and obstacleHeight < Config.ObstacleMinStepHeight then
+		log(string.format(
+			"[TTS Obstacle] ignored type=%s class=%s reason=trivial_height obstacleHeight=%.2f",
+			blockerType, blockerClass, obstacleHeight
+		))
+		return
+	end
+	if obstacleHeight > Config.ObstacleMaxJumpHeight then
+		log(string.format(
+			"[TTS Obstacle] ignored type=%s class=%s reason=too_tall obstacleHeight=%.2f",
+			blockerType, blockerClass, obstacleHeight
+		))
+		return
+	end
+
+	local forwardSpeed = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z):Dot(direction)
+	local obstacleKey = string.format("%s|%s", hit.Instance:GetFullName(), hit.Instance.ClassName)
+	if (now - lastBlockedCheckAt) > Config.ObstacleBlockedResetSeconds or lastBlockedObstacleKey ~= obstacleKey then
+		blockedObstacleChecks = 0
+	end
+	lastBlockedCheckAt = now
+	lastBlockedObstacleKey = obstacleKey
+	blockedObstacleChecks += 1
+
+	log(string.format(
+		"[TTS Obstacle] detected type=%s part=%s class=%s checks=%d forwardSpeed=%.2f obstacleHeight=%.2f grounded=%s",
+		blockerType, hit.Instance.Name, blockerClass, blockedObstacleChecks, forwardSpeed, obstacleHeight,
+		tostring(isHumanoidGrounded(hum))
+	))
+
+	if blockedObstacleChecks < Config.ObstacleBlockedChecksRequired then
+		return
+	end
+	if forwardSpeed > Config.ObstacleBlockedForwardSpeedThreshold then
+		return
+	end
+
+	hum.UseJumpPower = true
+	hum.JumpPower = math.max(hum.JumpPower, Config.ObstacleJumpPower)
+	hum.Jump = true
+	hum:ChangeState(Enum.HumanoidStateType.Jumping)
+	lastObstacleJumpAt = now
+	blockedObstacleChecks = 0
+	log(string.format("[TTS Obstacle] jump triggered over=%s jumpPower=%.1f",
+		hit.Instance.Name, hum.JumpPower))
+end
+
 -- --- CLEANUP ------------------------------------------------------------------
 
 local function cancelThread(t: thread?)
@@ -401,6 +597,10 @@ local function despawn(reason: string)
 	hitDebounce    = {}
 	contactDebounce = {}
 	lastLungeTick  = 0
+	lastObstacleJumpAt = 0
+	lastBlockedObstacleKey = nil
+	blockedObstacleChecks = 0
+	lastBlockedCheckAt = 0
 
 	if npcModel and npcModel.Parent then
 		npcModel:Destroy()
@@ -432,6 +632,143 @@ local function despawn(reason: string)
 end
 
 -- --- HIT / ELIMINATION --------------------------------------------------------
+local function eliminateVictim(player: Player, humanoid: Humanoid, source: string)
+	if humanoid.Health > 0 then
+		humanoid.Health = 0
+	end
+
+	local et = getEliminationTracker()
+	if et then
+		et.RecordElimination(player, currentRound, "TungTungSahur")
+	else
+		if killFeedRemote then
+			killFeedRemote:FireAllClients(player.Name, "TungTungSahur")
+		end
+		warn("[TungTungSahur] EliminationTracker unavailable for", player.Name)
+	end
+	-- Transition BEFORE character can respawn so OOB loop won't kill them again
+	PlayerStateService.SetState(player, PlayerState.States.Lobby)
+	log(string.format("[TTS Kill] source=%s victim=%s round=%d", source, player.Name, currentRound))
+end
+
+local function applyHitDamage(player: Player, humanoid: Humanoid, source: string)
+	if humanoid.Health <= 0 then
+		return
+	end
+
+	local damage = Config.Damage
+	if source == "ContactTouch" then
+		damage = Config.ContactDamage
+	end
+	damage = math.max(1, tonumber(damage) or 1)
+
+	local before = humanoid.Health
+	humanoid:TakeDamage(damage)
+	local after = humanoid.Health
+	log(string.format("[TTS Hit] source=%s target=%s damage=%d health=%.1f->%.1f",
+		source, player.Name, damage, before, after))
+
+	if after <= 0 then
+		eliminateVictim(player, humanoid, source)
+	end
+end
+
+local function tryResolveCloseRangeKill(target: Player, source: string, maxRange: number?): boolean
+	if not active then
+		log(string.format("[TTS AttackRejected] source=%s reason=npc_inactive", source))
+		return false
+	end
+	if frozen then
+		log(string.format("[TTS AttackRejected] source=%s reason=npc_frozen", source))
+		return false
+	end
+	if not target or not target.Parent then
+		log(string.format("[TTS AttackRejected] source=%s reason=target_missing", source))
+		return false
+	end
+	local okState, state = pcall(function()
+		return PlayerStateService.GetState(target)
+	end)
+	if not okState or state ~= PlayerState.States.InMatch then
+		log(string.format("[TTS AttackRejected] source=%s target=%s reason=invalid_state state=%s",
+			source, target.Name, tostring(state)))
+		return false
+	end
+	local char = target.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hum or hum.Health <= 0 or not hrp then
+		log(string.format("[TTS AttackRejected] source=%s target=%s reason=target_not_alive_or_missing_parts",
+			source, target.Name))
+		return false
+	end
+	if not npcModel or not npcModel.PrimaryPart then
+		log(string.format("[TTS AttackRejected] source=%s target=%s reason=npc_missing_primary", source, target.Name))
+		return false
+	end
+	local dist = (hrp.Position - npcModel.PrimaryPart.Position).Magnitude
+	if maxRange and dist > maxRange then
+		log(string.format("[TTS AttackRejected] source=%s target=%s reason=out_of_range dist=%.2f max=%.2f",
+			source, target.Name, dist, maxRange))
+		return false
+	end
+
+	local uid = target.UserId
+	local now = tick()
+	local last = hitDebounce[uid]
+	if last and (now - last) < Config.AttackCooldown then
+		log(string.format("[TTS AttackRejected] source=%s target=%s reason=debounce remaining=%.2f",
+			source, target.Name, Config.AttackCooldown - (now - last)))
+		return false
+	end
+	hitDebounce[uid] = now
+
+	log(string.format("[TTS AttackAttempt] source=%s target=%s dist=%.2f", source, target.Name, dist))
+	applyHitDamage(target, hum, source)
+	return true
+end
+
+local function tryResolveAnyNearbyVictim(maxRange: number, source: string): boolean
+	if not active or frozen then
+		return false
+	end
+	if not npcModel or not npcModel.PrimaryPart then
+		return false
+	end
+	local npcPos = npcModel.PrimaryPart.Position
+	local bestTarget: Player? = nil
+	local bestDist = math.huge
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		local okState, state = pcall(function()
+			return PlayerStateService.GetState(player)
+		end)
+		if not okState or state ~= PlayerState.States.InMatch then
+			continue
+		end
+		local char = player.Character
+		if not char then continue end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if not hum or hum.Health <= 0 or not hrp then
+			continue
+		end
+		local dist = (hrp.Position - npcPos).Magnitude
+		if dist <= maxRange and dist < bestDist then
+			bestDist = dist
+			bestTarget = player
+		end
+	end
+
+	if not bestTarget then
+		return false
+	end
+
+	log(string.format("[TTS ProximityFallback] target=%s dist=%.2f range=%.2f",
+		bestTarget.Name, bestDist, maxRange))
+	return tryResolveCloseRangeKill(bestTarget, source, maxRange)
+end
+
 --[[
 	applyHit(player, humanoid)
 	  - Deals Config.Damage (55) per hit.
@@ -441,24 +778,7 @@ end
 	  - On non-lethal hit: just damages, no state change.
 ]]
 local function applyHit(player: Player, humanoid: Humanoid)
-	humanoid:TakeDamage(Config.Damage)
-
-	if humanoid.Health <= 0 then
-		local et = getEliminationTracker()
-		if et then
-			et.RecordElimination(player, currentRound, "TungTungSahur")
-		else
-			if killFeedRemote then
-				killFeedRemote:FireAllClients(player.Name, "TungTungSahur")
-			end
-			warn("[TungTungSahur] EliminationTracker unavailable for", player.Name)
-		end
-		-- Transition BEFORE character can respawn so OOB loop won't kill them again
-		PlayerStateService.SetState(player, PlayerState.States.Lobby)
-		log(string.format("[TTS] eliminated %s (round %d)", player.Name, currentRound))
-	else
-		log(string.format("[TTS] hit %s — %.0f HP remaining", player.Name, humanoid.Health))
-	end
+	applyHitDamage(player, humanoid, "LegacyApplyHit")
 end
 
 -- --- SWORD IMMUNITY -----------------------------------------------------------
@@ -503,19 +823,7 @@ local function setupContactDamage()
 				local now = tick()
 				if contactDebounce[uid] and (now - contactDebounce[uid]) < Config.ContactCooldown then return end
 				contactDebounce[uid] = now
-				hum:TakeDamage(Config.ContactDamage)
-				if hum.Health <= 0 then
-					local et = getEliminationTracker()
-					if et then
-						et.RecordElimination(player, currentRound, "TungTungSahur")
-					elseif killFeedRemote then
-						killFeedRemote:FireAllClients(player.Name, "TungTungSahur")
-					end
-					PlayerStateService.SetState(player, PlayerState.States.Lobby)
-					log(string.format("[TTS Contact] eliminated %s (round %d)", player.Name, currentRound))
-				else
-					log(string.format("[TTS Contact] hit %s — %.0f HP remaining", player.Name, hum.Health))
-				end
+				tryResolveCloseRangeKill(player, "ContactTouch", nil)
 			end)
 			table.insert(contactConns, conn)
 		end
@@ -537,13 +845,29 @@ local function startChaseLoop()
 		local lastMoveToAt = 0
 		local lastMoveToTargetPos: Vector3? = nil
 		local inAttackRange = false
+		local previousInAttackRange = false
+		local inCloseHold = false
+		local movementState = "Idle"
+		local lastStateLogAt = 0
+		local lastTargetUserId: number? = nil
 
 		local hum = npcModel and npcModel:FindFirstChildOfClass("Humanoid")
 
 		while active and npcModel and npcModel.Parent do
 			if not frozen then
+				-- Fallback: if anyone is physically in kill radius, resolve immediately.
+				-- This prevents overlap/touch timing gaps where NPC appears to walk on a player.
+				if tryResolveAnyNearbyVictim(Config.AttackProximityFallbackRange, "ProximityFallback") then
+					task.wait(Config.ChaseInterval)
+					continue
+				end
+
 				local target = getNearestPlayer()
 				if target and target.Character and npcModel and npcModel.PrimaryPart then
+					if lastTargetUserId ~= target.UserId then
+						lastTargetUserId = target.UserId
+						log(string.format("[TTS TargetAcquired] target=%s", target.Name))
+					end
 					local hrp = target.Character:FindFirstChild("HumanoidRootPart")
 					if hrp then
 						hum = npcModel:FindFirstChildOfClass("Humanoid")
@@ -557,39 +881,78 @@ local function startChaseLoop()
 							end
 
 							if inAttackRange then
+								if not previousInAttackRange then
+									log(string.format("[TTS AttackRangeEntered] target=%s dist=%.2f range=%.2f",
+										target.Name, dist, Config.AttackResolveRange))
+								end
+								movementState = "AttackHold"
 								-- Melee attack
 								lunging = false
-								local uid  = target.UserId
 								local now  = tick()
-								local last = hitDebounce[uid]
-								if not last or (now - last) >= Config.AttackCooldown then
-									hitDebounce[uid] = now
+								-- Stop issuing movement while in attack hold (anti-jitter near target).
+								hum:Move(Vector3.zero, false)
+								if (now - lastMoveToAt) >= Config.RepathInterval then
+									hum:MoveTo(npcModel.PrimaryPart.Position)
+									lastMoveToAt = now
+									lastMoveToTargetPos = nil
+								end
+								if tryResolveCloseRangeKill(target, "AttackRangeHandoff", Config.AttackResolveRange) then
 									hum.WalkSpeed = 0
 									playAttackAnim()
-									task.wait(Config.ArmWindup + Config.ArmSwing)
-									if active and not frozen and target.Character and npcModel and npcModel.PrimaryPart then
-										local hrp2 = target.Character:FindFirstChild("HumanoidRootPart")
-										local hum2 = target.Character:FindFirstChildOfClass("Humanoid")
-										if hrp2 and hum2 and hum2.Health > 0 then
-											if (hrp2.Position - npcModel.PrimaryPart.Position).Magnitude <= Config.AttackRange * 1.5 then
-												applyHit(target, hum2)
-											end
-										end
-									end
 									if active and not frozen and npcModel then
 										local hum3 = npcModel:FindFirstChildOfClass("Humanoid")
 										if hum3 then hum3.WalkSpeed = Config.WalkSpeed end
 									end
 								end
 							else
-								-- Chase — trigger lunge when player is within LungeRange
+								-- Chase with stand-off target to prevent close-range shove jitter.
 								local now = tick()
+								local toTarget = hrp.Position - npcModel.PrimaryPart.Position
+								local chaseTargetPos = hrp.Position
+								if toTarget.Magnitude > 0.01 then
+									chaseTargetPos = hrp.Position - toTarget.Unit * Config.ChaseStandOffDistance
+								end
+
+								if inCloseHold then
+									if dist >= Config.CloseRangeHoldExitDistance then
+										inCloseHold = false
+									end
+								else
+									if dist <= Config.CloseRangeHoldEnterDistance then
+										inCloseHold = true
+									end
+								end
+
+								if inCloseHold then
+									movementState = "CloseHold"
+									lunging = false
+									hum.WalkSpeed = Config.WalkSpeed
+									hum:Move(Vector3.zero, false)
+									if (now - lastMoveToAt) >= Config.RepathInterval then
+										hum:MoveTo(npcModel.PrimaryPart.Position)
+										lastMoveToAt = now
+									end
+									lastMoveToTargetPos = nil
+									if (now - lastStateLogAt) >= Config.StateLogInterval then
+										lastStateLogAt = now
+										log(string.format(
+											"[TTS Move] state=%s dist=%.2f grounded=%s blockedKey=%s repathAge=%.2f",
+											movementState, dist, tostring(isHumanoidGrounded(hum)), tostring(lastBlockedObstacleKey), now - lastMoveToAt
+										))
+									end
+									task.wait(Config.ChaseInterval)
+									continue
+								end
+
+								-- Chase — trigger lunge only when not in close approach range.
 								if not lunging
 									and dist <= Config.LungeRange
+									and dist > (Config.CloseRangeHoldEnterDistance + 1.0)
 									and (now - lastLungeTick) >= Config.LungeCooldown
 								then
 									lastLungeTick = now
 									lunging = true
+									movementState = "Lunge"
 									hum.WalkSpeed = Config.LungeSpeed
 									log(string.format("[TTS] Lunge! dist=%.1f studs", dist))
 									task.delay(Config.LungeDuration, function()
@@ -600,23 +963,34 @@ local function startChaseLoop()
 										end
 									end)
 								elseif not lunging then
+									movementState = "Chase"
 									hum.WalkSpeed = Config.WalkSpeed
 								end
 								local shouldRepath = false
 								if (now - lastMoveToAt) >= Config.RepathInterval then
 									shouldRepath = true
-								elseif lastMoveToTargetPos and (hrp.Position - lastMoveToTargetPos).Magnitude >= Config.RepathTargetMoveDelta then
+								elseif lastMoveToTargetPos and (chaseTargetPos - lastMoveToTargetPos).Magnitude >= Config.RepathTargetMoveDelta then
 									shouldRepath = true
 								elseif not lastMoveToTargetPos then
 									shouldRepath = true
 								end
 
 								if shouldRepath then
-									hum:MoveTo(hrp.Position)
+									local repathAge = now - lastMoveToAt
+									hum:MoveTo(chaseTargetPos)
 									lastMoveToAt = now
-									lastMoveToTargetPos = hrp.Position
+									lastMoveToTargetPos = chaseTargetPos
+									if (now - lastStateLogAt) >= Config.StateLogInterval then
+										lastStateLogAt = now
+										log(string.format(
+											"[TTS Move] state=%s dist=%.2f grounded=%s moveToIssued=true moveTo=(%.1f,%.1f,%.1f) repathAge=%.2f",
+											movementState, dist, tostring(isHumanoidGrounded(hum)), chaseTargetPos.X, chaseTargetPos.Y, chaseTargetPos.Z, repathAge
+										))
+									end
 								end
+								maybeJumpObstacle(hum, chaseTargetPos, dist)
 							end
+							previousInAttackRange = inAttackRange
 						end
 					end
 				end
@@ -685,6 +1059,7 @@ local function spawnNpc(roundNumber: number)
 	log(string.format("NPC spawned for round %d at (%.0f, %.0f, %.0f)",
 		roundNumber, spawnCF.Position.X, spawnCF.Position.Y, spawnCF.Position.Z))
 
+	applyBrainrotScale()
 	setupSwordImmunity()
 	setupNameplate()
 	startWalkAnim()

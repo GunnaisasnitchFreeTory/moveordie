@@ -2,7 +2,7 @@
 	HazardManager
 	Server-side beam hazard system.
 	
-	Divides SquarePlatformMap into a grid, selects unsafe zones,
+	Divides the current active match map into a grid, selects unsafe zones,
 	shows telegraph warnings, spawns beams, and eliminates players on Strike.
 	
 	Telegraph → Beams flow:
@@ -366,6 +366,15 @@ end
 	Called at start of each round to account for shrinking.
 ]]
 local function refreshPlatformData()
+	local baseBounds = MapManager.GetBaseBounds()
+	if baseBounds then
+		basePlatformData = {
+			cframe = baseBounds.cframe,
+			size = baseBounds.size,
+			topY = baseBounds.cframe.Position.Y + baseBounds.size.Y / 2,
+		}
+	end
+
 	local activeBounds = MapManager.GetActiveBounds()
 	if not activeBounds or not basePlatformData then
 		return false
@@ -382,6 +391,18 @@ local function refreshPlatformData()
 		cellSizeZ = cellSizeZ,
 		topY = activeBounds.topY,
 	}
+
+	local activeMap = MapManager.GetActiveMap()
+	local anchor = MapManager.GetPlacementAnchor()
+	log(string.format(
+		"[Placement] activeMap=%s anchor=%s anchorPos=(%.1f, %.1f, %.1f) topY=%.1f",
+		tostring(activeMap and activeMap.Name or "nil"),
+		tostring(anchor and anchor.Name or "nil"),
+		activeBounds.cframe.Position.X,
+		activeBounds.cframe.Position.Y,
+		activeBounds.cframe.Position.Z,
+		activeBounds.topY
+	))
 	
 	return true
 end
@@ -392,28 +413,12 @@ function HazardManager.Init()
 		return
 	end
 	
-	local arena = MapManager.GetArena()
-	if not arena then
-		error("[HazardManager] Arena not found, cannot initialize")
+	local baseBounds = MapManager.GetBaseBounds()
+	if not baseBounds then
+		error("[HazardManager] MapManager base bounds unavailable, cannot initialize")
 	end
-	
-	local arenaCFrame: CFrame
-	local arenaSize: Vector3
-	
-	if arena:IsA("BasePart") then
-		arenaCFrame = arena.CFrame
-		arenaSize = arena.Size
-	elseif arena:IsA("Model") then
-		local primary = arena.PrimaryPart or arena:FindFirstChildWhichIsA("BasePart")
-		if primary then
-			arenaCFrame = primary.CFrame
-			arenaSize = primary.Size
-		else
-			error("[HazardManager] Arena Model has no usable BasePart")
-		end
-	else
-		error("[HazardManager] Arena is not a BasePart or Model")
-	end
+	local arenaCFrame = baseBounds.cframe
+	local arenaSize = baseBounds.size
 	
 	-- Store base platform data (never changes)
 	basePlatformData = {
@@ -581,6 +586,8 @@ function HazardManager.SpawnBeams()
 	
 	local beamHeight = HazardConfig.BeamHeightStuds
 	local beamWidth = HazardConfig.BeamWidthStuds
+	local beamY = platformData.topY + beamHeight / 2
+	log(string.format("[BeamPlacement] beamY=%.1f topY=%.1f beamHeight=%.1f", beamY, platformData.topY, beamHeight))
 	
 	for i, zone in ipairs(currentUnsafeZones) do
 		local beam = Instance.new("Part")
@@ -593,7 +600,6 @@ function HazardManager.SpawnBeams()
 		beam.Size = Vector3.new(beamWidth, beamHeight, beamWidth)
 		
 		-- Position: beam extends from platform surface upward
-		local beamY = platformData.topY + beamHeight / 2
 		beam.Position = Vector3.new(
 			zone.worldCenter.X,
 			beamY,

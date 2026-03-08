@@ -14,11 +14,13 @@
 	  EliminationsToday   -- any player kill today (same source as SwordKillsToday)
 	  SurviveRoundsToday  -- rounds survived today
 	  TTSSurvivalsToday   -- TungTungSahur 30s-timer survival events today
+	  BrainrotIShowSpeedPickupsToday -- pick up IShowSpeed in Save the Brainrot mode
 
 	Reward types:
 	  { type="Coins",  amount=N }
 	  { type="Crown",  itemId="..." }
 	  { type="Pet",    itemId="..." }
+	  { type="IconImage", itemId="..." }
 	  { type="Crate",  crateId="crate_pet"|"crate_crown", count=1 }
 	  { type="Spin",   count=1 }
 ]]
@@ -71,10 +73,22 @@ DailyQuestConfig.Permanent = {
 		icon        = "",
 		iconColor   = { 255, 60, 60 },
 	},
+	{
+		id          = "quest_brainrot_pickup_ishowspeed",
+		label       = "ImWatchingYourStream",
+		description = "Pick up IShowSpeed 5 times in Save the Brainrot mode to unlock ImWatchingYourStream!",
+		type        = "BrainrotIShowSpeedPickupsToday",
+		target      = 5,
+		order       = 5,
+		reward      = { type = "IconImage", itemId = "icon_imwatchingyourstream" },
+		icon        = "",
+		iconColor   = { 255, 58, 58 },
+	},
 }
 
 -- Rotating template pool -- 3 are picked each day.
--- Duplicate types with Permanent quests are automatically skipped.
+-- Rotating quest types are unique among rotating entries, but may overlap
+-- with Permanent quests so daily sets still feel fresh.
 DailyQuestConfig.Templates = {
 	{
 		type = "TimePlayed",
@@ -146,6 +160,8 @@ function DailyQuestConfig.GetRewardLabel(reward): string
 		return "a Crown"
 	elseif reward.type == "Pet" then
 		return "a Pet"
+	elseif reward.type == "IconImage" then
+		return "an Icon Image"
 	end
 	return "a reward"
 end
@@ -171,13 +187,10 @@ function DailyQuestConfig.GenerateDailyQuests(dayString: string): { { [string]: 
 		pool[i], pool[j] = pool[j], pool[i]
 	end
 
-	-- Track types already occupied by Permanent quests
+	-- Track rotating types already selected (do not duplicate within rotating set)
 	local usedTypes: { [string]: boolean } = {}
-	for _, pq in ipairs(DailyQuestConfig.Permanent) do
-		usedTypes[pq.type] = true
-	end
 
-	-- Pick rotating quests (avoid duplicate types)
+	-- Pick rotating quests (avoid duplicate rotating types)
 	local rotating: { { [string]: any } } = {}
 	for _, tmpl in ipairs(pool) do
 		if #rotating >= DailyQuestConfig.RotatingCount then break end

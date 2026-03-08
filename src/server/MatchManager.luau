@@ -32,6 +32,8 @@ local BrainrotModeService    = require(Server:WaitForChild("BrainrotModeService"
 local RoundCoinService       = require(Server:WaitForChild("RoundCoinService"))
 local SwordSpawnService      = require(Server:WaitForChild("SwordSpawnService"))
 local TungTungSahurService   = require(Server:WaitForChild("TungTungSahurService"))
+local ModeLightingService    = require(Server:WaitForChild("ModeLightingService"))
+local FreezePlayerProductService = require(Server:WaitForChild("FreezePlayerProductService"))
 
 local _DQS = nil
 local function getDQS()
@@ -221,6 +223,20 @@ local function replicateRound(round: number)
 	else
 		log("replicatedRound is nil — skipping replication")
 	end
+end
+
+local function restoreEnvironment(context: string?)
+	local ctx = if type(context) == "string" and context ~= "" then context else "unknown"
+	log(string.format("[EnvRestore] context=%s", ctx))
+	ModeLightingService.RestoreDefault()
+	MapManager.RestoreDefaultMap()
+end
+
+local function applyEnvironmentForMode(modeName: string)
+	local mode = if type(modeName) == "string" and modeName ~= "" then modeName else "Normal"
+	log(string.format("[EnvApply] selectedMode=%s", mode))
+	MapManager.ConfigureForMode(mode)
+	ModeLightingService.ApplyForMode(mode)
 end
 
 local function setMatchState(newState: string)
@@ -452,6 +468,7 @@ end
 --[[ PHASE HANDLERS ]]
 
 local function runIntermission()
+	restoreEnvironment("IntermissionStart")
 	setMatchState(MatchState.States.Intermission)
 	phaseEndTime = tick() + Config.IntermissionSeconds
 	replicatePhaseEnd(Config.IntermissionSeconds)
@@ -540,37 +557,55 @@ local function runPlaying()
 	
 	setMatchState(MatchState.States.Playing)
 	log(string.format("Playing started (mode=%s) — waiting for RoundManager to complete", currentMode))
-	
-	MapManager.OnMatchStart()
-	setWaitingToInMatch()
 
-	if currentMode == "Brainrot" then
-		BrainrotModeService.OnMatchStart()
-	end
-	
-	local matchPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
-	EliminationTracker.Reset(matchPlayers)
-	EconomyService.ResetMatchCoins()
-	
-	RoundManager.StartRoundLoop(currentMode)
-	
-	while RoundManager.IsRunning() do
-		task.wait(0.5)
-	end
-	
-	local endReason = RoundManager.GetMatchEndReason()
-	log(string.format("Round loop completed — reason: %s", endReason or "unknown"))
+	local played = false
+	local ok, err = xpcall(function()
+		applyEnvironmentForMode(currentMode)
 
-	if currentMode == "Brainrot" then
-		BrainrotModeService.OnMatchEnd()
+		MapManager.OnMatchStart()
+		setWaitingToInMatch()
+
+		if currentMode == "Brainrot" then
+			BrainrotModeService.OnMatchStart()
+		end
+
+		local matchPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+		EliminationTracker.Reset(matchPlayers)
+		EconomyService.ResetMatchCoins()
+
+		RoundManager.StartRoundLoop(currentMode)
+
+		while RoundManager.IsRunning() do
+			task.wait(0.5)
+		end
+
+		local endReason = RoundManager.GetMatchEndReason()
+		log(string.format("Round loop completed — reason: %s", endReason or "unknown"))
+
+		if currentMode == "Brainrot" then
+			BrainrotModeService.OnMatchEnd()
+		end
+
+		SwordSpawnService.OnMatchEnd()
+		TungTungSahurService.OnMatchEnd()
+		MapManager.OnMatchEnd()
+		played = true
+	end, debug.traceback)
+
+	if not ok then
+		warn("[MatchManager] runPlaying failed:", err)
+		pcall(function()
+			if currentMode == "Brainrot" then
+				BrainrotModeService.OnMatchEnd()
+			end
+		end)
+		pcall(function() SwordSpawnService.OnMatchEnd() end)
+		pcall(function() TungTungSahurService.OnMatchEnd() end)
+		pcall(function() MapManager.OnMatchEnd() end)
 	end
 
-	SwordSpawnService.OnMatchEnd()
-	TungTungSahurService.OnMatchEnd()
-	
-	MapManager.OnMatchEnd()
-	
-	return true
+	restoreEnvironment("PlayingCleanup")
+	return played
 end
 
 local function resolveRankingsAndReward()
@@ -826,6 +861,8 @@ function MatchManager.Init()
 	log("ModeVote remote created")
 
 	BrainrotModeService.Init()
+	ModeLightingService.Init()
+	FreezePlayerProductService.Init()
 	RoundCoinService.Init()
 	TungTungSahurService.Init()
 
@@ -888,6 +925,7 @@ end
 
 function MatchManager.StopLoop()
 	loopRunning = false
+	restoreEnvironment("StopLoop")
 	log("Loop stopped")
 end
 

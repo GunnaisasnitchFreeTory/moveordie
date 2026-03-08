@@ -62,8 +62,11 @@ local SpinWheelService = require(Server:WaitForChild("SpinWheelService"))
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local SpinWheelConfig = require(Shared:WaitForChild("SpinWheelConfig"))
 local UIConfig = require(Shared:WaitForChild("UIConfig"))
+local DeveloperProductConfig = require(Shared:WaitForChild("DeveloperProductConfig"))
+local FreezePlayerProductService = require(Server:WaitForChild("FreezePlayerProductService"))
 
 SpinWheelService.Init()
+FreezePlayerProductService.Init()
 
 -- Wire RemoteFunctions
 getDataRF.OnServerInvoke = function(player)
@@ -226,6 +229,16 @@ local PRODUCT_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 	[3539710471] = { type = "Crate", crateId = "crate_pet_epic",   quantity = 6, label = "6 Epic Pet Crates" },
 }
 
+local freezeProductId = tonumber(DeveloperProductConfig.FreezePlayer.productId) or 0
+if freezeProductId > 0 then
+	PRODUCT_REWARD_MAP[freezeProductId] = {
+		type = "FreezePlayer",
+		label = tostring(DeveloperProductConfig.FreezePlayer.name or "Freeze Player"),
+	}
+else
+	warn("[PurchaseSystem] FreezePlayer productId is not configured (>0 required)")
+end
+
 -- Auto-populate Fate Coin developer products from UIConfig (single source for shop UI + receipts)
 for _, item in ipairs(UIConfig.MockPremiumItems or {}) do
 	if item.type == "Currency" and type(item.productId) == "number" and item.productId > 0 then
@@ -300,13 +313,13 @@ local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 	[1717772785] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_winged_dragon",  label = "Music Winged Dragon" },
 	[1716864887] = { type = "Pet",   category = "Pets",   itemId = "pet_pink_butterfly",      label = "Pink Butterfly" },
 	[1718832641] = { type = "Pet",   category = "Pets",   itemId = "pet_glitched_dragon",     label = "Glitched Dragon" },
-	[1885101001] = { type = "Pet",   category = "Pets",   itemId = "pet_freddy_fazbear",      label = "Freddy Fazbear" },
-	[1885101002] = { type = "Pet",   category = "Pets",   itemId = "pet_bonnie",              label = "Bonnie" },
-	[1885101003] = { type = "Pet",   category = "Pets",   itemId = "pet_chica",               label = "Chica" },
-	[1885101004] = { type = "Pet",   category = "Pets",   itemId = "pet_foxy",                label = "Foxy" },
-	[1885101005] = { type = "Pet",   category = "Pets",   itemId = "pet_golden_freddy",       label = "Golden Freddy" },
-	[1885101006] = { type = "Pet",   category = "Pets",   itemId = "pet_the_puppet",          label = "ThePuppet" },
-	[1885101007] = { type = "Pet",   category = "Pets",   itemId = "pet_cupcake",             label = "Cupcake" },
+	[1885101001] = { type = "Pet",   category = "Pets",   itemId = "pet_freddy_fazbear",      label = "AnimatronicBear" },
+	[1885101002] = { type = "Pet",   category = "Pets",   itemId = "pet_bonnie",              label = "AnimatronicBunny" },
+	[1885101003] = { type = "Pet",   category = "Pets",   itemId = "pet_chica",               label = "AnimatronicChicken" },
+	[1885101004] = { type = "Pet",   category = "Pets",   itemId = "pet_foxy",                label = "AnimatronicFox" },
+	[1885101005] = { type = "Pet",   category = "Pets",   itemId = "pet_golden_freddy",       label = "TheOneYouShouldntHaveKilled" },
+	[1885101006] = { type = "Pet",   category = "Pets",   itemId = "pet_the_puppet",          label = "AnimatronicPuppet" },
+	[1885101007] = { type = "Pet",   category = "Pets",   itemId = "pet_cupcake",             label = "HauntedCupcake" },
 
 	-- Exclusive Crowns
 	[1717864767] = { type = "Crown", category = "Crowns", itemId = "crown_ultra",             label = "Ultra Crown" },
@@ -339,7 +352,7 @@ local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 	[1732407562] = {
 		type = "Bundle",
 		bundleId = "FNAF_PETS_BUNDLE",
-		label = "FNAF Pets Bundle",
+		label = "Animatronic Pets Bundle",
 		items = {
 			{ category = "Pets", itemId = "pet_freddy_fazbear" },
 			{ category = "Pets", itemId = "pet_bonnie" },
@@ -587,6 +600,16 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 					warn("[PurchaseSystem] AddCrates failed:", result and result.reason or "unknown")
 				end
 			end
+		elseif reward.type == "FreezePlayer" then
+			local consumeOk, consumeReason = FreezePlayerProductService.ConsumePendingReceipt(player, receiptKey)
+			granted = consumeOk
+			print(string.format(
+				"[FreezeProductReceipt] purchaser=%s productId=%d result=%s reason=%s",
+				player.Name,
+				productId,
+				tostring(granted),
+				tostring(consumeReason)
+			))
 		end
 	end)
 

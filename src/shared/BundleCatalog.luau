@@ -33,8 +33,8 @@ local COIN_PRICING_DEFAULTS = {
 local _bundles = {
 	{
 		id           = "fnaf_pets_bundle",
-		displayName  = "FNAF Pets",
-		coverImage   = "rbxassetid://72168519670720",
+		displayName  = "Animatronic Pets",
+		coverImage   = "rbxassetid://73558749824817",
 		isAvailable  = true,
 		isLimited    = false,
 		priceFateCoins = 150000,

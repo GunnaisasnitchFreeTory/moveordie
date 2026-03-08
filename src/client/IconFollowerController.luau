@@ -208,6 +208,8 @@ local function spawnIconFor(player: Player, iconId: string)
 		warn(TAG, "No modelPath for icon image:", iconId,
 			"| catalogEntry:", iconDef.name or "?", "rarity:", iconDef.rarity or "?",
 			"| image:", iconDef.image or "nil", "| modelName:", iconDef.modelName or "nil")
+		log(string.format("[Resolve] iconId=%s modelPath=%s success=false reason=missing_modelPath",
+			tostring(iconId), tostring(modelPath)))
 		return
 	end
 
@@ -216,10 +218,14 @@ local function spawnIconFor(player: Player, iconId: string)
 	if not sourceModel then
 		warn(TAG, "modelPath exists but model NOT FOUND in registry:", modelPath,
 			"| iconId:", iconId, "| Try checking ReplicatedStorage.ItemModels hierarchy")
+		log(string.format("[Resolve] iconId=%s modelPath=%s success=false reason=registry_miss",
+			tostring(iconId), tostring(modelPath)))
 		log("Dumping registry keys for debug:")
 		ItemModelRegistry.DumpKeys()
 		return
 	end
+	log(string.format("[Resolve] iconId=%s modelPath=%s success=true",
+		tostring(iconId), tostring(modelPath)))
 	log("Model resolved OK:", sourceModel:GetFullName(), "for icon:", iconId)
 
 	local character = player.Character

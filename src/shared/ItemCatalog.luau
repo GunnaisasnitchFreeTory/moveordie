@@ -29,6 +29,22 @@ local Shared = ReplicatedStorage:FindFirstChild("Shared") or ReplicatedStorage:W
 local UIConfig = Shared and require(Shared:WaitForChild("UIConfig")) or { DebugLogs = false }
 local DEBUG_LOGS = UIConfig.DebugLogs == true
 local _fnafStaticLogPrinted = false
+local LEGACY_NAME_ALIASES: { [string]: { category: string, id: string } } = {
+	["Freddy Fazbear"] = { category = "Pets", id = "pet_freddy_fazbear" },
+	["Bonnie"] = { category = "Pets", id = "pet_bonnie" },
+	["Chica"] = { category = "Pets", id = "pet_chica" },
+	["Foxy"] = { category = "Pets", id = "pet_foxy" },
+	["Golden Freddy"] = { category = "Pets", id = "pet_golden_freddy" },
+	["ThePuppet"] = { category = "Pets", id = "pet_the_puppet" },
+	["Cupcake"] = { category = "Pets", id = "pet_cupcake" },
+	["FreddyPlush"] = { category = "Pets", id = "pet_freddy_plush" },
+	["ChicaPlush"] = { category = "Pets", id = "pet_chica_plush" },
+	["BonniePlush"] = { category = "Pets", id = "pet_bonnie_plush" },
+	["FoxyPlush"] = { category = "Pets", id = "pet_foxy_plush" },
+	["FredbearPlush"] = { category = "Pets", id = "pet_fredbear_plush" },
+	["HuggyWuggy"] = { category = "Pets", id = "pet_huggy_wuggy" },
+	["Steve"] = { category = "Pets", id = "pet_steve" },
+}
 local FORCED_STATIC_PET_IMAGES: { [string]: string } = {
 	pet_dark_winged_dragon = "rbxassetid://128329301968992",
 	pet_dark_falcon = "rbxassetid://82837073973871",
@@ -260,11 +276,11 @@ ItemCatalog.Pets = {
 	},
 	pet_steve = {
 		id        = "pet_steve",
-		name      = "Steve",
-		modelName = "Steve",
+		name      = "Steven",
+		modelName = "Steven",
 		type      = "Pet",
 		rarity    = "Epic",
-		modelPath = "ItemModels.Pets.Epic.Steve",
+		modelPath = "ItemModels.Pets.Epic.Steven",
 		image     = "",
 		iconText = "",
 		iconColor = Color3.fromRGB(88, 188, 255),
@@ -288,11 +304,11 @@ ItemCatalog.Pets = {
 	},
 	pet_foxy_plush = {
 		id        = "pet_foxy_plush",
-		name      = "FoxyPlush",
-		modelName = "FoxyPlush",
+		name      = "FoxPlush",
+		modelName = "FoxPlush",
 		type      = "Pet",
 		rarity    = "Epic",
-		modelPath = "ItemModels.Pets.Epic.FoxyPlush",
+		modelPath = "ItemModels.Pets.Epic.FoxPlush",
 		image     = "",
 		iconText = "",
 		iconColor = Color3.fromRGB(212, 78, 58),
@@ -302,11 +318,11 @@ ItemCatalog.Pets = {
 	},
 	pet_chica_plush = {
 		id        = "pet_chica_plush",
-		name      = "ChicaPlush",
-		modelName = "ChicaPlush",
+		name      = "ChickenPlush",
+		modelName = "ChickenPlush",
 		type      = "Pet",
 		rarity    = "Epic",
-		modelPath = "ItemModels.Pets.Epic.ChicaPlush",
+		modelPath = "ItemModels.Pets.Epic.ChickenPlush",
 		image     = "",
 		iconText = "",
 		iconColor = Color3.fromRGB(238, 198, 78),
@@ -316,11 +332,11 @@ ItemCatalog.Pets = {
 	},
 	pet_freddy_plush = {
 		id        = "pet_freddy_plush",
-		name      = "FreddyPlush",
-		modelName = "FreddyPlush",
+		name      = "BearPlush",
+		modelName = "BearPlush",
 		type      = "Pet",
 		rarity    = "Epic",
-		modelPath = "ItemModels.Pets.Epic.FreddyPlush",
+		modelPath = "ItemModels.Pets.Epic.BearPlush",
 		image     = "",
 		iconText = "",
 		iconColor = Color3.fromRGB(165, 108, 72),
@@ -330,11 +346,11 @@ ItemCatalog.Pets = {
 	},
 	pet_bonnie_plush = {
 		id        = "pet_bonnie_plush",
-		name      = "BonniePlush",
-		modelName = "BonniePlush",
+		name      = "BunnyPlush",
+		modelName = "BunnyPlush",
 		type      = "Pet",
 		rarity    = "Epic",
-		modelPath = "ItemModels.Pets.Epic.BonniePlush",
+		modelPath = "ItemModels.Pets.Epic.BunnyPlush",
 		image     = "",
 		iconText = "",
 		iconColor = Color3.fromRGB(118, 88, 228),
@@ -344,11 +360,11 @@ ItemCatalog.Pets = {
 	},
 	pet_fredbear_plush = {
 		id        = "pet_fredbear_plush",
-		name      = "FredbearPlush",
-		modelName = "FredbearPlush",
+		name      = "GoldbearPlush",
+		modelName = "GoldbearPlush",
 		type      = "Pet",
 		rarity    = "Epic",
-		modelPath = "ItemModels.Pets.Epic.FredbearPlush",
+		modelPath = "ItemModels.Pets.Epic.GoldbearPlush",
 		image     = "rbxassetid://74636973353299",
 		iconText = "",
 		iconColor = Color3.fromRGB(238, 188, 58),
@@ -358,11 +374,11 @@ ItemCatalog.Pets = {
 	},
 	pet_huggy_wuggy = {
 		id        = "pet_huggy_wuggy",
-		name      = "HuggyWuggy",
-		modelName = "HuggyWuggy",
+		name      = "FurryHugs",
+		modelName = "FurryHugs",
 		type      = "Pet",
 		rarity    = "Epic",
-		modelPath = "ItemModels.Pets.Epic.HuggyWuggy",
+		modelPath = "ItemModels.Pets.Epic.FurryHugs",
 		image     = "rbxassetid://135200249029461",
 		iconText = "",
 		iconColor = Color3.fromRGB(88, 188, 255),
@@ -373,12 +389,12 @@ ItemCatalog.Pets = {
 	-- ── Epic (FNAF Collection) ──
 	pet_freddy_fazbear = {
 		id         = "pet_freddy_fazbear",
-		name       = "Freddy Fazbear",
-		modelName  = "FreddyFazbear",
+		name       = "AnimatronicBear",
+		modelName  = "AnimatronicBear",
 		type       = "Pet",
 		rarity     = "Epic",
 		collection = "FNAF",
-		modelPath  = "ItemModels.Pets.Epic.FNAF.FreddyFazbear",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.AnimatronicBear",
 		image      = "rbxassetid://84840145874928",
 		iconText   = "",
 		iconColor  = Color3.fromRGB(165, 108, 72),
@@ -388,12 +404,12 @@ ItemCatalog.Pets = {
 	},
 	pet_bonnie = {
 		id         = "pet_bonnie",
-		name       = "Bonnie",
-		modelName  = "Bonnie",
+		name       = "AnimatronicBunny",
+		modelName  = "AnimatronicBunny",
 		type       = "Pet",
 		rarity     = "Epic",
 		collection = "FNAF",
-		modelPath  = "ItemModels.Pets.Epic.FNAF.Bonnie",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.AnimatronicBunny",
 		image      = "rbxassetid://82413653261556",
 		iconText   = "",
 		iconColor  = Color3.fromRGB(118, 88, 228),
@@ -403,12 +419,12 @@ ItemCatalog.Pets = {
 	},
 	pet_chica = {
 		id         = "pet_chica",
-		name       = "Chica",
-		modelName  = "Chica",
+		name       = "AnimatronicChicken",
+		modelName  = "AnimatronicChicken",
 		type       = "Pet",
 		rarity     = "Epic",
 		collection = "FNAF",
-		modelPath  = "ItemModels.Pets.Epic.FNAF.Chica",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.AnimatronicChicken",
 		image      = "rbxassetid://85911772941715",
 		iconText   = "",
 		iconColor  = Color3.fromRGB(238, 198, 78),
@@ -418,12 +434,12 @@ ItemCatalog.Pets = {
 	},
 	pet_foxy = {
 		id         = "pet_foxy",
-		name       = "Foxy",
-		modelName  = "Foxy",
+		name       = "AnimatronicFox",
+		modelName  = "AnimatronicFox",
 		type       = "Pet",
 		rarity     = "Epic",
 		collection = "FNAF",
-		modelPath  = "ItemModels.Pets.Epic.FNAF.Foxy",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.AnimatronicFox",
 		image      = "rbxassetid://71660947006015",
 		iconText   = "",
 		iconColor  = Color3.fromRGB(212, 78, 58),
@@ -433,12 +449,12 @@ ItemCatalog.Pets = {
 	},
 	pet_golden_freddy = {
 		id         = "pet_golden_freddy",
-		name       = "Golden Freddy",
-		modelName  = "GoldenFreddy",
+		name       = "TheOneYouShouldntHaveKilled",
+		modelName  = "TheOneYouShouldntHaveKilled",
 		type       = "Pet",
 		rarity     = "Epic",
 		collection = "FNAF",
-		modelPath  = "ItemModels.Pets.Epic.FNAF.GoldenFreddy",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.TheOneYouShouldntHaveKilled",
 		image      = "rbxassetid://131523893063613",
 		iconText   = "",
 		iconColor  = Color3.fromRGB(238, 188, 58),
@@ -448,12 +464,12 @@ ItemCatalog.Pets = {
 	},
 	pet_the_puppet = {
 		id         = "pet_the_puppet",
-		name       = "ThePuppet",
-		modelName  = "ThePuppet",
+		name       = "AnimatronicPuppet",
+		modelName  = "AnimatronicPuppet",
 		type       = "Pet",
 		rarity     = "Epic",
 		collection = "FNAF",
-		modelPath  = "ItemModels.Pets.Epic.FNAF.ThePuppet",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.AnimatronicPuppet",
 		image      = "rbxassetid://131311210371413",
 		iconText   = "",
 		iconColor  = Color3.fromRGB(220, 220, 220),
@@ -463,12 +479,12 @@ ItemCatalog.Pets = {
 	},
 	pet_cupcake = {
 		id         = "pet_cupcake",
-		name       = "Cupcake",
-		modelName  = "Cupcake",
+		name       = "HauntedCupcake",
+		modelName  = "HauntedCupcake",
 		type       = "Pet",
 		rarity     = "Epic",
 		collection = "FNAF",
-		modelPath  = "ItemModels.Pets.Epic.FNAF.Cupcake",
+		modelPath  = "ItemModels.Pets.Epic.FNAF.HauntedCupcake",
 		image      = "rbxassetid://90262618148713",
 		iconText   = "",
 		iconColor  = Color3.fromRGB(255, 148, 188),
@@ -1525,13 +1541,13 @@ ItemCatalog.Premium = {
 	pet_pink_butterfly     = { id = "pet_pink_butterfly",     name = "Pink Butterfly",       type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://96693122849195",  iconText = "", iconColor = Color3.fromRGB(255, 148, 208), thumbnailBgColor = Color3.fromRGB(35, 15, 28), robux = 200, gamepassId = 1716864887, tag = "NEW",       modelPath = "ItemModels.Pets.Legendary.Pink Butterfly", modelAssetId = 96693122849195 },
 	pet_dark_falcon        = { id = "pet_dark_falcon",        name = "Dark Goblem",          type = "ExclusivePet", rarity = "Legendary", image = "rbxassetid://82837073973871",  iconText = "", iconColor = Color3.fromRGB(38, 28, 48),    thumbnailBgColor = Color3.fromRGB(12, 10, 18), robux = 250, gamepassId = 1716313058, tag = "EXCLUSIVE", modelPath = "ItemModels.Pets.Legendary.Dark Goblem", modelAssetId = 82837073973871 },
 	-- FNAF Epic Pets (temporary Robux pricing)
-	pet_freddy_fazbear     = { id = "pet_freddy_fazbear",     name = "Freddy Fazbear",      type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://84840145874928",  iconText = "", iconColor = Color3.fromRGB(165, 108, 72), thumbnailBgColor = Color3.fromRGB(30, 22, 16), robux = 400, gamepassId = 1885101001, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.FreddyFazbear" },
-	pet_bonnie             = { id = "pet_bonnie",             name = "Bonnie",              type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://82413653261556",  iconText = "", iconColor = Color3.fromRGB(118, 88, 228), thumbnailBgColor = Color3.fromRGB(20, 16, 34), robux = 400, gamepassId = 1885101002, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Bonnie" },
-	pet_chica              = { id = "pet_chica",              name = "Chica",               type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://85911772941715",  iconText = "", iconColor = Color3.fromRGB(238, 198, 78), thumbnailBgColor = Color3.fromRGB(34, 28, 12), robux = 400, gamepassId = 1885101003, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Chica" },
-	pet_foxy               = { id = "pet_foxy",               name = "Foxy",                type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://71660947006015",  iconText = "", iconColor = Color3.fromRGB(212, 78, 58),  thumbnailBgColor = Color3.fromRGB(36, 14, 12), robux = 400, gamepassId = 1885101004, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Foxy" },
-	pet_golden_freddy      = { id = "pet_golden_freddy",      name = "Golden Freddy",       type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://131523893063613", iconText = "", iconColor = Color3.fromRGB(238, 188, 58), thumbnailBgColor = Color3.fromRGB(38, 30, 10), robux = 400, gamepassId = 1885101005, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.GoldenFreddy" },
-	pet_the_puppet         = { id = "pet_the_puppet",         name = "ThePuppet",           type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://131311210371413", iconText = "", iconColor = Color3.fromRGB(220, 220, 220), thumbnailBgColor = Color3.fromRGB(20, 20, 24), robux = 400, gamepassId = 1885101006, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.ThePuppet" },
-	pet_cupcake            = { id = "pet_cupcake",            name = "Cupcake",             type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://90262618148713", iconText = "", iconColor = Color3.fromRGB(255, 148, 188), thumbnailBgColor = Color3.fromRGB(30, 14, 22), robux = 400, gamepassId = 1885101007, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.Cupcake" },
+	pet_freddy_fazbear     = { id = "pet_freddy_fazbear",     name = "AnimatronicBear",             type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://84840145874928",  iconText = "", iconColor = Color3.fromRGB(165, 108, 72), thumbnailBgColor = Color3.fromRGB(30, 22, 16), robux = 400, gamepassId = 1885101001, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.AnimatronicBear" },
+	pet_bonnie             = { id = "pet_bonnie",             name = "AnimatronicBunny",            type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://82413653261556",  iconText = "", iconColor = Color3.fromRGB(118, 88, 228), thumbnailBgColor = Color3.fromRGB(20, 16, 34), robux = 400, gamepassId = 1885101002, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.AnimatronicBunny" },
+	pet_chica              = { id = "pet_chica",              name = "AnimatronicChicken",          type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://85911772941715",  iconText = "", iconColor = Color3.fromRGB(238, 198, 78), thumbnailBgColor = Color3.fromRGB(34, 28, 12), robux = 400, gamepassId = 1885101003, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.AnimatronicChicken" },
+	pet_foxy               = { id = "pet_foxy",               name = "AnimatronicFox",              type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://71660947006015",  iconText = "", iconColor = Color3.fromRGB(212, 78, 58),  thumbnailBgColor = Color3.fromRGB(36, 14, 12), robux = 400, gamepassId = 1885101004, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.AnimatronicFox" },
+	pet_golden_freddy      = { id = "pet_golden_freddy",      name = "TheOneYouShouldntHaveKilled", type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://131523893063613", iconText = "", iconColor = Color3.fromRGB(238, 188, 58), thumbnailBgColor = Color3.fromRGB(38, 30, 10), robux = 400, gamepassId = 1885101005, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.TheOneYouShouldntHaveKilled" },
+	pet_the_puppet         = { id = "pet_the_puppet",         name = "AnimatronicPuppet",           type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://131311210371413", iconText = "", iconColor = Color3.fromRGB(220, 220, 220), thumbnailBgColor = Color3.fromRGB(20, 20, 24), robux = 400, gamepassId = 1885101006, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.AnimatronicPuppet" },
+	pet_cupcake            = { id = "pet_cupcake",            name = "HauntedCupcake",              type = "ExclusivePet", rarity = "Epic",      image = "rbxassetid://90262618148713", iconText = "", iconColor = Color3.fromRGB(255, 148, 188), thumbnailBgColor = Color3.fromRGB(30, 14, 22), robux = 400, gamepassId = 1885101007, fateCoins = 70000, tag = "NEW", modelPath = "ItemModels.Pets.Epic.FNAF.HauntedCupcake" },
 
 	-- Exclusive Crowns (Gamepasses + FateCoins)
 	crown_electric      = { id = "crown_electric",      name = "Electric Crown",      type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://76259359648400",  iconText = "", iconColor = Color3.fromRGB(48, 198, 255),  thumbnailBgColor = Color3.fromRGB(18, 25, 42), fateCoins = 40000, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Electric Crown" },
@@ -1614,6 +1630,20 @@ ItemCatalog.IconImages = {
 		stats     = {},
 		obtainable = false,
 	},
+	icon_imwatchingyourstream = {
+		id        = "icon_imwatchingyourstream",
+		name      = "ImWatchingYourStream",
+		modelName = "ImWatchingYourStream",
+		type      = "IconImage",
+		rarity    = "Legendary",
+		source    = "quest",
+		modelPath = "IconImages/ImWatchingYourStream",
+		image     = "rbxassetid://126691929069666",
+		iconText = "",
+		iconColor = Color3.fromRGB(255, 58, 58),
+		stats     = {},
+		obtainable = false,
+	},
 	-- Coming soon placeholders (locked grey cards in the Icon Images panel)
 	icon_coming_soon_1 = { id = "icon_coming_soon_1", name = "Coming Soon", type = "IconImage", rarity = "Rare",      source = "coming_soon", image = "", iconText = "", iconColor = Color3.fromRGB(80, 160, 255),  stats = {}, obtainable = false },
 	icon_coming_soon_2 = { id = "icon_coming_soon_2", name = "Coming Soon", type = "IconImage", rarity = "Epic",      source = "coming_soon", image = "", iconText = "", iconColor = Color3.fromRGB(180, 80, 255),  stats = {}, obtainable = false },
@@ -1624,7 +1654,7 @@ ItemCatalog.IconImages = {
 }
 
 ItemCatalog._iconImageOrder = {
-	"icon_67_kid", "icon_steve_harrington",
+	"icon_67_kid", "icon_steve_harrington", "icon_imwatchingyourstream",
 	"icon_coming_soon_1", "icon_coming_soon_2", "icon_coming_soon_3",
 	"icon_coming_soon_4", "icon_coming_soon_5", "icon_coming_soon_6",
 }
@@ -1644,6 +1674,13 @@ do
 	end
 	for id, iconImg in pairs(ItemCatalog.IconImages) do
 		ItemCatalog.NameToId[iconImg.name] = { category = "IconImages", id = id }
+	end
+	-- Backward-compatible aliases for legacy display names used by older
+	-- reward payloads or cached UI references. Canonical item IDs stay unchanged.
+	for legacyName, mapping in pairs(LEGACY_NAME_ALIASES) do
+		if not ItemCatalog.NameToId[legacyName] then
+			ItemCatalog.NameToId[legacyName] = mapping
+		end
 	end
 end
 
@@ -1840,6 +1877,10 @@ end
 function ItemCatalog.GetByName(displayName: string)
 	local mapping = ItemCatalog.NameToId[displayName]
 	if mapping then
+		if DEBUG_LOGS and LEGACY_NAME_ALIASES[displayName] then
+			print(string.format("[CatalogAlias] legacyName=%s resolvedId=%s category=%s",
+				displayName, tostring(mapping.id), tostring(mapping.category)))
+		end
 		return ItemCatalog.Get(mapping.category, mapping.id)
 	end
 	return nil
@@ -2037,6 +2078,8 @@ function ItemCatalog.GetIconImageAcquisitionLabel(iconImageId: string): string?
 	local source = iconImage.source
 	if source == "brainrot_bundle" then
 		return "Brainrot Bundle"
+	elseif source == "quest" or source == "quest_only" then
+		return "Quests"
 	elseif source == "coming_soon" then
 		return "Coming Soon"
 	elseif source == "shop" or iconImage.shopOnly then

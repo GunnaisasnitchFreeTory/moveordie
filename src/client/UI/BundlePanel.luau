@@ -262,6 +262,10 @@ local function selectBundle(bundleId: string)
 		if bundle.coverImage and bundle.coverImage ~= "" then
 			coverImage.Image = bundle.coverImage
 			coverImage.Visible = true
+			if bundle.id == FNAF_BUNDLE_ID then
+				print(string.format("[BundleCover] bundleId=%s displayName=%s coverImage=%s",
+					tostring(bundle.id), tostring(bundle.displayName), tostring(bundle.coverImage)))
+			end
 		else
 			coverImage.Image = ""
 			coverImage.Visible = false
@@ -816,7 +820,7 @@ local function showDetailView()
 					local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 					local buyRF = remotes and remotes:FindFirstChild("Shop_BuyWithCoins")
 					if not buyRF then
-						warn("[BundlePanel] Shop_BuyWithCoins remote missing for FNAF item buy")
+						warn("[BundlePanel] Shop_BuyWithCoins remote missing for animatronic item buy")
 						return
 					end
 					local okBuy, result = pcall(buyRF.InvokeServer, buyRF, inc.itemId, "ExclusivePet")
@@ -828,7 +832,7 @@ local function showDetailView()
 						if productId and productId > 0 then
 							MarketplaceService:PromptProductPurchase(LocalPlayer, productId)
 						else
-							warn("[BundlePanel] Missing top-up productId for insufficient FNAF item coins")
+							warn("[BundlePanel] Missing top-up productId for insufficient animatronic item coins")
 						end
 					elseif okBuy and result and tostring(result.reason or "") == "Already owned" then
 						selectBundle(selectedBundleId)
@@ -973,7 +977,7 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 	coverImage.Parent = coverContainer
 
 	fnafCreditLabel = Instance.new("TextLabel")
-	fnafCreditLabel.Name = "FnafCreditLabel"
+	fnafCreditLabel.Name = "AnimatronicCreditLabel"
 	fnafCreditLabel.AnchorPoint = Vector2.new(1, 1)
 	fnafCreditLabel.Position = UDim2.new(1, -10, 1, -10)
 	fnafCreditLabel.Size = UDim2.new(0.68, 0, 0, 20)

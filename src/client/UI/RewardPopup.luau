@@ -100,6 +100,8 @@ local function lookupCatalogEntry(data)
 			entry = IC.Pets[data.itemId]
 		elseif t == "crown" and IC.Crowns then
 			entry = IC.Crowns[data.itemId]
+		elseif (t == "iconimage" or t == "icon_image") and IC.IconImages then
+			entry = IC.IconImages[data.itemId]
 		elseif (t == "crate" or t == "crates") and IC.Crates then
 			entry = IC.Crates[data.itemId]
 		end
@@ -107,6 +109,7 @@ local function lookupCatalogEntry(data)
 	if not entry then
 		if IC.Pets and IC.Pets[data.itemId] then entry = IC.Pets[data.itemId]
 		elseif IC.Crowns and IC.Crowns[data.itemId] then entry = IC.Crowns[data.itemId]
+		elseif IC.IconImages and IC.IconImages[data.itemId] then entry = IC.IconImages[data.itemId]
 		elseif IC.Crates and IC.Crates[data.itemId] then entry = IC.Crates[data.itemId] end
 	end
 	return entry

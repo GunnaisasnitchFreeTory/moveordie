@@ -43,6 +43,9 @@ local LocalPlayer = Players.LocalPlayer
 --[[ INTERNAL STATE ]]
 local initialized = false
 local fxEnabled = false
+local activeBarrierPresentationProfile = "Unknown"
+local lastAppliedStormProfileAttr: string? = nil
+local lastAppliedPresentationProfileAttr: string? = nil
 
 -- Effects (created once at Init, destroyed at Destroy)
 local colorCorrection: ColorCorrectionEffect? = nil
@@ -125,6 +128,142 @@ local function cleanupStaleLightingFX()
 	end
 	if cleaned > 0 then
 		print(string.format("[StormFX] Cleaned %d stale effects from Lighting", cleaned))
+	end
+end
+
+local function isInstanceInLighting(inst: Instance?): boolean
+	if not inst then return false end
+	local ok, parent = pcall(function()
+		return inst.Parent
+	end)
+	return ok and parent == Lighting
+end
+
+local function captureAtmosphereOriginalValues(atmo: Atmosphere)
+	origAtmoValues = {
+		Density = atmo.Density,
+		Haze = atmo.Haze,
+		Color = atmo.Color,
+		Decay = atmo.Decay,
+		Offset = atmo.Offset,
+		Glare = atmo.Glare,
+	}
+end
+
+--[[
+	Ensure storm FX instances are still valid after server-side Lighting swaps.
+	This self-heals references if mode lighting replaced Lighting children.
+]]
+local function ensureEffectsAlive()
+	if not isInstanceInLighting(atmosphere) then
+		local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
+		if atmo then
+			atmosphere = atmo
+			captureAtmosphereOriginalValues(atmo)
+		else
+			local newAtmo = Instance.new("Atmosphere")
+			newAtmo.Name = "StormFX_Atmosphere"
+			newAtmo.Density = 0
+			newAtmo.Haze = 0
+			newAtmo.Offset = 0
+			newAtmo.Color = Color3.fromRGB(199, 170, 107)
+			newAtmo.Decay = Color3.fromRGB(92, 60, 13)
+			newAtmo.Glare = 0
+			newAtmo.Parent = Lighting
+			atmosphere = newAtmo
+			captureAtmosphereOriginalValues(newAtmo)
+		end
+	end
+
+	if not isInstanceInLighting(colorCorrection) then
+		local cc = Instance.new("ColorCorrectionEffect")
+		cc.Name = "StormFX_CC"
+		cc.Enabled = false
+		cc.TintColor = StormFXConfig.CCTintColor
+		cc.Brightness = StormFXConfig.CCBrightness
+		cc.Contrast = StormFXConfig.CCContrast
+		cc.Saturation = StormFXConfig.CCSaturation
+		cc.Parent = Lighting
+		colorCorrection = cc
+	end
+
+	if not isInstanceInLighting(bloom) then
+		local bl = Instance.new("BloomEffect")
+		bl.Name = "StormFX_Bloom"
+		bl.Enabled = false
+		bl.Intensity = StormFXConfig.BloomIntensity
+		bl.Size = StormFXConfig.BloomSize
+		bl.Threshold = StormFXConfig.BloomThreshold
+		bl.Parent = Lighting
+		bloom = bl
+	end
+end
+
+local function applyProfileToFxInstances()
+	-- Apply current profile colors/settings to already-created FX instances.
+	if colorCorrection then
+		colorCorrection.TintColor = StormFXConfig.CCTintColor
+		colorCorrection.Brightness = StormFXConfig.CCBrightness
+		colorCorrection.Contrast = StormFXConfig.CCContrast
+		colorCorrection.Saturation = StormFXConfig.CCSaturation
+	end
+	if bloom then
+		bloom.Intensity = StormFXConfig.BloomIntensity
+		bloom.Size = StormFXConfig.BloomSize
+		bloom.Threshold = StormFXConfig.BloomThreshold
+	end
+	if atmosphere and fxEnabled and origAtmoValues then
+		atmosphere.Density = math.max(origAtmoValues.Density, StormFXConfig.AtmosphereDensity)
+		atmosphere.Haze = math.max(origAtmoValues.Haze, StormFXConfig.AtmosphereHaze)
+		atmosphere.Color = StormFXConfig.AtmosphereColor
+	end
+end
+
+local function applyReplicatedPresentationProfile(context: string)
+	local presentationProfile = Lighting:GetAttribute("BarrierPresentationProfile")
+	if type(presentationProfile) == "string" and presentationProfile ~= "" then
+		activeBarrierPresentationProfile = presentationProfile
+	end
+
+	local stormProfile = Lighting:GetAttribute("StormVfxProfile")
+	if type(stormProfile) ~= "string" or stormProfile == "" then
+		warn(string.format(
+			"[StormFX] Missing StormVfxProfile attribute (context=%s presentation=%s)",
+			context,
+			activeBarrierPresentationProfile
+		))
+		return
+	end
+	if not StormFXConfig.IsValidProfile(stormProfile) then
+		warn(string.format(
+			"[StormFX] Invalid StormVfxProfile '%s' (context=%s presentation=%s)",
+			stormProfile,
+			context,
+			activeBarrierPresentationProfile
+		))
+		return
+	end
+
+	lastAppliedStormProfileAttr = stormProfile
+	lastAppliedPresentationProfileAttr = activeBarrierPresentationProfile
+	StormFXConfig.ApplyProfile(stormProfile)
+	applyProfileToFxInstances()
+	print(string.format(
+		"[StormFX] PresentationApplied context=%s presentation=%s stormProfile=%s farViewBranchEnabled=true",
+		context,
+		activeBarrierPresentationProfile,
+		StormFXConfig.GetActiveProfileName()
+	))
+end
+
+local function syncReplicatedPresentationProfile()
+	local stormProfile = Lighting:GetAttribute("StormVfxProfile")
+	local presentationProfile = Lighting:GetAttribute("BarrierPresentationProfile")
+	local stormStr = if type(stormProfile) == "string" then stormProfile else nil
+	local presentationStr = if type(presentationProfile) == "string" then presentationProfile else nil
+
+	if stormStr ~= lastAppliedStormProfileAttr or presentationStr ~= lastAppliedPresentationProfileAttr then
+		applyReplicatedPresentationProfile("RenderSync")
 	end
 end
 
@@ -250,6 +389,10 @@ end
 local function enableFX(reason: string, camDist: number, plyDist: number)
 	if fxEnabled then return end
 	fxEnabled = true
+	print(string.format(
+		"[StormFX] ON profile=%s reason=%s camDist=%.1f plyDist=%.1f",
+		StormFXConfig.GetActiveProfileName(), reason, camDist, plyDist
+	))
 	debugLog(string.format("ON  reason=%s camDist=%.1f plyDist=%.1f", reason, camDist, plyDist))
 
 	-- Smooth tween atmosphere to storm overlay
@@ -274,6 +417,10 @@ end
 local function disableFX(camDist: number, plyDist: number)
 	if not fxEnabled then return end
 	fxEnabled = false
+	print(string.format(
+		"[StormFX] OFF profile=%s camDist=%.1f plyDist=%.1f",
+		StormFXConfig.GetActiveProfileName(), camDist, plyDist
+	))
 	debugLog(string.format("OFF reason=BothInside camDist=%.1f plyDist=%.1f", camDist, plyDist))
 
 	-- SNAP atmosphere to exact original values — no tween, no drift
@@ -314,6 +461,10 @@ end
 	  Player: ON at 0,       OFF at -Hyst
 ]]
 local function onRenderStep()
+	ensureEffectsAlive()
+	syncReplicatedPresentationProfile()
+	applyProfileToFxInstances()
+
 	-- Throttle: skip if called faster than MinUpdateInterval
 	local now = tick()
 	if now - lastUpdate < StormFXConfig.MinUpdateInterval then return end
@@ -416,59 +567,23 @@ function StormFXController.Init()
 	-- Safety: clean up stale effects from previous code versions / hot-reloads
 	cleanupStaleCharacterFX()
 	cleanupStaleLightingFX()
+	applyReplicatedPresentationProfile("Init")
 
-	-- Find or create Atmosphere
-	atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
-	if atmosphere then
-		origAtmoValues = {
-			Density = atmosphere.Density,
-			Haze = atmosphere.Haze,
-			Color = atmosphere.Color,
-			Decay = atmosphere.Decay,
-			Offset = atmosphere.Offset,
-			Glare = atmosphere.Glare,
-		}
-	else
-		atmosphere = Instance.new("Atmosphere")
-		atmosphere.Name = "StormFX_Atmosphere"
-		atmosphere.Density = 0
-		atmosphere.Haze = 0
-		atmosphere.Offset = 0
-		atmosphere.Color = Color3.fromRGB(199, 170, 107)
-		atmosphere.Decay = Color3.fromRGB(92, 60, 13)
-		atmosphere.Glare = 0
-		atmosphere.Parent = Lighting
-		origAtmoValues = {
-			Density = 0,
-			Haze = 0,
-			Color = atmosphere.Color,
-			Decay = atmosphere.Decay,
-			Offset = 0,
-			Glare = 0,
-		}
-	end
-
-	-- Create ColorCorrection (starts disabled)
-	colorCorrection = Instance.new("ColorCorrectionEffect")
-	colorCorrection.Name = "StormFX_CC"
-	colorCorrection.Enabled = false
-	colorCorrection.TintColor = StormFXConfig.CCTintColor
-	colorCorrection.Brightness = StormFXConfig.CCBrightness
-	colorCorrection.Contrast = StormFXConfig.CCContrast
-	colorCorrection.Saturation = StormFXConfig.CCSaturation
-	colorCorrection.Parent = Lighting
-
-	-- Create Bloom (starts disabled)
-	bloom = Instance.new("BloomEffect")
-	bloom.Name = "StormFX_Bloom"
-	bloom.Enabled = false
-	bloom.Intensity = StormFXConfig.BloomIntensity
-	bloom.Size = StormFXConfig.BloomSize
-	bloom.Threshold = StormFXConfig.BloomThreshold
-	bloom.Parent = Lighting
+	ensureEffectsAlive()
 
 	-- Evaluate on RenderStepped (throttled to MinUpdateInterval inside handler)
 	renderConnection = RunService.RenderStepped:Connect(onRenderStep)
+
+	-- Server pushes active storm profile via Lighting attribute.
+	Lighting:GetAttributeChangedSignal("StormVfxProfile"):Connect(function()
+		applyReplicatedPresentationProfile("StormVfxProfileChanged")
+		debugLog(string.format("Profile changed -> %s", StormFXConfig.GetActiveProfileName()))
+	end)
+
+	Lighting:GetAttributeChangedSignal("BarrierPresentationProfile"):Connect(function()
+		applyReplicatedPresentationProfile("BarrierPresentationProfileChanged")
+		debugLog(string.format("Presentation changed -> %s", activeBarrierPresentationProfile))
+	end)
 
 	-- Force-reset on character removed (death / respawn)
 	characterRemovingConnection = LocalPlayer.CharacterRemoving:Connect(function()

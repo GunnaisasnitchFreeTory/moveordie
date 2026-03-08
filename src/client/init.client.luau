@@ -234,7 +234,29 @@ else
 	warn("[Client] FreezeIndicatorController FAILED:", freezeErr)
 end
 
--- 10b. TungTungSahurController (countdown + announcement UI for Brainrot hazard)
+-- 10b. PaidFreezeNoticeController (dedicated UI for paid targeted freeze)
+local paidFreezeUiOk, paidFreezeUiErr = pcall(function()
+	local PaidFreezeNoticeController = require(Client:WaitForChild("PaidFreezeNoticeController"))
+	PaidFreezeNoticeController.Init()
+end)
+if paidFreezeUiOk then
+	print("[Client] PaidFreezeNoticeController loaded OK")
+else
+	warn("[Client] PaidFreezeNoticeController FAILED:", paidFreezeUiErr)
+end
+
+-- 10c. PaidFreezeOverheadController (overhead icon on paid-frozen players)
+local paidFreezeOverheadOk, paidFreezeOverheadErr = pcall(function()
+	local PaidFreezeOverheadController = require(Client:WaitForChild("PaidFreezeOverheadController"))
+	PaidFreezeOverheadController.Init()
+end)
+if paidFreezeOverheadOk then
+	print("[Client] PaidFreezeOverheadController loaded OK")
+else
+	warn("[Client] PaidFreezeOverheadController FAILED:", paidFreezeOverheadErr)
+end
+
+-- 10d. TungTungSahurController (countdown + announcement UI for Brainrot hazard)
 local ttsOk, ttsErr = pcall(function()
 	local TungTungSahurController = require(Client:WaitForChild("TungTungSahurController"))
 	TungTungSahurController.Init()
@@ -256,7 +278,18 @@ else
 	warn("[Client] GroupSignController FAILED:", gsErr)
 end
 
--- 12. RewardGrantListener (server-confirmed reward popup only)
+-- 12. FreezePlayerPromptController (targeted freeze dev product prompt)
+local freezePromptOk, freezePromptErr = pcall(function()
+	local FreezePlayerPromptController = require(Client:WaitForChild("FreezePlayerPromptController"))
+	FreezePlayerPromptController.Init()
+end)
+if freezePromptOk then
+	print("[Client] FreezePlayerPromptController loaded OK")
+else
+	warn("[Client] FreezePlayerPromptController FAILED:", freezePromptErr)
+end
+
+-- 13. RewardGrantListener (server-confirmed reward popup only)
 local rewardGrantOk, rewardGrantErr = pcall(function()
 	local RewardGrantListener = require(Client:WaitForChild("RewardGrantListener"))
 	RewardGrantListener.Init()

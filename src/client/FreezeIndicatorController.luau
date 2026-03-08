@@ -169,9 +169,9 @@ function FreezeIndicatorController.Init()
 		return
 	end
 
-	remote.OnClientEvent:Connect(function(action: string, freezeDuration: number?)
+	remote.OnClientEvent:Connect(function(action: string, arg1: any)
 		if action == "Freeze" then
-			showFreeze(freezeDuration)
+			showFreeze(arg1)
 		elseif action == "Unfreeze" then
 			hideFreeze()
 		end

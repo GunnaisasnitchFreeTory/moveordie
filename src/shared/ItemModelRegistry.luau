@@ -43,6 +43,43 @@ local _initialized = false
 local _count = 0
 local _duplicateWarned: { [string]: boolean } = {}
 local _duplicateExactNameWarned: { [string]: boolean } = {}
+local _aliasLogPrinted: { [string]: boolean } = {}
+
+-- Backward-compatible model key aliases for renamed assets.
+-- Keys are normalized through Normalize().
+local MODEL_KEY_ALIASES: { [string]: string } = {
+	["pets/epic/steve"] = "pets/epic/steven",
+	["pets/epic/bonnieplush"] = "pets/epic/bunnyplush",
+	["pets/epic/chicaplush"] = "pets/epic/chickenplush",
+	["pets/epic/foxyplush"] = "pets/epic/foxplush",
+	["pets/epic/freddyplush"] = "pets/epic/bearplush",
+	["pets/epic/fredbearplush"] = "pets/epic/goldbearplush",
+	["pets/epic/huggywuggy"] = "pets/epic/furryhugs",
+	["pets/epic/fnaf/bonnie"] = "pets/epic/fnaf/animatronicbunny",
+	["pets/epic/fnaf/chica"] = "pets/epic/fnaf/animatronicchicken",
+	["pets/epic/fnaf/foxy"] = "pets/epic/fnaf/animatronicfox",
+	["pets/epic/fnaf/freddyfazbear"] = "pets/epic/fnaf/animatronicbear",
+	["pets/epic/fnaf/goldenfreddy"] = "pets/epic/fnaf/theoneyoushouldnthavekilled",
+	["pets/epic/fnaf/thepuppet"] = "pets/epic/fnaf/animatronicpuppet",
+	["pets/epic/fnaf/cupcake"] = "pets/epic/fnaf/hauntedcupcake",
+}
+
+local EXACT_NAME_ALIASES: { [string]: string } = {
+	["Steve"] = "Steven",
+	["BonniePlush"] = "BunnyPlush",
+	["ChicaPlush"] = "ChickenPlush",
+	["FoxyPlush"] = "FoxPlush",
+	["FreddyPlush"] = "BearPlush",
+	["FredbearPlush"] = "GoldbearPlush",
+	["HuggyWuggy"] = "FurryHugs",
+	["Bonnie"] = "AnimatronicBunny",
+	["Chica"] = "AnimatronicChicken",
+	["Foxy"] = "AnimatronicFox",
+	["FreddyFazbear"] = "AnimatronicBear",
+	["GoldenFreddy"] = "TheOneYouShouldntHaveKilled",
+	["ThePuppet"] = "AnimatronicPuppet",
+	["Cupcake"] = "HauntedCupcake",
+}
 
 -- =====================================================================
 -- NORMALIZATION
@@ -146,6 +183,14 @@ function ItemModelRegistry.Get(keyOrPath: string): Instance?
 	if not keyOrPath or keyOrPath == "" then return nil end
 
 	local key = Normalize(keyOrPath)
+	local aliasedKey = MODEL_KEY_ALIASES[key]
+	if aliasedKey then
+		if not _aliasLogPrinted[key] then
+			_aliasLogPrinted[key] = true
+			print(TAG, string.format("Alias hit: %s -> %s", key, aliasedKey))
+		end
+		key = aliasedKey
+	end
 
 	-- Exact match
 	local result = _registry[key]
@@ -164,7 +209,19 @@ end
 function ItemModelRegistry.GetByExactName(modelName: string): Instance?
 	if not _initialized then doInit() end
 	if not modelName or modelName == "" then return nil end
-	return _exactNameRegistry[modelName]
+	local direct = _exactNameRegistry[modelName]
+	if direct then
+		return direct
+	end
+	local alias = EXACT_NAME_ALIASES[modelName]
+	if alias then
+		if not _aliasLogPrinted["exact:" .. modelName] then
+			_aliasLogPrinted["exact:" .. modelName] = true
+			print(TAG, string.format("Exact-name alias hit: %s -> %s", modelName, alias))
+		end
+		return _exactNameRegistry[alias]
+	end
+	return nil
 end
 
 -- Alias for backward compat

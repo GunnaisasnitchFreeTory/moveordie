@@ -74,6 +74,77 @@ StormFXConfig.BloomIntensity = 0.3
 StormFXConfig.BloomSize = 24
 StormFXConfig.BloomThreshold = 2
 
+---------- MODE PROFILES ----------
+
+local PROFILES = {
+	Normal = {
+		StormColor = ShrinkConfig.BoundsColor,
+		ParticleMistStartColor = Color3.fromRGB(255, 180, 100),
+		ParticleMistEndColor = Color3.fromRGB(255, 100, 30),
+		ParticleSparksColor = Color3.fromRGB(255, 220, 150),
+		AtmosphereDensity = 0.3,
+		AtmosphereHaze = 6,
+		AtmosphereColor = Color3.fromRGB(255, 180, 130),
+		AtmosphereDecay = Color3.fromRGB(120, 100, 80),
+		CCTintColor = Color3.fromRGB(255, 230, 200),
+		CCBrightness = -0.02,
+		CCContrast = 0.05,
+		CCSaturation = -0.1,
+		BloomIntensity = 0.3,
+		BloomSize = 24,
+		BloomThreshold = 2,
+	},
+	Brainrot = {
+		StormColor = Color3.fromRGB(85, 175, 245),
+		ParticleMistStartColor = Color3.fromRGB(195, 238, 255),
+		ParticleMistEndColor = Color3.fromRGB(120, 180, 245),
+		ParticleSparksColor = Color3.fromRGB(220, 245, 255),
+		AtmosphereDensity = 0.3,
+		AtmosphereHaze = 6,
+		AtmosphereColor = Color3.fromRGB(165, 220, 255),
+		AtmosphereDecay = Color3.fromRGB(70, 110, 150),
+		CCTintColor = Color3.fromRGB(205, 235, 255),
+		CCBrightness = -0.01,
+		CCContrast = 0.06,
+		CCSaturation = -0.06,
+		BloomIntensity = 0.28,
+		BloomSize = 22,
+		BloomThreshold = 2,
+	},
+}
+
+StormFXConfig.ActiveProfileName = "Normal"
+
+function StormFXConfig.ApplyProfile(profileName: string?)
+	local name = if type(profileName) == "string" and profileName ~= "" then profileName else "Normal"
+	local profile = PROFILES[name] or PROFILES.Normal
+	StormFXConfig.ActiveProfileName = if PROFILES[name] then name else "Normal"
+
+	StormFXConfig.StormColor = profile.StormColor
+	StormFXConfig.ParticleMistStartColor = profile.ParticleMistStartColor
+	StormFXConfig.ParticleMistEndColor = profile.ParticleMistEndColor
+	StormFXConfig.ParticleSparksColor = profile.ParticleSparksColor
+	StormFXConfig.AtmosphereDensity = profile.AtmosphereDensity
+	StormFXConfig.AtmosphereHaze = profile.AtmosphereHaze
+	StormFXConfig.AtmosphereColor = profile.AtmosphereColor
+	StormFXConfig.AtmosphereDecay = profile.AtmosphereDecay
+	StormFXConfig.CCTintColor = profile.CCTintColor
+	StormFXConfig.CCBrightness = profile.CCBrightness
+	StormFXConfig.CCContrast = profile.CCContrast
+	StormFXConfig.CCSaturation = profile.CCSaturation
+	StormFXConfig.BloomIntensity = profile.BloomIntensity
+	StormFXConfig.BloomSize = profile.BloomSize
+	StormFXConfig.BloomThreshold = profile.BloomThreshold
+end
+
+function StormFXConfig.GetActiveProfileName(): string
+	return StormFXConfig.ActiveProfileName
+end
+
+function StormFXConfig.IsValidProfile(profileName: string?): boolean
+	return type(profileName) == "string" and PROFILES[profileName] ~= nil
+end
+
 ---------- TRANSITION ----------
 
 StormFXConfig.TweenDuration = 0.15  -- ON tween duration (smooth entry). OFF is instant snap.
@@ -102,9 +173,9 @@ function StormFXConfig.CreateStormParticles(parent: BasePart, rateMultiplier: nu
 	mist.Name = "StormMist"
 	mist.Enabled = true
 	mist.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 180, 100)),
+		ColorSequenceKeypoint.new(0, StormFXConfig.ParticleMistStartColor),
 		ColorSequenceKeypoint.new(0.5, stormColor),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 30)),
+		ColorSequenceKeypoint.new(1, StormFXConfig.ParticleMistEndColor),
 	})
 	mist.Size = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 3),
@@ -133,7 +204,7 @@ function StormFXConfig.CreateStormParticles(parent: BasePart, rateMultiplier: nu
 	local sparks = Instance.new("ParticleEmitter")
 	sparks.Name = "StormSparks"
 	sparks.Enabled = true
-	sparks.Color = ColorSequence.new(Color3.fromRGB(255, 220, 150))
+	sparks.Color = ColorSequence.new(StormFXConfig.ParticleSparksColor)
 	sparks.Size = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 0.5),
 		NumberSequenceKeypoint.new(0.5, 2),

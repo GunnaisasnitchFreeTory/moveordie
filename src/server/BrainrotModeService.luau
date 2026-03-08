@@ -48,9 +48,19 @@ local spawnedThisMatch: { string } = {}
 local pickupsFolder: Folder? = nil
 local collectRemote: RemoteEvent? = nil
 local promptConnections: { RBXScriptConnection } = {}
+local _DailyQuestService = nil
 
 local function log(...)
 	print("[BrainrotMode]", ...)
+end
+
+local function getDailyQuestService()
+	if _DailyQuestService then return _DailyQuestService end
+	local ok, mod = pcall(require, Server:FindFirstChild("DailyQuestService"))
+	if ok and mod then
+		_DailyQuestService = mod
+	end
+	return _DailyQuestService
 end
 
 local function getBrainrotPetIds(): { string }
@@ -250,6 +260,13 @@ local function spawnBrainrot(petId: string)
 				coinsAwarded = COINS_NEW_PET
 				EconomyService.AwardCoins(player, COINS_NEW_PET, "BrainrotNew:" .. petId)
 				log(string.format("%s collected NEW %s → pet + %d coins", player.Name, petDef.name, COINS_NEW_PET))
+			end
+
+			local dqs = getDailyQuestService()
+			if dqs and dqs.OnBrainrotPetPickup then
+				log(string.format("[QuestBridge] firing Brainrot pickup quest hook player=%s petId=%s mode=Brainrot",
+					player.Name, petId))
+				pcall(dqs.OnBrainrotPetPickup, player, petId, "Brainrot")
 			end
 
 			if collectRemote then

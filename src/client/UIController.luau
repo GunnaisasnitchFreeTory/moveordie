@@ -847,7 +847,7 @@ function UIController.Init()
 			prompt = Instance.new("ProximityPrompt")
 			prompt.Name = "FNAFBundlePrompt"
 			prompt.ActionText = "Buy"
-			prompt.ObjectText = "FNAF Bundle"
+			prompt.ObjectText = "Animatronic Pets"
 			prompt.KeyboardKeyCode = Enum.KeyCode.E
 			prompt.HoldDuration = 0
 			prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE

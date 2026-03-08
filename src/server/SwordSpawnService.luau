@@ -77,7 +77,7 @@ local pickupsFolder: Folder? = nil
 local touchConnections: { RBXScriptConnection } = {}
 
 local activePickups: { { model: Model, spawnRound: number } } = {}
-local swordHolders: { [Player]: { tool: Tool, spawnRound: number, deathConn: RBXScriptConnection? } } = {}
+local swordHolders: { [Player]: { tool: Tool, spawnRound: number, deathConn: RBXScriptConnection?, unequippedConn: RBXScriptConnection? } } = {}
 
 local swordSpawnedRemote: RemoteEvent? = nil
 local swordDeniedCooldowns: { [number]: number } = {}
@@ -171,6 +171,9 @@ local function removeSwordFromPlayer(player: Player)
 	if data.deathConn then
 		data.deathConn:Disconnect()
 	end
+	if data.unequippedConn then
+		data.unequippedConn:Disconnect()
+	end
 
 	if data.tool and data.tool.Parent then
 		data.tool:Destroy()
@@ -246,6 +249,7 @@ local function giveSwordToPlayer(player: Player, spawnRound: number)
 
 	local clone = template:Clone()
 	clone:SetAttribute("SwordSpawnRound", spawnRound)
+	clone.CanBeDropped = false
 
 	local backpack = player:FindFirstChild("Backpack")
 	if backpack then
@@ -253,10 +257,32 @@ local function giveSwordToPlayer(player: Player, spawnRound: number)
 	end
 
 	local deathConn: RBXScriptConnection? = nil
+	local unequippedConn: RBXScriptConnection? = nil
 	local character = player.Character
 	if character then
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
+			-- Guard: sword must stay visibly equipped once picked up.
+			humanoid:EquipTool(clone)
+
+			unequippedConn = clone.Unequipped:Connect(function()
+				local holder = swordHolders[player]
+				if not holder or holder.tool ~= clone then return end
+				if not player.Parent then return end
+				local currentCharacter = player.Character
+				if not currentCharacter then return end
+				local currentHumanoid = currentCharacter:FindFirstChildOfClass("Humanoid")
+				if not currentHumanoid or currentHumanoid.Health <= 0 then return end
+				task.defer(function()
+					local latest = swordHolders[player]
+					if not latest or latest.tool ~= clone then return end
+					if clone.Parent ~= currentCharacter then
+						currentHumanoid:EquipTool(clone)
+						log(string.format("%s sword re-equipped (hide guard)", player.Name))
+					end
+				end)
+			end)
+
 			deathConn = humanoid.Died:Connect(function()
 				removeSwordFromPlayer(player)
 			end)
@@ -267,6 +293,7 @@ local function giveSwordToPlayer(player: Player, spawnRound: number)
 		tool = clone,
 		spawnRound = spawnRound,
 		deathConn = deathConn,
+		unequippedConn = unequippedConn,
 	}
 
 	log(string.format("%s picked up sword (spawned round %d)", player.Name, spawnRound))

@@ -72,8 +72,8 @@ local PetsPanel = {}
 
 -- Pet UI-only thumbnail overrides (bypass viewport renderer for specific pets).
 local PetThumbnailOverrides: { [string]: string } = {
-	FredbearPlush = "rbxassetid://74636973353299",
-	HuggyWuggy = "rbxassetid://135200249029461",
+	GoldbearPlush = "rbxassetid://74636973353299",
+	FurryHugs = "rbxassetid://135200249029461",
 }
 
 local function getOwnedPetSet(): { [string]: boolean }

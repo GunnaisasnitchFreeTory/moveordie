@@ -66,7 +66,7 @@ local COIN_BUNDLE_CONFIG: { [string]: { requestId: string, logId: string, basePr
 		logId = "fnaf_all",
 		basePrice = 150000,
 		perOwnedDiscount = 0.10,
-		successName = "All FNAF pets unlocked",
+		successName = "All Animatronic Pets unlocked",
 	},
 	brainrot_bundle = {
 		requestId = "brainrot_all",

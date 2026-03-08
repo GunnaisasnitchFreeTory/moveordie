@@ -670,7 +670,7 @@ local function resolvePremiumVisual(item, filterType: string)
 	return catEntry, catalogImage, modelPath, catalogIconText
 end
 
-local FNAF_BANNER_IMAGE = "rbxassetid://72168519670720"
+local FNAF_BANNER_IMAGE = "rbxassetid://73558749824817"
 local FNAF_SINGLE_PRICE = 70000
 local function formatCoinText(n: number): string
 	local s = tostring(math.max(0, math.floor(n)))
@@ -914,7 +914,7 @@ local function populatePetsTab()
 	headerLabel.Position = UDim2.fromOffset(10, 0)
 	headerLabel.Size = UDim2.new(1, -20, 1, 0)
 	headerLabel.Font = Enum.Font.GothamBold
-	headerLabel.Text = "Limited FNAF Pets"
+	headerLabel.Text = "Limited Animatronic Pets"
 	headerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	headerLabel.TextSize = 16
 	headerLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -995,7 +995,7 @@ local function populatePetsTab()
 	bannerTitle.Position = UDim2.fromOffset(12, 8)
 	bannerTitle.Size = UDim2.new(1, -24, 0, 28)
 	bannerTitle.Font = Enum.Font.GothamBold
-	bannerTitle.Text = "FNAF Pets"
+	bannerTitle.Text = "Animatronic Pets"
 	bannerTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
 	bannerTitle.TextSize = mobileLayout and 26 or 32
 	bannerTitle.TextXAlignment = Enum.TextXAlignment.Left
@@ -1115,7 +1115,7 @@ local function populatePetsTab()
 				if productId and productId > 0 then
 					MarketplaceService:PromptProductPurchase(LocalPlayer, productId)
 				else
-					warn("[ShopPanel] Missing top-up productId for insufficient FNAF item coins")
+					warn("[ShopPanel] Missing top-up productId for insufficient animatronic item coins")
 				end
 			end
 		end)
@@ -1127,7 +1127,7 @@ local function populatePetsTab()
 	buyAllBtn.BorderSizePixel = 0
 	buyAllBtn.Size = UDim2.new(1, 0, 0, BUY_ALL_H)
 	buyAllBtn.LayoutOrder = 3
-	buyAllBtn.Text = "Buy All FNAF Pets — 150,000 Fate Coins"
+	buyAllBtn.Text = "Buy All Animatronic Pets — 150,000 Fate Coins"
 	buyAllBtn.TextColor3 = Color3.fromRGB(20, 14, 0)
 	buyAllBtn.Font = Enum.Font.GothamBold
 	buyAllBtn.TextSize = mobileLayout and 15 or 18
@@ -1148,7 +1148,7 @@ local function populatePetsTab()
 			return
 		end
 		local price = quote and tonumber(quote.price) or 150000
-		buyAllBtn.Text = string.format("Buy All FNAF Pets — %s Fate Coins", formatCoinText(price))
+		buyAllBtn.Text = string.format("Buy All Animatronic Pets — %s Fate Coins", formatCoinText(price))
 		buyAllBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 30)
 		buyAllBtn.TextColor3 = Color3.fromRGB(20, 14, 0)
 		buyAllBtn.AutoButtonColor = true
@@ -1162,13 +1162,13 @@ local function populatePetsTab()
 		local preQuote = getFnafBundleQuote()
 		applyBuyAllStateFromQuote(preQuote)
 		if preQuote and preQuote.ok == false and preQuote.reason == "ALREADY_OWNED" then
-			showShopToast("You already own all FNAF pets.")
+			showShopToast("You already own all animatronic pets.")
 			return
 		end
 		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 		local buyRF = remotes and remotes:FindFirstChild("Shop_BuyWithCoins")
 		if not buyRF then
-			warn("[ShopPanel] Shop_BuyWithCoins remote not found for FNAF bundle")
+			warn("[ShopPanel] Shop_BuyWithCoins remote not found for animatronic bundle")
 			return
 		end
 
@@ -1184,7 +1184,7 @@ local function populatePetsTab()
 		else
 			local reason = (okBuy and result and result.reason) or "Purchase failed"
 			if reason == "ALREADY_OWNED" then
-				showShopToast("You already own all FNAF pets.")
+				showShopToast("You already own all animatronic pets.")
 				for _, petId in ipairs(fnafPetIds) do
 					_locallyOwned[petId] = true
 				end

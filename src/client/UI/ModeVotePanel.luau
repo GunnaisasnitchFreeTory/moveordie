@@ -42,6 +42,7 @@ local gui = nil
 local panelFrame = nil
 local normalBtn = nil
 local brainrotBtn = nil
+local disasterBtn = nil
 local normalCountLbl = nil
 local brainrotCountLbl = nil
 local currentVote = nil
@@ -58,6 +59,7 @@ local PANEL_BG = Color3.fromRGB(22, 25, 38)
 local HEADER_COLOR = Color3.fromRGB(255, 215, 48)
 local BTN_NORMAL_COLOR = Color3.fromRGB(50, 160, 80)
 local BTN_BRAINROT_COLOR = Color3.fromRGB(178, 48, 255)
+local BTN_LOCKED_COLOR = Color3.fromRGB(95, 95, 105)
 local BTN_SELECTED_STROKE = Color3.fromRGB(255, 255, 255)
 local BTN_UNSELECTED_STROKE = Color3.fromRGB(60, 65, 85)
 local TEXT_COLOR = Color3.fromRGB(255, 255, 255)
@@ -89,7 +91,7 @@ local function createGui()
 	panelFrame.Name = "VotePanel"
 	panelFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 	panelFrame.Position = UDim2.fromScale(0.5, 0.42)
-	panelFrame.Size = UDim2.fromOffset(420, 220)
+	panelFrame.Size = UDim2.fromOffset(580, 220)
 	panelFrame.BackgroundColor3 = PANEL_BG
 	panelFrame.BackgroundTransparency = 0.04
 	panelFrame.BorderSizePixel = 0
@@ -201,15 +203,16 @@ local function createGui()
 	listLayout.Padding = UDim.new(0, 16)
 	listLayout.Parent = btnContainer
 
-	local function createVoteButton(bName, label, imageId, bgColor, layoutOrder)
+	local function createVoteButton(bName, label, imageId, bgColor, layoutOrder, locked)
 		local btn = Instance.new("TextButton")
 		btn.Name = bName
-		btn.Size = UDim2.fromOffset(180, 120)
+		btn.Size = UDim2.fromOffset(170, 120)
 		btn.BackgroundColor3 = bgColor
-		btn.BackgroundTransparency = 0.08
+		btn.BackgroundTransparency = locked and 0.2 or 0.08
 		btn.BorderSizePixel = 0
 		btn.Text = ""
-		btn.AutoButtonColor = false
+		btn.AutoButtonColor = not locked
+		btn.Active = not locked
 		btn.LayoutOrder = layoutOrder
 		btn.ClipsDescendants = true
 		btn.ZIndex = 4
@@ -224,22 +227,27 @@ local function createGui()
 		btnStroke.Transparency = 0.3
 		btnStroke.Parent = btn
 
-		local bgImage = Instance.new("ImageLabel")
-		bgImage.Name = "BackgroundImage"
-		bgImage.Position = UDim2.fromScale(0, 0)
-		bgImage.Size = UDim2.fromScale(1, 1)
-		bgImage.BackgroundTransparency = 1
-		bgImage.Image = imageId
-		bgImage.ScaleType = Enum.ScaleType.Crop
-		bgImage.ZIndex = 5
-		bgImage.Parent = btn
+		if type(imageId) == "string" and imageId ~= "" then
+			local bgImage = Instance.new("ImageLabel")
+			bgImage.Name = "BackgroundImage"
+			bgImage.Position = UDim2.fromScale(0, 0)
+			bgImage.Size = UDim2.fromScale(1, 1)
+			bgImage.BackgroundTransparency = 1
+			bgImage.Image = imageId
+			bgImage.ScaleType = Enum.ScaleType.Crop
+			if locked then
+				bgImage.ImageColor3 = Color3.fromRGB(125, 125, 125)
+			end
+			bgImage.ZIndex = 5
+			bgImage.Parent = btn
+		end
 
 		local darkOverlay = Instance.new("Frame")
 		darkOverlay.Name = "DarkOverlay"
 		darkOverlay.Position = UDim2.fromScale(0, 0)
 		darkOverlay.Size = UDim2.fromScale(1, 1)
 		darkOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		darkOverlay.BackgroundTransparency = 0.5
+		darkOverlay.BackgroundTransparency = locked and 0.25 or 0.5
 		darkOverlay.BorderSizePixel = 0
 		darkOverlay.ZIndex = 6
 		darkOverlay.Parent = btn
@@ -272,7 +280,7 @@ local function createGui()
 		countLbl.Font = Enum.Font.GothamSemibold
 		countLbl.TextColor3 = Color3.fromRGB(220, 225, 240)
 		countLbl.TextSize = 16
-		countLbl.Text = "0 votes"
+		countLbl.Text = locked and "" or "0 votes"
 		countLbl.ZIndex = 7
 		countLbl.Parent = btn
 
@@ -281,18 +289,48 @@ local function createGui()
 		countStroke.Thickness = 1.5
 		countStroke.Parent = countLbl
 
-		btn.MouseEnter:Connect(function()
-			TweenService:Create(darkOverlay, TweenInfo.new(0.15), { BackgroundTransparency = 0.65 }):Play()
-		end)
-		btn.MouseLeave:Connect(function()
-			TweenService:Create(darkOverlay, TweenInfo.new(0.15), { BackgroundTransparency = 0.5 }):Play()
-		end)
+		if not locked then
+			btn.MouseEnter:Connect(function()
+				TweenService:Create(darkOverlay, TweenInfo.new(0.15), { BackgroundTransparency = 0.65 }):Play()
+			end)
+			btn.MouseLeave:Connect(function()
+				TweenService:Create(darkOverlay, TweenInfo.new(0.15), { BackgroundTransparency = 0.5 }):Play()
+			end)
+		else
+			local lockLbl = Instance.new("TextLabel")
+			lockLbl.Name = "LockLabel"
+			lockLbl.AnchorPoint = Vector2.new(0.5, 0.5)
+			lockLbl.Position = UDim2.fromScale(0.5, 0.62)
+			lockLbl.Size = UDim2.new(1, -12, 0, 24)
+			lockLbl.BackgroundTransparency = 1
+			lockLbl.Font = Enum.Font.GothamBlack
+			lockLbl.TextColor3 = Color3.fromRGB(230, 230, 230)
+			lockLbl.TextSize = 22
+			lockLbl.Text = "🔒"
+			lockLbl.ZIndex = 7
+			lockLbl.Parent = btn
+
+			local soonLbl = Instance.new("TextLabel")
+			soonLbl.Name = "ComingSoonLabel"
+			soonLbl.AnchorPoint = Vector2.new(0.5, 0.5)
+			soonLbl.Position = UDim2.fromScale(0.5, 0.78)
+			soonLbl.Size = UDim2.new(1, -12, 0, 20)
+			soonLbl.BackgroundTransparency = 1
+			soonLbl.Font = Enum.Font.GothamBold
+			soonLbl.TextColor3 = Color3.fromRGB(215, 215, 220)
+			soonLbl.TextSize = 13
+			soonLbl.Text = "coming soon"
+			soonLbl.ZIndex = 7
+			soonLbl.Parent = btn
+		end
 
 		return btn, countLbl
 	end
 
-	normalBtn, normalCountLbl = createVoteButton("NormalBtn", "Normal Mode", NORMAL_MODE_IMAGE, BTN_NORMAL_COLOR, 1)
-	brainrotBtn, brainrotCountLbl = createVoteButton("BrainrotBtn", "Save the Brainrot", BRAINROT_MODE_IMAGE, BTN_BRAINROT_COLOR, 2)
+	brainrotBtn, brainrotCountLbl = createVoteButton("BrainrotBtn", "Save the Brainrot", BRAINROT_MODE_IMAGE, BTN_BRAINROT_COLOR, 1, false)
+	normalBtn, normalCountLbl = createVoteButton("NormalBtn", "Normal Mode", NORMAL_MODE_IMAGE, BTN_NORMAL_COLOR, 2, false)
+	disasterBtn = createVoteButton("DisasterBtn", "Disaster Mode", "", BTN_LOCKED_COLOR, 3, true)
+	print("[ModeVote] Added locked placeholder: Disaster Mode (disabled)")
 
 	normalBtn.MouseButton1Click:Connect(function()
 		if currentVote == "Normal" then return end

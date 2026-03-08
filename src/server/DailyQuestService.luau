@@ -18,6 +18,7 @@
 	  OnTTSSurvive(player)           -- hook from TungTungSahurService
 	  OnElimination(player)          -- general kill hook
 	  OnRoundSurvived(player)        -- hook from RoundManager
+	OnBrainrotPetPickup(player, petId, modeName) -- hook from BrainrotModeService
 	  DebugForceNewDay()             -- [Studio] reset cached day
 	  DebugResetProgress(player)     -- [Studio] wipe today's progress
 	  DebugCompleteQuest(p, questId) -- [Studio] max-out a quest
@@ -88,8 +89,13 @@ local _cachedDay:    string = ""
 local _cachedQuests: { { [string]: any } } = {}
 local _cachedById:   { [string]: { [string]: any } } = {}
 local _sessionJoinTimeByUserId: { [number]: number } = {}
+local _studioDayOffsetDays: number = 0
 
 local function getCurrentDay(): string
+	if RunService:IsStudio() and _studioDayOffsetDays ~= 0 then
+		local nowUtc = DateTime.now().UnixTimestamp
+		return os.date("!%Y_%m_%d", nowUtc + (_studioDayOffsetDays * 86400))
+	end
 	return os.date("!%Y_%m_%d")
 end
 
@@ -195,6 +201,10 @@ function DailyQuestService.GetStatus(player: Player)
 	for _, questDef in ipairs(quests) do
 		local p = data.progress[questDef.id] or { progress = 0, claimed = false }
 		local progress = resolveQuestProgress(player, questDef, p)
+		-- Claimed quests are hidden from the active quest feed.
+		if p.claimed then
+			continue
+		end
 
 		table.insert(questList, {
 			id          = questDef.id,
@@ -235,9 +245,13 @@ local function incrementProgress(player: Player, questType: string, amount: numb
 		if questDef.type == questType then
 			local p = data.progress[questDef.id]
 			if p and not p.claimed and p.progress < questDef.target then
-				p.progress = math.min(p.progress + (amount or 1), questDef.target)
+				local prevProgress = p.progress
+				p.progress = math.min(prevProgress + (amount or 1), questDef.target)
 				log(string.format("Progress: %s %s %d/%d",
 					player.Name, questDef.id, p.progress, questDef.target))
+				if prevProgress < questDef.target and p.progress >= questDef.target then
+					log(string.format("Quest completed: %s %s", player.Name, questDef.id))
+				end
 				changed = true
 			end
 		end
@@ -272,6 +286,21 @@ end
 
 function DailyQuestService.OnRoundSurvived(player: Player)
 	incrementProgress(player, "SurviveRoundsToday")
+end
+
+function DailyQuestService.OnBrainrotPetPickup(player: Player, petId: string, modeName: string?)
+	if type(petId) ~= "string" then return end
+	if modeName and modeName ~= "Brainrot" then
+		return
+	end
+	if petId ~= "pet_brainrot_ishowspeed" then
+		return
+	end
+	log(string.format("[QuestHook] Brainrot pickup accepted player=%s petId=%s mode=%s",
+		player.Name,
+		petId,
+		tostring(modeName or "Brainrot")))
+	incrementProgress(player, "BrainrotIShowSpeedPickupsToday", 1)
 end
 
 -- Claim
@@ -348,6 +377,23 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 			granted = inv.GrantItem(player, "Pets", reward.itemId) == true
 			if not granted then
 				failReason = "PET_GRANT_FAILED"
+			end
+		else
+			failReason = "INVENTORY_UNAVAILABLE"
+		end
+
+	elseif reward.type == "IconImage" then
+		local inv = getInventory()
+		if inv then
+			granted = inv.GrantItem(player, "IconImages", reward.itemId) == true
+			if granted then
+				local iconDef = ItemCatalog.IconImages and ItemCatalog.IconImages[reward.itemId]
+				log(string.format("[DailyQuestGrant] iconImageUnlocked player=%s itemId=%s image=%s",
+					player.Name,
+					tostring(reward.itemId),
+					tostring(iconDef and iconDef.image or "")))
+			else
+				failReason = "ICONIMAGE_GRANT_FAILED"
 			end
 		else
 			failReason = "INVENTORY_UNAVAILABLE"
@@ -470,13 +516,28 @@ function DailyQuestService.DebugForceNewDay()
 	_cachedDay    = ""
 	_cachedQuests = {}
 	_cachedById   = {}
-	log("[DEBUG] Forced new-day cache clear")
+	log(string.format("[DEBUG] Forced new-day cache clear (offset=%d)", _studioDayOffsetDays))
 	for _, player in ipairs(Players:GetPlayers()) do
 		local PDS = getPDS()
 		if PDS and PDS.IsLoaded(player) then
 			PDS.SetField(player, "DailyQuestData", "")
 		end
 	end
+end
+
+function DailyQuestService.DebugForceNextDay()
+	if not RunService:IsStudio() then return end
+	_studioDayOffsetDays += 1
+	DailyQuestService.DebugForceNewDay()
+	log(string.format("[DEBUG] Forced next day (offset now %d)", _studioDayOffsetDays))
+end
+
+function DailyQuestService.DebugForceRandomQuests()
+	if not RunService:IsStudio() then return end
+	local rng = Random.new()
+	_studioDayOffsetDays = rng:NextInteger(1, 3650)
+	DailyQuestService.DebugForceNewDay()
+	log(string.format("[DEBUG] Forced random quest day (offset now %d)", _studioDayOffsetDays))
 end
 
 function DailyQuestService.DebugResetProgress(player: Player)
@@ -569,6 +630,12 @@ function DailyQuestService.Init()
 			if cmd == "ForceNewDay" then
 				DailyQuestService.DebugForceNewDay()
 				return { ok = true, msg = "New day forced" }
+			elseif cmd == "ForceNextDay" then
+				DailyQuestService.DebugForceNextDay()
+				return { ok = true, msg = "Next day forced (new quest set)" }
+			elseif cmd == "ForceRandomQuests" then
+				DailyQuestService.DebugForceRandomQuests()
+				return { ok = true, msg = "Random quest day forced (new quest set)" }
 			elseif cmd == "ResetProgress" then
 				DailyQuestService.DebugResetProgress(player)
 				return { ok = true, msg = "Progress reset" }

@@ -234,7 +234,7 @@ local function copyPromptWiring(sourcePrompt: ProximityPrompt?, model: Instance,
 
 	-- Requested text override only.
 	targetPrompt.ActionText = "Buy"
-	targetPrompt.ObjectText = "FNAF Pets"
+	targetPrompt.ObjectText = "Animatronic Pets"
 	targetPrompt.MaxActivationDistance = math.max(10, targetPrompt.MaxActivationDistance)
 	targetPrompt.RequiresLineOfSight = false
 	targetPrompt.HoldDuration = 0
@@ -249,7 +249,7 @@ local function copyIndicatorWiring(sourceIndicator: BillboardGui?, model: Instan
 		if child:IsA("BillboardGui") then
 			local lbl = child:FindFirstChild("Badge")
 			lbl = lbl and lbl:FindFirstChild("Label")
-			if lbl and lbl:IsA("TextLabel") and lbl.Text == "FNAF Pets" then
+			if lbl and lbl:IsA("TextLabel") and lbl.Text == "Animatronic Pets" then
 				existing = child
 				break
 			end
@@ -283,7 +283,7 @@ local function copyIndicatorWiring(sourceIndicator: BillboardGui?, model: Instan
 			label2.BackgroundTransparency = 1
 			label2.Size = UDim2.fromScale(1, 1)
 			label2.Font = Enum.Font.GothamBold
-			label2.Text = "FNAF Pets"
+			label2.Text = "Animatronic Pets"
 			label2.TextScaled = true
 			label2.TextColor3 = Color3.fromRGB(255, 255, 255)
 			label2.Parent = badge
@@ -311,7 +311,7 @@ local function copyIndicatorWiring(sourceIndicator: BillboardGui?, model: Instan
 		label.TextColor3 = Color3.fromRGB(255, 255, 255)
 		label.Parent = badge
 	end
-	label.Text = "FNAF Pets"
+	label.Text = "Animatronic Pets"
 	target.Enabled = true
 	target.Active = false
 	if sourceIndicator then

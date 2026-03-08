@@ -3,13 +3,16 @@
 	Server-side arena registration, lifecycle hooks, spawn utilities,
 	active bounds tracking, and out-of-bounds enforcement.
 	
-	The arena (SquarePlatformMap) is ALWAYS visible in the world.
+	The default arena (SquarePlatformMap) is visible during intermission.
+	Match mode can swap in a runtime map clone while preserving pivot.
 	Active bounds shrink each round to increase difficulty.
 	Players outside active bounds are eliminated (with post-shrink grace window).
 	
 	API:
 		Init()                        → Initialize and locate arena
-		GetArena()                    → Instance reference
+		GetArena()                    → Active map instance reference
+		ConfigureForMode(modeName)    → Activate mode map (or default)
+		RestoreDefaultMap()           → Return to default intermission map
 		IsActive()                    → boolean (match in progress)
 		OnMatchStart()                → Called when Playing phase begins
 		OnMatchEnd()                  → Called when match ends
@@ -26,6 +29,8 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+local ServerStorage = game:GetService("ServerStorage")
+local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -34,23 +39,34 @@ local Server = ServerScriptService:WaitForChild("Server")
 local SpawnConfig = require(Shared:WaitForChild("SpawnConfig"))
 local ShrinkConfig = require(Shared:WaitForChild("ShrinkConfig"))
 local StormFXConfig = require(Shared:WaitForChild("StormFXConfig"))
+local ModeEnvironmentConfig = require(Shared:WaitForChild("ModeEnvironmentConfig"))
 local PlayerState = require(Shared:WaitForChild("PlayerState"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
 
 --[[ CONFIGURATION ]]
 local Config = {
-	ArenaName = "SquarePlatformMap",
+	DefaultArenaName = ModeEnvironmentConfig.DefaultMapName or "SquarePlatformMap",
 	DebugLog = true,
 	OutOfBoundsCheckInterval = 0.25, -- Seconds between OOB checks
 }
 
 --[[ INTERNAL STATE ]]
-local arena: Instance? = nil
+local defaultArena: Instance? = nil
+local activeArena: Instance? = nil
+local runtimeArenaClone: Instance? = nil
+local currentArenaMode: string = ModeEnvironmentConfig.DefaultMode
+local defaultArenaAnchor: BasePart? = nil
+local activeArenaAnchor: BasePart? = nil
+local defaultBarrierColor: Color3 = ShrinkConfig.BoundsColor
+local currentBarrierColor: Color3 = ShrinkConfig.BoundsColor
+local currentStormProfile: string = "Normal"
+local currentBarrierPresentationProfile: string = "Normal"
 local arenaCFrame: CFrame? = nil
 local arenaSize: Vector3? = nil
 local isActive: boolean = false
 local initialized: boolean = false
+local defaultArenaPartState: { [BasePart]: { transparency: number, canCollide: boolean, canQuery: boolean, canTouch: boolean } } = {}
 
 -- Active bounds (shrinks each round)
 local activeSizeX: number = 0
@@ -89,6 +105,202 @@ local function shrinkLog(...)
 	end
 end
 
+local function colorToString(c: Color3): string
+	return string.format("rgb(%d,%d,%d)", math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
+end
+
+local function resolveBarrierColorForMode(modeName: string): Color3
+	local env = ModeEnvironmentConfig.Get(modeName)
+	local rgb = env and env.barrierColorRGB or nil
+	if type(rgb) == "table" and #rgb >= 3 then
+		local r = math.clamp(tonumber(rgb[1]) or 255, 0, 255)
+		local g = math.clamp(tonumber(rgb[2]) or 255, 0, 255)
+		local b = math.clamp(tonumber(rgb[3]) or 255, 0, 255)
+		return Color3.fromRGB(r, g, b)
+	end
+	return defaultBarrierColor
+end
+
+local BARRIER_PRESENTATION_PROFILES = {
+	Normal = {
+		stormVfxProfile = "Normal",
+		resolveBarrierColor = function()
+			return defaultBarrierColor
+		end,
+	},
+	Brainrot = {
+		stormVfxProfile = "Brainrot",
+		resolveBarrierColor = function()
+			return resolveBarrierColorForMode("Brainrot")
+		end,
+	},
+}
+
+local function resolveBarrierPresentationProfileForMode(modeName: string): string
+	local env = ModeEnvironmentConfig.Get(modeName)
+	local profileName = env and env.barrierPresentationProfile
+	if type(profileName) == "string" and BARRIER_PRESENTATION_PROFILES[profileName] then
+		return profileName
+	end
+	return "Normal"
+end
+
+local updateBoundsVisual: (() -> ())?
+local clearBoundsVisual: (() -> ())?
+
+local function updateWallParticleProfile(wall: Part)
+	local stormColor = StormFXConfig.StormColor
+	for _, d in ipairs(wall:GetDescendants()) do
+		if d:IsA("ParticleEmitter") then
+			if d.Name == "StormMist" then
+				d.Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, StormFXConfig.ParticleMistStartColor),
+					ColorSequenceKeypoint.new(0.5, stormColor),
+					ColorSequenceKeypoint.new(1, StormFXConfig.ParticleMistEndColor),
+				})
+			elseif d.Name == "StormSparks" then
+				d.Color = ColorSequence.new(StormFXConfig.ParticleSparksColor)
+			end
+		end
+	end
+end
+
+local function applyBarrierPresentationProfile(profileName: string, context: string)
+	local profile = BARRIER_PRESENTATION_PROFILES[profileName]
+	if not profile then
+		profile = BARRIER_PRESENTATION_PROFILES.Normal
+		profileName = "Normal"
+	end
+
+	currentBarrierPresentationProfile = profileName
+	currentBarrierColor = profile.resolveBarrierColor()
+	StormFXConfig.ApplyProfile(profile.stormVfxProfile)
+	currentStormProfile = StormFXConfig.GetActiveProfileName()
+	Lighting:SetAttribute("StormVfxProfile", currentStormProfile)
+	Lighting:SetAttribute("BarrierPresentationProfile", currentBarrierPresentationProfile)
+
+	for _, wall in ipairs(boundsWalls) do
+		updateWallParticleProfile(wall)
+	end
+
+	log(string.format(
+		"[BarrierPresentation] context=%s selectedProfile=%s stormProfile=%s barrierColor=%s",
+		context,
+		currentBarrierPresentationProfile,
+		currentStormProfile,
+		colorToString(currentBarrierColor)
+	))
+end
+
+local function resolveByPath(pathText: string?): Instance?
+	if type(pathText) ~= "string" or pathText == "" then return nil end
+	local segments = string.split(pathText, ".")
+	if #segments == 0 then return nil end
+	local current: Instance? = nil
+	if segments[1] == "ServerStorage" then
+		current = ServerStorage
+	elseif segments[1] == "Workspace" then
+		current = Workspace
+	else
+		return nil
+	end
+	for i = 2, #segments do
+		if not current then return nil end
+		current = current:FindFirstChild(segments[i])
+	end
+	return current
+end
+
+local function resolvePlacementAnchor(inst: Instance, modeName: string): BasePart?
+	if inst:IsA("BasePart") then
+		return inst
+	end
+	if not inst:IsA("Model") then
+		return nil
+	end
+
+	local env = ModeEnvironmentConfig.Get(modeName)
+	local anchorName = env and env.mapAnchorPartName or nil
+	if type(anchorName) == "string" and anchorName ~= "" then
+		local named = inst:FindFirstChild(anchorName, true)
+		if named and named:IsA("BasePart") then
+			return named
+		end
+	end
+
+	local defaultNamed = inst:FindFirstChild(Config.DefaultArenaName, true)
+	if defaultNamed and defaultNamed:IsA("BasePart") then
+		return defaultNamed
+	end
+
+	local primary = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)
+	if primary then
+		return primary
+	end
+	return nil
+end
+
+local function setMapActiveState(mapInst: Instance?, active: boolean)
+	if not mapInst then return end
+	local candidates = {}
+	if mapInst:IsA("BasePart") then
+		table.insert(candidates, mapInst)
+	end
+	for _, desc in ipairs(mapInst:GetDescendants()) do
+		table.insert(candidates, desc)
+	end
+	for _, desc in ipairs(candidates) do
+		if desc:IsA("BasePart") then
+			if active then
+				local saved = defaultArenaPartState[desc]
+				if saved then
+					desc.Transparency = saved.transparency
+					desc.CanCollide = saved.canCollide
+					desc.CanQuery = saved.canQuery
+					desc.CanTouch = saved.canTouch
+				else
+					desc.Transparency = 0
+					desc.CanCollide = true
+					desc.CanQuery = true
+					desc.CanTouch = true
+				end
+			else
+				defaultArenaPartState[desc] = {
+					transparency = desc.Transparency,
+					canCollide = desc.CanCollide,
+					canQuery = desc.CanQuery,
+					canTouch = desc.CanTouch,
+				}
+				desc.Transparency = 1
+				desc.CanCollide = false
+				desc.CanQuery = false
+				desc.CanTouch = false
+			end
+		end
+	end
+end
+
+local function setActiveArena(inst: Instance?, modeName: string)
+	if not inst then return end
+	local anchor = resolvePlacementAnchor(inst, modeName)
+	if not anchor then
+		error(string.format("[MapManager] Active map '%s' has no usable bounds", inst:GetFullName()))
+	end
+	activeArena = inst
+	activeArenaAnchor = anchor
+	currentArenaMode = modeName
+	arenaCFrame = anchor.CFrame
+	arenaSize = anchor.Size
+	activeSizeX = anchor.Size.X
+	activeSizeZ = anchor.Size.Z
+	currentShrinkStep = 0
+	if inst == defaultArena and modeName == ModeEnvironmentConfig.DefaultMode then
+		defaultArenaAnchor = anchor
+	end
+	log(string.format("Active map switched mode=%s map=%s anchor=%s anchorPos=(%.1f, %.1f, %.1f) size=%.1fx%.1f",
+		modeName, inst.Name, anchor.Name, anchor.Position.X, anchor.Position.Y, anchor.Position.Z, anchor.Size.X, anchor.Size.Z))
+end
+
 --[[
 	Check if a world position is inside the active bounds.
 ]]
@@ -123,6 +335,7 @@ local function createStormWall(name: string, parent: Instance): Part
 	
 	-- Add particle effects (shared storm profile)
 	StormFXConfig.CreateStormParticles(wall, 1)
+	updateWallParticleProfile(wall)
 	
 	return wall
 end
@@ -156,9 +369,18 @@ end
 --[[
 	Create or update the storm boundary visuals.
 ]]
-local function updateBoundsVisual()
+updateBoundsVisual = function()
+	if not isActive then
+		if clearBoundsVisual then
+			clearBoundsVisual()
+		end
+		return
+	end
+
 	if not ShrinkConfig.ShowBoundsVisual then
-		clearBoundsVisual()
+		if clearBoundsVisual then
+			clearBoundsVisual()
+		end
 		return
 	end
 	
@@ -193,13 +415,17 @@ local function updateBoundsVisual()
 	local centerX = arenaCFrame.Position.X
 	local centerZ = arenaCFrame.Position.Z
 	local topY = arenaCFrame.Position.Y + arenaSize.Y / 2 + wallHeight / 2
+	log(string.format("[BarrierPlacement] activeMap=%s anchor=%s anchorPos=(%.1f, %.1f, %.1f) barrierY=%.1f",
+		tostring(activeArena and activeArena.Name or "nil"),
+		tostring(activeArenaAnchor and activeArenaAnchor.Name or "nil"),
+		arenaCFrame.Position.X, arenaCFrame.Position.Y, arenaCFrame.Position.Z, topY))
 	
 	local halfSizeX = activeSizeX / 2
 	local halfSizeZ = activeSizeZ / 2
 	
 	-- Update wall properties
 	for _, wall in ipairs(boundsWalls) do
-		wall.Color = ShrinkConfig.BoundsColor
+		wall.Color = currentBarrierColor
 		wall.Transparency = ShrinkConfig.BoundsTransparency
 	end
 	
@@ -221,13 +447,17 @@ local function updateBoundsVisual()
 	
 	-- Update storm volume
 	if stormVolume then
+		stormVolume.Color = currentBarrierColor
 		stormVolume.Size = Vector3.new(activeSizeX, 0.1, activeSizeZ)
 		stormVolume.CFrame = CFrame.new(centerX, topY + wallHeight / 2, centerZ)
 		stormVolume.Transparency = 0.98
 	end
+	log(string.format("[BarrierColor] applied mode=%s color=%s",
+		currentArenaMode, colorToString(currentBarrierColor)))
+	log(string.format("[BarrierPresentation] profile=%s stormProfile=%s", currentBarrierPresentationProfile, currentStormProfile))
 end
 
-local function clearBoundsVisual()
+clearBoundsVisual = function()
 	for _, wall in ipairs(boundsWalls) do
 		wall:Destroy()
 	end
@@ -360,46 +590,112 @@ function MapManager.Init()
 	end
 	
 	-- Locate the arena
-	local found = Workspace:FindFirstChild(Config.ArenaName)
+	local found = Workspace:FindFirstChild(Config.DefaultArenaName)
 	
 	if not found then
-		error(string.format("[MapManager] Arena '%s' not found in Workspace! Create it before running.", Config.ArenaName))
+		error(string.format("[MapManager] Arena '%s' not found in Workspace! Create it before running.", Config.DefaultArenaName))
 	end
-	
-	-- Get CFrame and Size
-	if found:IsA("BasePart") then
-		arenaCFrame = found.CFrame
-		arenaSize = found.Size
-	elseif found:IsA("Model") then
-		local primary = found.PrimaryPart or found:FindFirstChildWhichIsA("BasePart")
-		if primary then
-			arenaCFrame = primary.CFrame
-			arenaSize = primary.Size
-		else
-			error("[MapManager] Arena Model has no usable BasePart")
-		end
-	else
-		error(string.format("[MapManager] Arena '%s' is not a BasePart or Model", Config.ArenaName))
-	end
-	
-	arena = found
+
+	defaultArena = found
 	initialized = true
 	isActive = false
-	
-	-- Initialize active bounds to full size
-	activeSizeX = arenaSize.X
-	activeSizeZ = arenaSize.Z
-	currentShrinkStep = 0
+	applyBarrierPresentationProfile("Normal", "Init")
+	setMapActiveState(defaultArena, true)
+	setActiveArena(defaultArena, ModeEnvironmentConfig.DefaultMode)
 	
 	log(string.format("Initialized — Arena '%s' registered (%s), Size: %.0fx%.0f", 
-		Config.ArenaName, found.ClassName, arenaSize.X, arenaSize.Z))
+		Config.DefaultArenaName, found.ClassName, arenaSize.X, arenaSize.Z))
 end
 
 --[[
 	Get the arena reference.
 ]]
 function MapManager.GetArena(): Instance?
-	return arena
+	return activeArena
+end
+
+function MapManager.GetActiveMap(): Instance?
+	return activeArena
+end
+
+function MapManager.GetCurrentMode(): string
+	return currentArenaMode
+end
+
+function MapManager.ConfigureForMode(modeName: string)
+	if not initialized or not defaultArena then
+		warn("[MapManager] Not initialized, cannot configure mode map")
+		return
+	end
+	local mode = if type(modeName) == "string" and modeName ~= "" then modeName else ModeEnvironmentConfig.DefaultMode
+	local presentationProfile = resolveBarrierPresentationProfileForMode(mode)
+	log(string.format("Mode selected=%s barrierPresentationSelected=%s", mode, presentationProfile))
+	applyBarrierPresentationProfile(presentationProfile, "ConfigureForMode")
+	local env = ModeEnvironmentConfig.Get(mode)
+	local templatePath = env and env.mapTemplatePath or nil
+
+	if not templatePath then
+		MapManager.RestoreDefaultMap()
+		log(string.format("Mode selected=%s map=%s (default)", mode, defaultArena.Name))
+		return
+	end
+
+	local anchor = defaultArenaAnchor or resolvePlacementAnchor(defaultArena, ModeEnvironmentConfig.DefaultMode)
+	if not anchor then
+		warn("[MapManager] Could not read default map pivot")
+		MapManager.RestoreDefaultMap()
+		return
+	end
+	local defaultPivot = anchor.CFrame
+	log(string.format("Mode selected=%s reading default pivot from %s anchor=%s",
+		mode, defaultArena.Name, anchor.Name))
+
+	local template = resolveByPath(templatePath)
+	if not template then
+		warn(string.format("[MapManager] Mode map template missing: %s", tostring(templatePath)))
+		MapManager.RestoreDefaultMap()
+		return
+	end
+
+	if runtimeArenaClone and runtimeArenaClone.Parent then
+		runtimeArenaClone:Destroy()
+		runtimeArenaClone = nil
+	end
+
+	local clone = template:Clone()
+	clone.Name = "ActiveModeMap_" .. mode
+	if clone:IsA("Model") then
+		clone:PivotTo(defaultPivot)
+	elseif clone:IsA("BasePart") then
+		clone.CFrame = defaultPivot
+	else
+		warn(string.format("[MapManager] Mode map template invalid class: %s", clone.ClassName))
+		clone:Destroy()
+		MapManager.RestoreDefaultMap()
+		return
+	end
+	log(string.format("Mode map pivot applied template=%s targetMode=%s", template.Name, mode))
+
+	clone.Parent = Workspace
+	runtimeArenaClone = clone
+	setMapActiveState(defaultArena, false)
+	setActiveArena(clone, mode)
+	log(string.format("Active map switched to runtime clone %s", clone.Name))
+end
+
+function MapManager.RestoreDefaultMap()
+	if not initialized or not defaultArena then return end
+	if runtimeArenaClone and runtimeArenaClone.Parent then
+		runtimeArenaClone:Destroy()
+	end
+	runtimeArenaClone = nil
+	applyBarrierPresentationProfile("Normal", "RestoreDefaultMap")
+	setMapActiveState(defaultArena, true)
+	setActiveArena(defaultArena, ModeEnvironmentConfig.DefaultMode)
+	log(string.format("[BarrierColor] restored default=%s", colorToString(currentBarrierColor)))
+	log(string.format("[StormVfx] default restored profile=%s", currentStormProfile))
+	log(string.format("[BarrierPresentation] default restored profile=%s", currentBarrierPresentationProfile))
+	log("Default map restored")
 end
 
 --[[
@@ -559,6 +855,10 @@ function MapManager.GetActiveBounds(): { cframe: CFrame, sizeX: number, sizeZ: n
 		sizeZ = activeSizeZ,
 		topY = arenaCFrame.Position.Y + arenaSize.Y / 2,
 	}
+end
+
+function MapManager.GetPlacementAnchor(): BasePart?
+	return activeArenaAnchor
 end
 
 --[[

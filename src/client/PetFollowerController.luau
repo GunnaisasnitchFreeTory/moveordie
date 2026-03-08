@@ -151,9 +151,8 @@ local PET_MOVEMENT_TYPE: { [string]: string } = {
 
 -- FNAF pets explicitly reverted to floating companions.
 local FNAF_REVERTED_FLOAT_IDS: { [string]: boolean } = {
-	pet_bonnie = true,
-	pet_chica = true,
-	pet_foxy = true,
+	-- Keep empty: reverted float pets should use the normal anchored hover
+	-- follower path for runtime stability during match transitions.
 }
 
 -- Final follow-transform rotation fixes for hover-only path.
@@ -585,9 +584,22 @@ local function ensureWalkerHrp(model: Model, humanoid: Humanoid?): BasePart?
 	return hrp
 end
 
-local function destroyPetFor(player: Player)
+local function destroyPetFor(player: Player, reason: string?)
 	local entry = _activePets[player]
 	if not entry then return end
+
+	if DEBUG_LOGS and shouldLog("pet_destroy_" .. tostring(player.UserId), 3) then
+		print(string.format(
+			"%s destroy owner=%s reason=%s equippedAttr=%s isWalker=%s isServerMotor=%s activePetId=%s",
+			TAG,
+			player.Name,
+			tostring(reason or "unspecified"),
+			tostring(player:GetAttribute("EquippedPet")),
+			tostring(entry._isWalker == true),
+			tostring(entry._isServerMotor == true),
+			tostring(entry.pet and entry.pet:GetAttribute("_petId") or entry._walkerPetId or entry._serverMotorPetId or "nil")
+		))
+	end
 
 	-- Walker pets live on the server; notify it to clean up.
 	if entry._isWalker or entry._isServerMotor then
@@ -616,7 +628,7 @@ local function spawnPetFor(player: Player, petId: string)
 			and existing.pet:GetAttribute("_petId") == petId then return end
 	end
 
-	destroyPetFor(player)
+	destroyPetFor(player, "respawn_or_swap")
 
 	if not petId or petId == "" then return end
 
@@ -635,22 +647,38 @@ local function spawnPetFor(player: Player, petId: string)
 
 	local modelName = getConfiguredPetModelName(petId, petDef)
 	local sourceModel: Instance? = nil
+	local resolutionMode = "none"
 	if shouldUseExactNameLookup(modelName) then
 		sourceModel = ItemModelRegistry.GetByExactName(modelName)
-	else
-		if petDef.modelPath and petDef.modelPath ~= "" then
-			sourceModel = ItemModelRegistry.Get(petDef.modelPath)
+		if sourceModel then
+			resolutionMode = "exact_name"
 		end
-		if not sourceModel and modelName ~= "" then
-			sourceModel = ItemModelRegistry.Get(modelName)
+	end
+	if not sourceModel and petDef.modelPath and petDef.modelPath ~= "" then
+		sourceModel = ItemModelRegistry.Get(petDef.modelPath)
+		if sourceModel then
+			resolutionMode = "model_path"
+		end
+	end
+	if not sourceModel and modelName ~= "" then
+		sourceModel = ItemModelRegistry.Get(modelName)
+		if sourceModel then
+			resolutionMode = "model_name_path"
 		end
 	end
 	if DEBUG_LOGS and shouldLog("pet_spawn_lookup_" .. petId, 20) then
 		local registryPath = sourceModel and sourceModel:GetFullName() or ItemModelsFolder:GetFullName()
-		print(string.format("[PetSpawn] petName=%s modelFound=%s registry=%s", modelName, tostring(sourceModel ~= nil), registryPath))
+		print(string.format("[PetSpawn] petId=%s petName=%s displayName=%s mode=%s modelPath=%s modelFound=%s registry=%s",
+			tostring(petId),
+			tostring(modelName),
+			tostring(petDef.name),
+			tostring(resolutionMode),
+			tostring(petDef.modelPath),
+			tostring(sourceModel ~= nil),
+			registryPath))
 	end
 	if not sourceModel then
-		warn(TAG, "Model not found for pet:", petId, "| modelName:", modelName, "| modelPath:", tostring(petDef.modelPath))
+		warn(TAG, "Model not found for pet:", petId, "| displayName:", tostring(petDef.name), "| modelName:", modelName, "| modelPath:", tostring(petDef.modelPath), "| mode:", resolutionMode)
 		return
 	end
 
@@ -1025,6 +1053,17 @@ local function spawnPetFor(player: Player, petId: string)
 	}
 
 	log("spawn_done", "Pet spawned for", player.Name .. ":", petId)
+	if DEBUG_LOGS and shouldLog("pet_spawn_" .. tostring(player.UserId), 3) then
+		print(string.format(
+			"%s spawn owner=%s petId=%s movement=%s anchoredMode=%s equippedAttr=%s",
+			TAG,
+			player.Name,
+			petId,
+			movementType,
+			useUnanchoredFloat and "unanchored" or "anchored",
+			tostring(player:GetAttribute("EquippedPet"))
+		))
+	end
 end
 
 -- =====================================================================
@@ -1036,7 +1075,7 @@ local function updatePetFor(player: Player)
 	if petId and petId ~= "" then
 		spawnPetFor(player, petId)
 	else
-		destroyPetFor(player)
+		destroyPetFor(player, "equipped_attr_empty")
 	end
 end
 
@@ -1054,7 +1093,7 @@ local function setupPlayer(player: Player)
 	end))
 
 	table.insert(conns, player.CharacterRemoving:Connect(function()
-		destroyPetFor(player)
+		destroyPetFor(player, "character_removing")
 	end))
 
 	_playerConns[player] = conns
@@ -1068,7 +1107,7 @@ local function setupPlayer(player: Player)
 end
 
 local function cleanupPlayer(player: Player)
-	destroyPetFor(player)
+	destroyPetFor(player, "player_cleanup")
 	if _playerConns[player] then
 		for _, conn in ipairs(_playerConns[player]) do
 			conn:Disconnect()

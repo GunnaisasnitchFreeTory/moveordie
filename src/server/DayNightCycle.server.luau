@@ -100,6 +100,12 @@ do
 end
 
 RunService.Heartbeat:Connect(function(dt: number)
+	-- While an exclusive mode preset is active (e.g. Save the Brainrot),
+	-- do not mutate Lighting so the preset remains authoritative.
+	if Lighting:GetAttribute("ModeLightingExclusive") == true then
+		return
+	end
+
 	-- Advance clock
 	local newTime = (Lighting.ClockTime + SPEED * dt) % 24
 	Lighting.ClockTime = newTime

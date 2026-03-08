@@ -2,6 +2,9 @@
 -- This is the single source of truth for Daily Quest reward icons.
 
 local QuestRewardIconResolver = {}
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Shared = ReplicatedStorage:FindFirstChild("Shared") or ReplicatedStorage:WaitForChild("Shared", 5)
+local ItemCatalog = if Shared then require(Shared:WaitForChild("ItemCatalog")) else nil
 
 local COIN_ICON = "rbxassetid://72345557707985"
 local CRATE_ICON = "rbxassetid://108812530080296"
@@ -29,6 +32,17 @@ function QuestRewardIconResolver.GetQuestRewardIcon(reward): string?
 		or reward.spinCount ~= nil
 	then
 		return SPIN_ICON
+	end
+
+	if rewardType == "ICONIMAGE" or rewardType == "ICON_IMAGE" then
+		local iconId = tostring(reward.itemId or "")
+		if iconId ~= "" and ItemCatalog and ItemCatalog.IconImages then
+			local entry = ItemCatalog.IconImages[iconId]
+			if entry and type(entry.image) == "string" and entry.image ~= "" then
+				print(string.format("[QuestRewardIconResolver] static icon image reward id=%s image=%s", iconId, entry.image))
+				return entry.image
+			end
+		end
 	end
 
 	return nil

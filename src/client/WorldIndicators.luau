@@ -48,14 +48,14 @@ local INDICATORS = {
 	},
 	{
 		targetName   = "FNAFGameBun",
-		text         = "FNAF BUNDLE",
+		text         = "ANIMATRONIC PETS",
 		extraPadding = 4,
 		pulse        = true,
 		retries      = 120,
 	},
 	{
 		targetName   = "FNAF Game Bun",
-		text         = "FNAF BUNDLE",
+		text         = "ANIMATRONIC PETS",
 		extraPadding = 4,
 		pulse        = true,
 		retries      = 120,
