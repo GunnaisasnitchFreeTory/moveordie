@@ -14,6 +14,7 @@
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService       = game:GetService("HttpService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
 if not Shared then
@@ -59,6 +60,7 @@ local closeCallback: (() -> ())? = nil
 
 local equippedId: string? = nil
 local _equipDebounce = false
+local _equipIconRequestRemote: RemoteEvent? = nil
 
 local IconImagesPanel = {}
 
@@ -68,11 +70,12 @@ local RARITY_COLORS = {
 	Rare      = C.Rare,
 	Epic      = C.Epic,
 	Legendary = C.Legendary,
+	Impossible = C.Impossible,
 }
 
 local function getOwnedIconImageSet(): { [string]: boolean }
 	local json = player:GetAttribute("OwnedIconImages") or "[]"
-	local success, list = pcall(game.HttpService.JSONDecode, game.HttpService, json)
+	local success, list = pcall(HttpService.JSONDecode, HttpService, json)
 	if not success or type(list) ~= "table" then return {} end
 	local set = {}
 	for _, id in ipairs(list) do
@@ -81,16 +84,14 @@ local function getOwnedIconImageSet(): { [string]: boolean }
 	return set
 end
 
-local function getEquipRemote(): RemoteEvent?
+local function getEquipIconRequestRemote(): RemoteEvent?
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 	if not remotes then return nil end
-	return remotes:FindFirstChild("EquipItem")
-end
-
-local function getUnequipRemote(): RemoteEvent?
-	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-	if not remotes then return nil end
-	return remotes:FindFirstChild("UnequipItem")
+	local remote = remotes:FindFirstChild("EquipIconEvent")
+	if remote and remote:IsA("RemoteEvent") then
+		return remote
+	end
+	return nil
 end
 
 local function clearContent()
@@ -154,28 +155,16 @@ local function refresh()
 			onAction = function()
 				if not isOwned then return end
 				if _equipDebounce then return end
-				_equipDebounce = true
-
-				if isEquipped then
-					local unequipRemote = getUnequipRemote()
-					if unequipRemote then
-						unequipRemote:FireServer("IconImages")
-					end
-					equippedId = nil
-				else
-					local equipRemote = getEquipRemote()
-					if equipRemote then
-						equipRemote:FireServer("IconImages", item.id)
-					end
-					equippedId = item.id
+				local equipIconRemote = _equipIconRequestRemote or getEquipIconRequestRemote()
+				if not equipIconRemote then
+					warn("[IconImagesPanel] EquipIconEvent missing")
+					return
 				end
+				_equipDebounce = true
+				equipIconRemote:FireServer(item.id)
 
-				SoundUtil.Equip()
-				refresh()
-
-				task.delay(0.5, function()
+				task.delay(4, function()
 					_equipDebounce = false
-					if visible then refresh() end
 				end)
 			end,
 		}).LayoutOrder = i
@@ -202,8 +191,28 @@ function IconImagesPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 
 	refresh()
 
+	_equipIconRequestRemote = getEquipIconRequestRemote()
+	if _equipIconRequestRemote then
+		_equipIconRequestRemote.OnClientEvent:Connect(function(payload)
+			local success = type(payload) == "table" and payload.success == true
+			if success then
+				local newEquipped = type(payload.equippedIconId) == "string" and payload.equippedIconId or ""
+				equippedId = (newEquipped ~= "") and newEquipped or nil
+				SoundUtil.Equip()
+			else
+				if type(payload) == "table" and payload.reason and payload.reason ~= "" then
+					warn(string.format("[IconImagesPanel] Equip rejected: %s", tostring(payload.reason)))
+				end
+			end
+			_equipDebounce = false
+			if visible then
+				refresh()
+			end
+		end)
+	end
+
 	player:GetAttributeChangedSignal("EquippedIconImage"):Connect(function()
-		if visible and not _equipDebounce then refresh() end
+		if visible then refresh() end
 	end)
 	player:GetAttributeChangedSignal("OwnedIconImages"):Connect(function()
 		if visible then refresh() end

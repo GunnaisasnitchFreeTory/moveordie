@@ -4,6 +4,8 @@ local RewardGrantListener = {}
 local initialized = false
 local shownBundleTokens: { [string]: number } = {}
 local shownBundleCooldownSeconds = 10
+local recentlyShownRewards: { [string]: number } = {}
+local rewardDedupWindowSeconds = 2
 
 local function getRewardPopup()
 	local ui = script.Parent:FindFirstChild("UI")
@@ -56,6 +58,42 @@ local function mapSinglePayload(payload)
 	}
 end
 
+local function isShopRewardPayload(payload): boolean
+	if type(payload) ~= "table" then
+		return false
+	end
+	local source = tostring(payload.source or "")
+	if source ~= "Shop" and source ~= "GamePass" and source ~= "DevProduct" then
+		return false
+	end
+	local pType = tostring(payload.type or payload.grantType or "")
+	return pType == "Crown"
+		or pType == "Pet"
+		or pType == "IconImage"
+		or pType == "Currency"
+		or pType == "Spin"
+end
+
+local function shouldShowRewardPayload(payload): boolean
+	if not isShopRewardPayload(payload) then
+		return false
+	end
+	local source = tostring(payload.source or "")
+	local pType = tostring(payload.type or payload.grantType or "")
+	local id = tostring(payload.id or "")
+	if id == "" then
+		return true
+	end
+	local key = string.format("%s|%s|%s", source, pType, id)
+	local now = os.clock()
+	local last = recentlyShownRewards[key]
+	if last and (now - last) <= rewardDedupWindowSeconds then
+		return false
+	end
+	recentlyShownRewards[key] = now
+	return true
+end
+
 function RewardGrantListener.Init()
 	if initialized then return end
 	initialized = true
@@ -82,10 +120,15 @@ function RewardGrantListener.Init()
 			print("[BundlePopup] BLOCKED reason=INIT_OR_OWNED_STATE")
 			return
 		end
+		-- Deduplicate shop/devproduct-style rewards when both RewardGranted
+		-- and fallback purchase/inventory events arrive close together.
+		if isShopRewardPayload(payload) and not shouldShowRewardPayload(payload) then
+			return
+		end
 		local source = tostring(payload.source or "")
 		local pType = tostring(payload.type or payload.grantType or "")
 		if (source == "Shop" or source == "GamePass" or source == "DevProduct")
-			and (pType == "Crown" or pType == "Pet" or pType == "IconImage")
+			and (pType == "Crown" or pType == "Pet" or pType == "IconImage" or pType == "Currency" or pType == "Spin")
 		then
 			print(string.format("[ShopGrantPopup] type=%s id=%s image=%s rarity=%s",
 				pType,
@@ -123,13 +166,13 @@ function RewardGrantListener.Init()
 			if type(payload) ~= "table" then
 				return
 			end
-			local pType = tostring(payload.type or payload.grantType or "")
-			if pType ~= "Crown" and pType ~= "Pet" and pType ~= "IconImage" then
+			if not shouldShowRewardPayload(payload) then
 				return
 			end
 			if not payload.source or payload.source == "" then
 				payload.source = "Shop"
 			end
+			local pType = tostring(payload.type or payload.grantType or "")
 			print(string.format("[ShopGrantPopup] type=%s id=%s image=%s",
 				pType,
 				tostring(payload.id or ""),
@@ -144,6 +187,29 @@ function RewardGrantListener.Init()
 			if child.Name == "PurchaseGranted" then
 				connectPurchaseGranted(child)
 			end
+		end)
+	end
+
+	local inventoryUpdateRE = remotes and remotes:FindFirstChild("InventoryUpdated")
+	if inventoryUpdateRE and inventoryUpdateRE:IsA("RemoteEvent") then
+		inventoryUpdateRE.OnClientEvent:Connect(function(reason, payload)
+			if reason ~= "GrantConfirmed" then
+				return
+			end
+			if not shouldShowRewardPayload(payload) then
+				return
+			end
+			local RewardPopup = getRewardPopup()
+			if not RewardPopup then
+				warn("[RewardGrantListener] RewardPopup unavailable")
+				return
+			end
+			local pType = tostring(payload.type or payload.grantType or "")
+			print(string.format("[ShopGrantPopupFallback] type=%s id=%s source=%s",
+				pType,
+				tostring(payload.id or ""),
+				tostring(payload.source or "")))
+			RewardPopup.Show(mapSinglePayload(payload))
 		end)
 	end
 

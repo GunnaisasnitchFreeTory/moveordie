@@ -233,6 +233,7 @@ local RARITY_COLORS = {
 	Epic      = Color3.fromRGB(178, 60, 255),
 	Legendary = Color3.fromRGB(255, 180, 40),
 	Exclusive = Color3.fromRGB(255, 58, 58),
+	Impossible = Color3.fromRGB(255, 32, 32),
 }
 
 -- ═══════════════════════════════════════════

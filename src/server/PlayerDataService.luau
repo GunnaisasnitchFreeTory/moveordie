@@ -28,6 +28,7 @@ local IS_STUDIO = RunService:IsStudio()
 
 local Shared     = ReplicatedStorage:WaitForChild("Shared")
 local PlayerData = require(Shared:WaitForChild("PlayerData"))
+local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 
 local PlayerDataService = {}
 
@@ -43,6 +44,63 @@ local AUTO_SAVE_INTERVAL = 300
 
 local function log(...)
 	if DEBUG_LOG then print("[PlayerDataService]", ...) end
+end
+
+local function listContainsString(listValue: any, needle: string): boolean
+	if type(listValue) ~= "table" or type(needle) ~= "string" or needle == "" then
+		return false
+	end
+	for _, entry in ipairs(listValue) do
+		if entry == needle then
+			return true
+		end
+	end
+	return false
+end
+
+local function sanitizeEquippedCosmeticOwnership(data: { [string]: any }, playerName: string, context: string): boolean
+	local changed = false
+
+	local mappings = {
+		{
+			equippedKey = "EquippedPet",
+			ownedKey = "OwnedPets",
+			catalogCategory = "Pets",
+		},
+		{
+			equippedKey = "EquippedCrown",
+			ownedKey = "OwnedCrowns",
+			catalogCategory = "Crowns",
+		},
+		{
+			equippedKey = "EquippedIconImage",
+			ownedKey = "OwnedIconImages",
+			catalogCategory = "IconImages",
+		},
+	}
+
+	for _, mapping in ipairs(mappings) do
+		local equippedId = data[mapping.equippedKey]
+		if type(equippedId) == "string" and equippedId ~= "" then
+			local ownsEquipped = listContainsString(data[mapping.ownedKey], equippedId)
+			local inCatalog = ItemCatalog.Get(mapping.catalogCategory, equippedId) ~= nil
+			if not ownsEquipped or not inCatalog then
+				data[mapping.equippedKey] = nil
+				changed = true
+				warn(string.format(
+					"[PlayerDataService] Cleared invalid equipped item player=%s context=%s equippedKey=%s equippedId=%s owns=%s inCatalog=%s",
+					playerName,
+					context,
+					mapping.equippedKey,
+					equippedId,
+					tostring(ownsEquipped),
+					tostring(inCatalog)
+				))
+			end
+		end
+	end
+
+	return changed
 end
 
 -- =====================================================================
@@ -199,6 +257,7 @@ function PlayerDataService.LoadPlayer(player: Player): { [string]: any }
 
 	if rawData and type(rawData) == "table" then
 		data = PlayerData.Validate(rawData)
+		sanitizeEquippedCosmeticOwnership(data, player.Name, "LoadPlayer")
 		log(string.format("%s loaded from DataStore (Coins=%d Pets=%d Crowns=%d Wins=%d)",
 			player.Name, data.Coins, #data.OwnedPets, #data.OwnedCrowns, data.LifetimeWins))
 	else
@@ -246,7 +305,13 @@ function PlayerDataService.SetField(player: Player, key: string, value: any): bo
 		return false
 	end
 	data[key] = value
-	replicateField(player, key, value)
+	local corrected = sanitizeEquippedCosmeticOwnership(data, player.Name, "SetField_" .. key)
+	replicateField(player, key, data[key])
+	if corrected then
+		replicateField(player, "EquippedPet", data.EquippedPet)
+		replicateField(player, "EquippedCrown", data.EquippedCrown)
+		replicateField(player, "EquippedIconImage", data.EquippedIconImage)
+	end
 	return true
 end
 

@@ -46,6 +46,7 @@ local fxEnabled = false
 local activeBarrierPresentationProfile = "Unknown"
 local lastAppliedStormProfileAttr: string? = nil
 local lastAppliedPresentationProfileAttr: string? = nil
+local lastAppliedPresentationRevision: number = -1
 
 -- Effects (created once at Init, destroyed at Destroy)
 local colorCorrection: ColorCorrectionEffect? = nil
@@ -74,6 +75,7 @@ local hystPlayerOutside: boolean = false
 -- Timing
 local lastUpdate: number = 0
 local lastDebugLog: number = 0
+local lastBoundsLogKey: string = ""
 
 -- Bounds cache (refreshed periodically — walls only move on shrink)
 local cachedBounds: {
@@ -227,12 +229,19 @@ local function applyReplicatedPresentationProfile(context: string)
 
 	local stormProfile = Lighting:GetAttribute("StormVfxProfile")
 	if type(stormProfile) ~= "string" or stormProfile == "" then
+		-- Live-safe fallback: treat missing/late StormVfxProfile as Normal
+		-- unless an explicit valid presentation profile indicates otherwise.
+		if activeBarrierPresentationProfile == "Brainrot" then
+			stormProfile = "Brainrot"
+		else
+			stormProfile = "Normal"
+		end
 		warn(string.format(
-			"[StormFX] Missing StormVfxProfile attribute (context=%s presentation=%s)",
+			"[StormFX] Missing StormVfxProfile attribute (context=%s presentation=%s) -> fallback=%s",
 			context,
-			activeBarrierPresentationProfile
+			activeBarrierPresentationProfile,
+			stormProfile
 		))
-		return
 	end
 	if not StormFXConfig.IsValidProfile(stormProfile) then
 		warn(string.format(
@@ -246,23 +255,31 @@ local function applyReplicatedPresentationProfile(context: string)
 
 	lastAppliedStormProfileAttr = stormProfile
 	lastAppliedPresentationProfileAttr = activeBarrierPresentationProfile
+	lastAppliedPresentationRevision = tonumber(Lighting:GetAttribute("BarrierPresentationRevision")) or lastAppliedPresentationRevision
 	StormFXConfig.ApplyProfile(stormProfile)
 	applyProfileToFxInstances()
 	print(string.format(
-		"[StormFX] PresentationApplied context=%s presentation=%s stormProfile=%s farViewBranchEnabled=true",
+		"[StormFX] PresentationApplied context=%s presentation=%s stormProfile=%s farViewBranchEnabled=true profileFound=%s normalProfileApplied=%s revision=%s",
 		context,
 		activeBarrierPresentationProfile,
-		StormFXConfig.GetActiveProfileName()
+		StormFXConfig.GetActiveProfileName(),
+		tostring(StormFXConfig.IsValidProfile(stormProfile)),
+		tostring(StormFXConfig.GetActiveProfileName() == "Normal"),
+		tostring(lastAppliedPresentationRevision)
 	))
 end
 
 local function syncReplicatedPresentationProfile()
 	local stormProfile = Lighting:GetAttribute("StormVfxProfile")
 	local presentationProfile = Lighting:GetAttribute("BarrierPresentationProfile")
+	local revision = tonumber(Lighting:GetAttribute("BarrierPresentationRevision")) or -1
 	local stormStr = if type(stormProfile) == "string" then stormProfile else nil
 	local presentationStr = if type(presentationProfile) == "string" then presentationProfile else nil
 
-	if stormStr ~= lastAppliedStormProfileAttr or presentationStr ~= lastAppliedPresentationProfileAttr then
+	if stormStr ~= lastAppliedStormProfileAttr
+		or presentationStr ~= lastAppliedPresentationProfileAttr
+		or revision ~= lastAppliedPresentationRevision
+	then
 		applyReplicatedPresentationProfile("RenderSync")
 	end
 end
@@ -272,15 +289,64 @@ end
 	Called every BoundsCacheInterval seconds (not every evaluation).
 ]]
 local function refreshBoundsCache()
+	local function logBoundsResolvedOnce(source: string, found: boolean, cx: number?, cz: number?, hx: number?, hz: number?)
+		local key = string.format("%s|%s|%s|%s|%s|%s|%s",
+			source,
+			tostring(found),
+			tostring(cx),
+			tostring(cz),
+			tostring(hx),
+			tostring(hz),
+			StormFXConfig.GetActiveProfileName()
+		)
+		if key == lastBoundsLogKey then
+			return
+		end
+		lastBoundsLogKey = key
+		if found then
+			print(string.format(
+				"[StormFX] BoundsResolved source=%s found=true center=(%.1f,%.1f) half=(%.1f,%.1f) profile=%s",
+				source,
+				cx or 0, cz or 0, hx or 0, hz or 0,
+				StormFXConfig.GetActiveProfileName()
+			))
+		else
+			print(string.format(
+				"[StormFX] BoundsResolved source=%s found=false profile=%s",
+				source,
+				StormFXConfig.GetActiveProfileName()
+			))
+		end
+	end
+
+	local function applyAttributeBoundsFallback()
+		local cx = Lighting:GetAttribute("StormBoundsCenterX")
+		local cz = Lighting:GetAttribute("StormBoundsCenterZ")
+		local hx = Lighting:GetAttribute("StormBoundsHalfX")
+		local hz = Lighting:GetAttribute("StormBoundsHalfZ")
+		if type(cx) ~= "number" or type(cz) ~= "number" or type(hx) ~= "number" or type(hz) ~= "number" then
+			cachedBounds = nil
+			logBoundsResolvedOnce("Attributes", false, nil, nil, nil, nil)
+			return
+		end
+		cachedBounds = {
+			centerX = cx,
+			centerZ = cz,
+			halfX = hx,
+			halfZ = hz,
+		}
+		logBoundsResolvedOnce("Attributes", true, cx, cz, hx, hz)
+	end
+
 	local arenaEffects = Workspace:FindFirstChild("ArenaEffects")
 	if not arenaEffects then
-		cachedBounds = nil
+		applyAttributeBoundsFallback()
 		return
 	end
 
 	local bounds = arenaEffects:FindFirstChild("Bounds")
 	if not bounds then
-		cachedBounds = nil
+		applyAttributeBoundsFallback()
 		return
 	end
 
@@ -296,7 +362,7 @@ local function refreshBoundsCache()
 	end
 
 	if not (north and south and east and west) then
-		cachedBounds = nil
+		applyAttributeBoundsFallback()
 		return
 	end
 
@@ -312,6 +378,14 @@ local function refreshBoundsCache()
 		halfX = (maxX - minX) / 2,
 		halfZ = (maxZ - minZ) / 2,
 	}
+	logBoundsResolvedOnce(
+		"StormWalls",
+		true,
+		cachedBounds.centerX,
+		cachedBounds.centerZ,
+		cachedBounds.halfX,
+		cachedBounds.halfZ
+	)
 end
 
 --[[
@@ -583,6 +657,18 @@ function StormFXController.Init()
 	Lighting:GetAttributeChangedSignal("BarrierPresentationProfile"):Connect(function()
 		applyReplicatedPresentationProfile("BarrierPresentationProfileChanged")
 		debugLog(string.format("Presentation changed -> %s", activeBarrierPresentationProfile))
+	end)
+
+	Lighting:GetAttributeChangedSignal("BarrierPresentationRevision"):Connect(function()
+		local revision = tonumber(Lighting:GetAttribute("BarrierPresentationRevision")) or -1
+		local source = tostring(Lighting:GetAttribute("BarrierPresentationSource") or "Unknown")
+		print(string.format(
+			"[StormFX] BarrierRefreshTriggered source=%s revision=%d activeProfile=%s",
+			source,
+			revision,
+			StormFXConfig.GetActiveProfileName()
+		))
+		applyReplicatedPresentationProfile("BarrierPresentationRevisionChanged")
 	end)
 
 	-- Force-reset on character removed (death / respawn)

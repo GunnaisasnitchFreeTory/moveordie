@@ -7,12 +7,18 @@
 	for all players on the same day, automatically different every day.
 
 	Player progress is stored in PlayerData.DailyQuestData as a JSON string:
-	  { day="YYYY_MM_DD", progress={[questId]={progress=N, claimed=bool}} }
+	  {
+	    day="YYYY_MM_DD",
+	    progress={[questId]={progress=N, claimed=bool}},
+	    oneTimeClaimed={[questId]=true}
+	  }
 
 	API:
 	  Init()
 	  GetStatus(player)              -- quest list with live progress
 	  TryClaim(player, questId)      -- grant reward, return result
+	  OnMatchStart(players)          -- resets single-match survival run trackers
+	  OnMatchEnd()                   -- clears single-match survival run trackers
 	  OnPlayerWon(player)            -- hook from MatchManager
 	  OnSwordKill(player)            -- hook from SwordSpawnService
 	  OnTTSSurvive(player)           -- hook from TungTungSahurService
@@ -90,6 +96,14 @@ local _cachedQuests: { { [string]: any } } = {}
 local _cachedById:   { [string]: { [string]: any } } = {}
 local _sessionJoinTimeByUserId: { [number]: number } = {}
 local _studioDayOffsetDays: number = 0
+local _singleMatchSurvivalRoundsByUserId: { [number]: number } = {}
+local _singleMatchParticipantByUserId: { [number]: boolean } = {}
+local _lastSingleMatchSweepRound: number = -1
+
+local MATCH_SCOPED_SURVIVAL_TYPES: { [string]: boolean } = {
+	SurviveRoundsSingleMatch12 = true,
+	SurviveRoundsSingleMatch15 = true,
+}
 
 local function getCurrentDay(): string
 	if RunService:IsStudio() and _studioDayOffsetDays ~= 0 then
@@ -132,6 +146,48 @@ local function getSessionPlayedSeconds(player: Player): number
 	return math.max(0, os.time() - joinTime)
 end
 
+local function isMatchScopedSurvivalQuestType(questType: string): boolean
+	return MATCH_SCOPED_SURVIVAL_TYPES[questType] == true
+end
+
+local function isPlayerInActiveSingleMatchRun(player: Player): boolean
+	if _singleMatchParticipantByUserId[player.UserId] ~= true then
+		return false
+	end
+	return player:GetAttribute("PlayerState") == "InMatch"
+end
+
+local function getSingleMatchSurvivalRounds(player: Player): number
+	if not isPlayerInActiveSingleMatchRun(player) then
+		return 0
+	end
+	return _singleMatchSurvivalRoundsByUserId[player.UserId] or 0
+end
+
+local function isOneTimeQuestRewardOwned(player: Player, questDef: { [string]: any }): boolean
+	if type(questDef) ~= "table" or questDef.oneTime ~= true then
+		return false
+	end
+	local reward = questDef.reward
+	if type(reward) ~= "table" then
+		return false
+	end
+	local inv = getInventory()
+	if not inv or type(inv.OwnsItem) ~= "function" then
+		return false
+	end
+	if reward.type == "Crown" and type(reward.itemId) == "string" and reward.itemId ~= "" then
+		return inv.OwnsItem(player, "Crowns", reward.itemId) == true
+	end
+	if reward.type == "Pet" and type(reward.itemId) == "string" and reward.itemId ~= "" then
+		return inv.OwnsItem(player, "Pets", reward.itemId) == true
+	end
+	if reward.type == "IconImage" and type(reward.itemId) == "string" and reward.itemId ~= "" then
+		return inv.OwnsItem(player, "IconImages", reward.itemId) == true
+	end
+	return false
+end
+
 -- Player data helpers
 
 local function getQuestData(player: Player): { [string]: any }
@@ -141,7 +197,7 @@ local function getQuestData(player: Player): { [string]: any }
 		local ok, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
 		if ok and type(decoded) == "table" then return decoded end
 	end
-	return { day = "", progress = {} }
+	return { day = "", progress = {}, oneTimeClaimed = {} }
 end
 
 local function saveQuestData(player: Player, data: { [string]: any })
@@ -156,6 +212,9 @@ local function ensureQuestData(player: Player): { [string]: any }
 	local data   = getQuestData(player)
 	local today  = getCurrentDay()
 	local quests = getTodayQuests()
+	if type(data.oneTimeClaimed) ~= "table" then
+		data.oneTimeClaimed = {}
+	end
 
 	if data.day ~= today then
 		data.day      = today
@@ -171,6 +230,17 @@ local function ensureQuestData(player: Player): { [string]: any }
 		if not data.progress[q.id] then
 			data.progress[q.id] = { progress = 0, claimed = false }
 		end
+		if q.oneTime == true and data.oneTimeClaimed[q.id] == true then
+			local p = data.progress[q.id]
+			p.progress = math.max(tonumber(p.progress) or 0, q.target)
+			p.claimed = true
+		end
+		if isMatchScopedSurvivalQuestType(q.type) then
+			local p = data.progress[q.id]
+			if p and not p.claimed and (tonumber(p.progress) or 0) ~= 0 then
+				p.progress = 0
+			end
+		end
 	end
 	return data
 end
@@ -182,6 +252,13 @@ local function resolveQuestProgress(player: Player, questDef: { [string]: any },
 	end
 	if questDef.type == "TimePlayed" then
 		return math.min(getSessionPlayedSeconds(player), questDef.target)
+	end
+	if isMatchScopedSurvivalQuestType(questDef.type) then
+		local persisted = tonumber(progressState.progress) or 0
+		if persisted >= questDef.target then
+			return questDef.target
+		end
+		return math.min(getSingleMatchSurvivalRounds(player), questDef.target)
 	end
 	return progressState.progress or 0
 end
@@ -196,10 +273,40 @@ function DailyQuestService.GetStatus(player: Player)
 
 	local data       = ensureQuestData(player)
 	local quests     = getTodayQuests()
+	local mutated    = false
 
 	local questList = {}
 	for _, questDef in ipairs(quests) do
 		local p = data.progress[questDef.id] or { progress = 0, claimed = false }
+		local oneTimeClaimed = (questDef.oneTime == true) and (data.oneTimeClaimed[questDef.id] == true)
+		local rewardOwned = isOneTimeQuestRewardOwned(player, questDef)
+
+		-- One-time quest migration safety:
+		-- If reward is already owned or this quest was previously completed,
+		-- mark this daily entry as claimed so it never appears again.
+		if questDef.oneTime == true and (oneTimeClaimed or rewardOwned) and not p.claimed then
+			p.progress = questDef.target
+			p.claimed = true
+			data.oneTimeClaimed[questDef.id] = true
+			mutated = true
+			log(string.format(
+				"[DailyQuestOneTime] autoMarkClaimed player=%s quest=%s rewardOwned=%s priorOneTimeClaimed=%s",
+				player.Name,
+				questDef.id,
+				tostring(rewardOwned),
+				tostring(oneTimeClaimed)
+			))
+		end
+		if isMatchScopedSurvivalQuestType(questDef.type) and not p.claimed and (tonumber(p.progress) or 0) ~= 0 then
+			p.progress = 0
+			mutated = true
+			log(string.format(
+				"[SingleMatchQuest] resetStoredPartial player=%s quest=%s",
+				player.Name,
+				questDef.id
+			))
+		end
+
 		local progress = resolveQuestProgress(player, questDef, p)
 		-- Claimed quests are hidden from the active quest feed.
 		if p.claimed then
@@ -223,6 +330,9 @@ function DailyQuestService.GetStatus(player: Player)
 	end
 
 	table.sort(questList, function(a, b) return (a.order or 99) < (b.order or 99) end)
+	if mutated then
+		saveQuestData(player, data)
+	end
 
 	return {
 		dataLoaded = true,
@@ -243,7 +353,19 @@ local function incrementProgress(player: Player, questType: string, amount: numb
 
 	for _, questDef in ipairs(quests) do
 		if questDef.type == questType then
+			if isMatchScopedSurvivalQuestType(questDef.type) then
+				continue
+			end
 			local p = data.progress[questDef.id]
+			if p and questDef.oneTime == true and (data.oneTimeClaimed[questDef.id] == true or isOneTimeQuestRewardOwned(player, questDef)) then
+				if not p.claimed then
+					p.progress = questDef.target
+					p.claimed = true
+					data.oneTimeClaimed[questDef.id] = true
+					changed = true
+				end
+				continue
+			end
 			if p and not p.claimed and p.progress < questDef.target then
 				local prevProgress = p.progress
 				p.progress = math.min(prevProgress + (amount or 1), questDef.target)
@@ -267,6 +389,97 @@ end
 
 -- Public event hooks (called by other services)
 
+local function applySingleMatchSurvivalProgress(player: Player, roundsSurvived: number)
+	local PDS = getPDS()
+	if not PDS or not PDS.IsLoaded(player) then
+		return
+	end
+	local data = ensureQuestData(player)
+	local quests = getTodayQuests()
+	local changed = false
+
+	for _, questDef in ipairs(quests) do
+		if isMatchScopedSurvivalQuestType(questDef.type) then
+			local p = data.progress[questDef.id]
+			if p and not p.claimed and roundsSurvived >= (questDef.target or 0) then
+				p.progress = questDef.target
+				changed = true
+				log(string.format(
+					"[SingleMatchQuest] player=%s quest=%s completed=true roundsSurvived=%d target=%d",
+					player.Name,
+					questDef.id,
+					roundsSurvived,
+					questDef.target or 0
+				))
+			end
+		end
+	end
+
+	if changed then
+		saveQuestData(player, data)
+		if updateRemote then
+			updateRemote:FireClient(player, DailyQuestService.GetStatus(player))
+		end
+	end
+end
+
+local function sweepSingleMatchRunFailures(roundNumber: number?)
+	local sweepRound = tonumber(roundNumber) or -1
+	if sweepRound >= 0 and _lastSingleMatchSweepRound == sweepRound then
+		return
+	end
+	_lastSingleMatchSweepRound = sweepRound
+	for userId, active in pairs(_singleMatchParticipantByUserId) do
+		if active then
+			local trackedPlayer = Players:GetPlayerByUserId(userId)
+			local stillInMatch = trackedPlayer and trackedPlayer:GetAttribute("PlayerState") == "InMatch"
+			if not stillInMatch then
+				_singleMatchParticipantByUserId[userId] = nil
+				_singleMatchSurvivalRoundsByUserId[userId] = nil
+				if trackedPlayer then
+					log(string.format(
+						"[SingleMatchQuest] player=%s runReset=true reason=left_inmatch_state round=%s",
+						trackedPlayer.Name,
+						tostring(roundNumber or "?")
+					))
+				end
+			end
+		end
+	end
+end
+
+function DailyQuestService.OnMatchStart(players: { Player }?)
+	_singleMatchSurvivalRoundsByUserId = {}
+	_singleMatchParticipantByUserId = {}
+	_lastSingleMatchSweepRound = -1
+	if type(players) == "table" then
+		for _, player in ipairs(players) do
+			if player and player.Parent then
+				_singleMatchParticipantByUserId[player.UserId] = true
+				_singleMatchSurvivalRoundsByUserId[player.UserId] = 0
+				log(string.format("[SingleMatchQuest] player=%s matchStart=true roundsSurvived=0", player.Name))
+			end
+		end
+	end
+end
+
+function DailyQuestService.OnMatchEnd()
+	if next(_singleMatchParticipantByUserId) ~= nil then
+		for _, player in ipairs(Players:GetPlayers()) do
+			if _singleMatchParticipantByUserId[player.UserId] == true then
+				log(string.format(
+					"[SingleMatchQuest] player=%s matchEnd=true roundsSurvived=%d",
+					player.Name,
+					_singleMatchSurvivalRoundsByUserId[player.UserId] or 0
+				))
+			end
+		end
+	end
+	_singleMatchParticipantByUserId = {}
+	_singleMatchSurvivalRoundsByUserId = {}
+	_lastSingleMatchSweepRound = -1
+end
+
 function DailyQuestService.OnPlayerWon(player: Player)
 	incrementProgress(player, "WinsToday")
 end
@@ -284,8 +497,20 @@ function DailyQuestService.OnElimination(player: Player)
 	incrementProgress(player, "EliminationsToday")
 end
 
-function DailyQuestService.OnRoundSurvived(player: Player)
+function DailyQuestService.OnRoundSurvived(player: Player, roundNumber: number?)
 	incrementProgress(player, "SurviveRoundsToday")
+	sweepSingleMatchRunFailures(roundNumber)
+	if not isPlayerInActiveSingleMatchRun(player) then
+		return
+	end
+	local roundsSurvived = (_singleMatchSurvivalRoundsByUserId[player.UserId] or 0) + 1
+	_singleMatchSurvivalRoundsByUserId[player.UserId] = roundsSurvived
+	log(string.format(
+		"[SingleMatchQuest] player=%s roundSurvived=true roundsSurvived=%d",
+		player.Name,
+		roundsSurvived
+	))
+	applySingleMatchSurvivalProgress(player, roundsSurvived)
 end
 
 function DailyQuestService.OnBrainrotPetPickup(player: Player, petId: string, modeName: string?)
@@ -495,6 +720,12 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 	-- Deactivate immediately at lifecycle level.
 	p.progress = questDef.target
 	p.claimed = true
+	if questDef.oneTime == true then
+		if type(data.oneTimeClaimed) ~= "table" then
+			data.oneTimeClaimed = {}
+		end
+		data.oneTimeClaimed[questId] = true
+	end
 	saveQuestData(player, data)
 	log(string.format("[DailyQuest] quest=%s claimed=true deactivated=true", tostring(questId)))
 	log(string.format("[DailyQuest] quest=%s trackerStopped=true", tostring(questId)))
@@ -667,6 +898,8 @@ function DailyQuestService.Init()
 	end)
 
 	Players.PlayerRemoving:Connect(function(player)
+		_singleMatchParticipantByUserId[player.UserId] = nil
+		_singleMatchSurvivalRoundsByUserId[player.UserId] = nil
 		local PDS = getPDS()
 		if PDS and PDS.IsLoaded(player) then
 			local data = ensureQuestData(player)

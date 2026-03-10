@@ -103,6 +103,7 @@ UIConfig.Colors = {
 	Epic      = Color3.fromRGB(192, 28, 255),
 	Legendary = Color3.fromRGB(255, 192, 8),
 	Exclusive = Color3.fromRGB(255, 42, 42),
+	Impossible = Color3.fromRGB(255, 32, 32),
 
 	-- Tab pills
 	TabActive       = Color3.fromRGB(255, 255, 255),
@@ -222,7 +223,7 @@ UIConfig.Sounds = {
 -- RARITY
 -- ═══════════════════════════════════════════════════════════════════
 
-UIConfig.RarityOrder = { "Common", "Uncommon", "Rare", "Epic", "Legendary" }
+UIConfig.RarityOrder = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Impossible" }
 
 UIConfig.RarityInfo = {
 	Common    = { color = UIConfig.Colors.Common,    label = "Common" },
@@ -230,6 +231,7 @@ UIConfig.RarityInfo = {
 	Rare      = { color = UIConfig.Colors.Rare,      label = "Rare" },
 	Epic      = { color = UIConfig.Colors.Epic,      label = "Epic" },
 	Legendary = { color = UIConfig.Colors.Legendary, label = "Legendary" },
+	Impossible = { color = UIConfig.Colors.Impossible, label = "Impossible" },
 }
 
 -- ═══════════════════════════════════════════════════════════════════

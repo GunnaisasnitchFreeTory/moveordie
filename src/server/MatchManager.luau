@@ -564,6 +564,13 @@ local function runPlaying()
 
 		MapManager.OnMatchStart()
 		setWaitingToInMatch()
+		do
+			local dqs = getDQS()
+			if dqs and dqs.OnMatchStart then
+				local participants = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+				pcall(dqs.OnMatchStart, participants)
+			end
+		end
 
 		if currentMode == "Brainrot" then
 			BrainrotModeService.OnMatchStart()
@@ -581,6 +588,12 @@ local function runPlaying()
 
 		local endReason = RoundManager.GetMatchEndReason()
 		log(string.format("Round loop completed — reason: %s", endReason or "unknown"))
+		do
+			local dqs = getDQS()
+			if dqs and dqs.OnMatchEnd then
+				pcall(dqs.OnMatchEnd)
+			end
+		end
 
 		if currentMode == "Brainrot" then
 			BrainrotModeService.OnMatchEnd()
@@ -594,6 +607,12 @@ local function runPlaying()
 
 	if not ok then
 		warn("[MatchManager] runPlaying failed:", err)
+		do
+			local dqs = getDQS()
+			if dqs and dqs.OnMatchEnd then
+				pcall(dqs.OnMatchEnd)
+			end
+		end
 		pcall(function()
 			if currentMode == "Brainrot" then
 				BrainrotModeService.OnMatchEnd()

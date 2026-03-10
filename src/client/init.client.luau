@@ -14,6 +14,7 @@
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui        = game:GetService("StarterGui")
 local TweenService      = game:GetService("TweenService")
 local Client = script
 
@@ -57,6 +58,25 @@ if not game:IsLoaded() then
 	game.Loaded:Wait()
 end
 print(string.format("[UIBoot] t=%s Loaded", ts()))
+
+local function disableRespawnButton()
+	for _ = 1, 20 do
+		local ok = pcall(function()
+			StarterGui:SetCore("ResetButtonCallback", false)
+		end)
+		if ok then
+			print("[Client] Reset/Respawn button disabled")
+			return
+		end
+		task.wait(0.25)
+	end
+	warn("[Client] Failed to disable Reset/Respawn button after retries")
+end
+
+disableRespawnButton()
+Players.LocalPlayer.CharacterAdded:Connect(function()
+	task.defer(disableRespawnButton)
+end)
 
 -- 0b. Pre-load ClientDepsProvider (populates shared deps once for all panels)
 local Shared = ReplicatedStorage:WaitForChild("Shared", 10)

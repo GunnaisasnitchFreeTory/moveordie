@@ -29,6 +29,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Server = ServerScriptService:WaitForChild("Server")
 local MapManager = require(Server:WaitForChild("MapManager"))
 local EconomyService = require(Server:WaitForChild("EconomyService"))
+local StatService = require(Server:WaitForChild("StatService"))
 local PlayerState = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("PlayerState"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
@@ -37,6 +38,8 @@ local MAX_SPAWN_ROUND = 7
 local SWORD_LIFESPAN_ROUNDS = 2
 local KILL_BONUS = 50
 local SOUND_ID = "rbxassetid://93965767748928"
+local SWORD_WALKSPEED_OVERRIDE_KEY = "SwordHold"
+local SWORD_WALKSPEED = 18
 
 -- Spawn frequency: one attempt every SPAWN_INTERVAL_MIN–MAX seconds while a round is active
 local SPAWN_INTERVAL_MIN = 16
@@ -164,6 +167,56 @@ local function getRandomArenaPosition(): Vector3?
 	return Vector3.new(x, y, z)
 end
 
+local function scheduleWalkSpeedRestore(player: Player, reason: string)
+	local function stillHasSword(): boolean
+		if swordHolders[player] then return true end
+		local backpack = player:FindFirstChild("Backpack")
+		if backpack then
+			for _, item in ipairs(backpack:GetChildren()) do
+				if item:IsA("Tool") and item.Name == "ClassicSword" then
+					return true
+				end
+			end
+		end
+		local character = player.Character
+		if character then
+			for _, item in ipairs(character:GetChildren()) do
+				if item:IsA("Tool") and item.Name == "ClassicSword" then
+					return true
+				end
+			end
+		end
+		return false
+	end
+
+	task.spawn(function()
+		for _ = 1, 32 do
+			if not player.Parent then
+				return
+			end
+			if stillHasSword() then
+				return
+			end
+			local character = player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if humanoid and humanoid.Health > 0 then
+				if humanoid.WalkSpeed == 0 and humanoid.JumpPower == 0 then
+					task.wait(0.2)
+					continue
+				end
+				StatService.RecalculateStats(player)
+				log(string.format(
+					"[SwordMoveGuard] player=%s swordRemoved=true walkSpeedRestored=true reason=%s",
+					player.Name,
+					reason
+				))
+				return
+			end
+			task.wait(0.2)
+		end
+	end)
+end
+
 local function removeSwordFromPlayer(player: Player)
 	local data = swordHolders[player]
 	if not data then return end
@@ -199,6 +252,12 @@ local function removeSwordFromPlayer(player: Player)
 	end
 
 	swordHolders[player] = nil
+	StatService.ClearWalkSpeedOverride(player, SWORD_WALKSPEED_OVERRIDE_KEY)
+	scheduleWalkSpeedRestore(player, "SwordRemoved")
+	log(string.format(
+		"[SwordMoveGuard] player=%s swordRemoved=true walkSpeedOverrideCleared=true",
+		player.Name
+	))
 	log(player.Name, "sword removed")
 end
 
@@ -295,6 +354,12 @@ local function giveSwordToPlayer(player: Player, spawnRound: number)
 		deathConn = deathConn,
 		unequippedConn = unequippedConn,
 	}
+	StatService.SetWalkSpeedOverride(player, SWORD_WALKSPEED_OVERRIDE_KEY, SWORD_WALKSPEED)
+	log(string.format(
+		"[SwordMoveGuard] player=%s swordAcquired=true walkSpeedOverride=%.1f",
+		player.Name,
+		SWORD_WALKSPEED
+	))
 
 	log(string.format("%s picked up sword (spawned round %d)", player.Name, spawnRound))
 end

@@ -165,6 +165,38 @@ local function updateWallParticleProfile(wall: Part)
 	end
 end
 
+local function publishStormBoundsAttributes(centerX: number?, centerZ: number?, halfX: number?, halfZ: number?, sourceTag: string)
+	Lighting:SetAttribute("StormBoundsSource", sourceTag)
+	Lighting:SetAttribute("StormBoundsCenterX", centerX)
+	Lighting:SetAttribute("StormBoundsCenterZ", centerZ)
+	Lighting:SetAttribute("StormBoundsHalfX", halfX)
+	Lighting:SetAttribute("StormBoundsHalfZ", halfZ)
+	local rev = tonumber(Lighting:GetAttribute("StormBoundsRevision")) or 0
+	Lighting:SetAttribute("StormBoundsRevision", rev + 1)
+	log(string.format(
+		"[StormBoundsReplicate] source=%s center=(%s,%s) half=(%s,%s) revision=%d",
+		sourceTag,
+		tostring(centerX),
+		tostring(centerZ),
+		tostring(halfX),
+		tostring(halfZ),
+		math.floor(rev + 1)
+	))
+end
+
+local function publishBarrierPresentationRevision(sourceTag: string)
+	local rev = tonumber(Lighting:GetAttribute("BarrierPresentationRevision")) or 0
+	Lighting:SetAttribute("BarrierPresentationRevision", rev + 1)
+	Lighting:SetAttribute("BarrierPresentationSource", sourceTag)
+	log(string.format(
+		"[BarrierPresentationReplicate] source=%s profile=%s stormProfile=%s revision=%d",
+		sourceTag,
+		tostring(currentBarrierPresentationProfile),
+		tostring(currentStormProfile),
+		math.floor(rev + 1)
+	))
+end
+
 local function applyBarrierPresentationProfile(profileName: string, context: string)
 	local profile = BARRIER_PRESENTATION_PROFILES[profileName]
 	if not profile then
@@ -178,6 +210,7 @@ local function applyBarrierPresentationProfile(profileName: string, context: str
 	currentStormProfile = StormFXConfig.GetActiveProfileName()
 	Lighting:SetAttribute("StormVfxProfile", currentStormProfile)
 	Lighting:SetAttribute("BarrierPresentationProfile", currentBarrierPresentationProfile)
+	publishBarrierPresentationRevision(context)
 
 	for _, wall in ipairs(boundsWalls) do
 		updateWallParticleProfile(wall)
@@ -385,6 +418,10 @@ updateBoundsVisual = function()
 	end
 	
 	if not arenaCFrame or not arenaSize then return end
+
+	-- Runtime-safe reassert: barrier refresh/rebuild must always reapply the
+	-- active mode's full presentation profile, including Normal storm profile.
+	applyBarrierPresentationProfile(currentBarrierPresentationProfile, "UpdateBoundsVisual")
 	
 	local folder = getBoundsFolder()
 	local wallThickness = 3
@@ -452,12 +489,19 @@ updateBoundsVisual = function()
 		stormVolume.CFrame = CFrame.new(centerX, topY + wallHeight / 2, centerZ)
 		stormVolume.Transparency = 0.98
 	end
+	publishStormBoundsAttributes(centerX, centerZ, halfSizeX, halfSizeZ, "ServerWalls")
 	log(string.format("[BarrierColor] applied mode=%s color=%s",
 		currentArenaMode, colorToString(currentBarrierColor)))
 	log(string.format("[BarrierPresentation] profile=%s stormProfile=%s", currentBarrierPresentationProfile, currentStormProfile))
 end
 
 clearBoundsVisual = function()
+	log(string.format(
+		"[BarrierCleanup] reason=clearBoundsVisual activeMode=%s profile=%s stormProfile=%s",
+		tostring(currentArenaMode),
+		tostring(currentBarrierPresentationProfile),
+		tostring(currentStormProfile)
+	))
 	for _, wall in ipairs(boundsWalls) do
 		wall:Destroy()
 	end
@@ -472,6 +516,7 @@ clearBoundsVisual = function()
 		boundsFolder:Destroy()
 		boundsFolder = nil
 	end
+	publishStormBoundsAttributes(nil, nil, nil, nil, "Cleared")
 end
 
 --[[
@@ -729,6 +774,7 @@ function MapManager.OnMatchStart()
 	
 	-- Reset bounds at match start
 	MapManager.ResetBounds()
+	applyBarrierPresentationProfile(currentBarrierPresentationProfile, "OnMatchStart")
 	
 	-- Show boundary visual immediately
 	updateBoundsVisual()
@@ -769,6 +815,7 @@ function MapManager.OnRoundStart(roundIndex: number)
 	if not initialized or not arenaSize then return end
 	
 	currentRound = roundIndex  -- Store for elimination tracking
+	applyBarrierPresentationProfile(currentBarrierPresentationProfile, string.format("OnRoundStart_%d", roundIndex))
 	
 	if not ShrinkConfig.Enabled then return end
 	

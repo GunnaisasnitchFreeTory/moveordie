@@ -119,17 +119,27 @@ local function attachCrown(character: Model, crownId: string)
 	end
 
 	local modelPath = crownDef.modelPath
-	if not modelPath or modelPath == "" then
-		warn(TAG, "No modelPath for crown:", crownId,
-			"| catalogEntry:", crownDef.name or "?", "rarity:", crownDef.rarity or "?",
-			"| image:", crownDef.image or "nil", "| modelName:", crownDef.modelName or "nil")
-		return
+	local sourceModel = nil
+	if modelPath and modelPath ~= "" then
+		sourceModel = ItemModelRegistry.Get(modelPath)
 	end
-
-	local sourceModel = ItemModelRegistry.Get(modelPath)
+	if not sourceModel and crownDef.modelName and crownDef.modelName ~= "" then
+		sourceModel = ItemModelRegistry.GetByExactName(crownDef.modelName)
+		if sourceModel then
+			log(string.format("Fallback model resolve by exact name: crownId=%s modelName=%s", crownId, crownDef.modelName))
+		end
+	end
+	if not sourceModel and crownId == "crown_thestrongest" then
+		sourceModel = ItemModelRegistry.Get("ItemModels.Crowns.Findable.THESTRONGEST Crown")
+		if sourceModel then
+			log("Fallback model resolve by fixed path for crown_thestrongest")
+		end
+	end
 	if not sourceModel then
-		warn(TAG, "modelPath exists but model NOT FOUND in registry:", modelPath,
-			"| crownId:", crownId, "| Try checking ReplicatedStorage.ItemModels hierarchy")
+		warn(TAG, "Unable to resolve crown model:",
+			"| crownId:", crownId,
+			"| modelPath:", tostring(modelPath),
+			"| modelName:", tostring(crownDef.modelName))
 		return
 	end
 

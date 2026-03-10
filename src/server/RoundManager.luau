@@ -29,6 +29,7 @@ local PlayerState = require(Shared:WaitForChild("PlayerState"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local HazardManager = require(Server:WaitForChild("HazardManager"))
 local MapManager = require(Server:WaitForChild("MapManager"))
+local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
 local BrainrotModeService    = require(Server:WaitForChild("BrainrotModeService"))
 local RoundCoinService       = require(Server:WaitForChild("RoundCoinService"))
 local SwordSpawnService      = require(Server:WaitForChild("SwordSpawnService"))
@@ -75,6 +76,16 @@ local paidFreezeNoticeRemote: RemoteEvent = nil
 local targetedRoundFreezes: { [Player]: { round: number, freezerUserId: number, freezerName: string, appliedAt: number, expiresAt: number } } = {}
 local DEV_PRODUCT_FREEZE_SECONDS_DEFAULT: number = 11
 local DEV_PRODUCT_FREEZE_SECONDS_ROUND6: number = 7
+local INACTIVITY_CHECK_ROUND: number = 3
+local MEANINGFUL_MOVE_THRESHOLD_STUDS: number = 8
+type MovementParticipation = {
+	initialPos: Vector3?,
+	hasMeaningfulMovement: boolean,
+	movedAtRound: number?,
+	movedAtPhase: string?,
+	everDevProductFrozen: boolean,
+}
+local movementParticipationByPlayer: { [Player]: MovementParticipation } = {}
 
 local RoundManager = {}
 
@@ -119,6 +130,135 @@ local function getDevProductFreezeSecondsForRound(roundNumber: number): number
 		return DEV_PRODUCT_FREEZE_SECONDS_ROUND6
 	end
 	return DEV_PRODUCT_FREEZE_SECONDS_DEFAULT
+end
+
+local function getRootPosition(player: Player): Vector3?
+	local character = player.Character
+	if not character then return nil end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root or not root:IsA("BasePart") then
+		return nil
+	end
+	return root.Position
+end
+
+local function isGameplayFreezePhase(phaseName: string?): boolean
+	return phaseName == Phase.Telegraph
+		or phaseName == Phase.BeamWarning
+		or phaseName == Phase.Strike
+end
+
+local function isPlayablePhase(phaseName: string?): boolean
+	return phaseName == Phase.FreeMove or phaseName == Phase.Recovery
+end
+
+local function isDevProductFrozenNow(player: Player): boolean
+	if targetedRoundFreezes[player] ~= nil then
+		return true
+	end
+	return player:GetAttribute("RoundLockedFreeze") == true
+end
+
+local function ensureMovementTracker(player: Player): MovementParticipation
+	local tracker = movementParticipationByPlayer[player]
+	if tracker then
+		if tracker.initialPos == nil then
+			tracker.initialPos = getRootPosition(player)
+		end
+		return tracker
+	end
+	tracker = {
+		initialPos = getRootPosition(player),
+		hasMeaningfulMovement = false,
+		movedAtRound = nil,
+		movedAtPhase = nil,
+		everDevProductFrozen = false,
+	}
+	movementParticipationByPlayer[player] = tracker
+	return tracker
+end
+
+local function sampleMovementParticipation()
+	local playable = isPlayablePhase(currentPhase)
+	local players = getInMatchPlayers()
+	for _, player in ipairs(players) do
+		local tracker = ensureMovementTracker(player)
+		local devFrozenNow = isDevProductFrozenNow(player)
+		if devFrozenNow then
+			tracker.everDevProductFrozen = true
+		end
+		if tracker.hasMeaningfulMovement or not playable or devFrozenNow then
+			continue
+		end
+		local pos = getRootPosition(player)
+		if not pos then
+			continue
+		end
+		if tracker.initialPos == nil then
+			tracker.initialPos = pos
+			continue
+		end
+		local dist = (pos - tracker.initialPos).Magnitude
+		if dist >= MEANINGFUL_MOVE_THRESHOLD_STUDS then
+			tracker.hasMeaningfulMovement = true
+			tracker.movedAtRound = currentRound
+			tracker.movedAtPhase = currentPhase
+			log(string.format(
+				"[InactivityGuardMove] player=%s moved=true distance=%.2f threshold=%.2f round=%d phase=%s",
+				player.Name,
+				dist,
+				MEANINGFUL_MOVE_THRESHOLD_STUDS,
+				currentRound,
+				tostring(currentPhase)
+			))
+		end
+	end
+end
+
+local function eliminateForInactivity(player: Player, roundNumber: number)
+	local humanoid = getHumanoid(player)
+	if humanoid and humanoid.Health > 0 then
+		humanoid.Health = 0
+	end
+	EliminationTracker.RecordElimination(player, roundNumber, "InactiveNoMove")
+	PlayerStateService.SetState(player, PlayerState.States.Lobby)
+end
+
+local function evaluateRound3Inactivity()
+	if currentRound ~= INACTIVITY_CHECK_ROUND then
+		return
+	end
+	local gameplayFrozenNow = isGameplayFreezePhase(currentPhase)
+	local players = getInMatchPlayers()
+	for _, player in ipairs(players) do
+		local state = PlayerStateService.GetState(player)
+		local isAFK = PlayerStateService.IsAFK(player)
+		local tracker = ensureMovementTracker(player)
+		local meaningfulMoved = tracker.hasMeaningfulMovement == true
+		local devFreezeNow = isDevProductFrozenNow(player)
+		local devFreezeSeen = tracker.everDevProductFrozen == true
+		local stillActive = player.Parent ~= nil
+			and state == PlayerState.States.InMatch
+			and not EliminationTracker.IsEliminated(player)
+		local excluded = isAFK or devFreezeNow or devFreezeSeen or gameplayFrozenNow
+		local shouldEliminate = stillActive and not excluded and not meaningfulMoved
+		log(string.format(
+			"[InactivityGuard] player=%s matchState=%s state=%s round=%d meaningfulMoved=%s afk=%s devFreezeNow=%s devFreezeSeen=%s gameplayFreeze=%s eliminate=%s",
+			player.Name,
+			if running then "Playing" else "NotRunning",
+			tostring(state),
+			currentRound,
+			tostring(meaningfulMoved),
+			tostring(isAFK),
+			tostring(devFreezeNow),
+			tostring(devFreezeSeen),
+			tostring(gameplayFrozenNow),
+			tostring(shouldEliminate)
+		))
+		if shouldEliminate then
+			eliminateForInactivity(player, math.max(currentRound, 1))
+		end
+	end
 end
 
 local function collectReasonKeys(reasons: { [string]: boolean }): string
@@ -385,6 +525,21 @@ local function isMatchTimeExceeded(): boolean
 	return (tick() - matchStartTime) >= RoundConfig.MaxMatchSeconds
 end
 
+local function logMatchEndTrigger(reason: string, aliveCount: number, extra: string?)
+	local elapsed = tick() - matchStartTime
+	log(string.format(
+		"[MatchEndTrigger] reason=%s round=%d alive=%d initialAlive=%d elapsed=%.1fs maxRounds=%d maxSeconds=%d extra=%s",
+		reason,
+		currentRound,
+		aliveCount,
+		initialAliveCount,
+		elapsed,
+		tonumber(RoundConfig.MaxRoundsPerMatch) or -1,
+		tonumber(RoundConfig.MaxMatchSeconds) or -1,
+		tostring(extra or "")
+	))
+end
+
 --[[
 	Check if match should end based on alive player count or limits.
 	Returns true if match should end, sets matchEndReason and winner.
@@ -398,6 +553,7 @@ local function checkMatchEnd(): boolean
 		winner = nil
 		matchEndReason = MatchEndReason.NoWinners
 		log("No winners - all players eliminated")
+		logMatchEndTrigger(MatchEndReason.NoWinners, aliveCount, "all eliminated")
 		return true
 	end
 	
@@ -406,6 +562,11 @@ local function checkMatchEnd(): boolean
 		winner = alivePlayers[1]
 		matchEndReason = MatchEndReason.Winner
 		log(string.format("WINNER: %s!", winner.Name))
+		logMatchEndTrigger(
+			MatchEndReason.Winner,
+			aliveCount,
+			string.format("winner=%s", winner.Name)
+		)
 		return true
 	end
 	
@@ -419,6 +580,11 @@ local function checkMatchEnd(): boolean
 		end
 		matchEndReason = MatchEndReason.CapReached
 		log(string.format("Max rounds reached (%d), %d players remaining", currentRound, aliveCount))
+		logMatchEndTrigger(
+			MatchEndReason.CapReached,
+			aliveCount,
+			string.format("capType=MaxRounds currentRound=%d", currentRound)
+		)
 		return true
 	end
 	
@@ -432,6 +598,11 @@ local function checkMatchEnd(): boolean
 		matchEndReason = MatchEndReason.CapReached
 		log(string.format("Max time reached (%.0fs), %d players remaining", 
 			tick() - matchStartTime, aliveCount))
+		logMatchEndTrigger(
+			MatchEndReason.CapReached,
+			aliveCount,
+			string.format("capType=MaxTime elapsed=%.1f", tick() - matchStartTime)
+		)
 		return true
 	end
 	
@@ -455,6 +626,7 @@ local function safeWait(seconds: number): boolean
 
 		cleanupInvalidTargetedRoundFreezes()
 		clearExpiredProductFreezes()
+		sampleMovementParticipation()
 		
 		-- Check if match should end mid-phase (e.g., solo player OOB-eliminated)
 		if checkMatchEnd() then
@@ -517,6 +689,7 @@ local function runRoundCycle(): boolean
 		local rv = matchStatus:FindFirstChild("Round")
 		if rv then rv.Value = currentRound end
 	end
+	evaluateRound3Inactivity()
 	
 	-- Notify MapManager of round start (handles shrinking)
 	MapManager.OnRoundStart(currentRound)
@@ -630,7 +803,7 @@ local function runRoundCycle(): boolean
 	if dqs and dqs.OnRoundSurvived then
 		local survivors = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
 		for _, p in ipairs(survivors) do
-			pcall(dqs.OnRoundSurvived, p)
+			pcall(dqs.OnRoundSurvived, p, currentRound)
 		end
 	end
 
@@ -787,8 +960,23 @@ function RoundManager.StartRoundLoop(mode: string?)
 	-- Track initial player count for winner detection
 	local alivePlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
 	initialAliveCount = #alivePlayers
+	movementParticipationByPlayer = {}
+	for _, player in ipairs(alivePlayers) do
+		ensureMovementTracker(player)
+	end
 	
 	log(string.format("Round loop started with %d players", initialAliveCount))
+	log(string.format(
+		"[RoundLoopConfig] mode=%s maxRounds=%d maxSeconds=%d free=%.2f telegraph=%.2f freeze=%.2f strike=%.2f recovery=%.2f",
+		tostring(matchMode),
+		tonumber(RoundConfig.MaxRoundsPerMatch) or -1,
+		tonumber(RoundConfig.MaxMatchSeconds) or -1,
+		tonumber(RoundConfig.FreeMoveSeconds) or 0,
+		tonumber(RoundConfig.TelegraphSeconds) or 0,
+		tonumber(RoundConfig.FreezeSeconds) or 0,
+		tonumber(RoundConfig.StrikeSeconds) or 0,
+		tonumber(RoundConfig.RecoverySeconds) or 0
+	))
 	
 	task.spawn(function()
 		while running do
@@ -804,6 +992,7 @@ function RoundManager.StartRoundLoop(mode: string?)
 		unfreezeAllPlayers(true)
 		HazardManager.Cleanup()
 		currentPhase = nil
+		movementParticipationByPlayer = {}
 		running = false
 		log("Round loop ended")
 	end)

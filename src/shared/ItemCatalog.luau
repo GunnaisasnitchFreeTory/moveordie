@@ -1033,6 +1033,21 @@ ItemCatalog.Crowns = {
 		stats     = { CoinMultiplier = 1.08, JumpPower = 3 },
 		obtainable = false,
 	},
+	crown_thestrongest = {
+		id        = "crown_thestrongest",
+		name      = "THESTRONGEST",
+		modelName = "THESTRONGEST",
+		type      = "Crown",
+		rarity    = "Impossible",
+		source    = "Quest",
+		modelPath = "ItemModels.Crowns.Findable.THESTRONGEST Crown",
+		image     = "rbxassetid://72889596387508",
+		iconText = "",
+		iconColor = Color3.fromRGB(255, 45, 45),
+		thumbnailBgColor = Color3.fromRGB(40, 8, 8),
+		stats     = { CoinMultiplier = 1.16, WalkSpeed = 2, JumpPower = 4 },
+		obtainable = false,
+	},
 
 	-- ── Basic Color Crowns (7) — Common filler for Crown Crate ──
 	crown_red = {
@@ -1644,6 +1659,20 @@ ItemCatalog.IconImages = {
 		stats     = {},
 		obtainable = false,
 	},
+	icon_thestrongest = {
+		id        = "icon_thestrongest",
+		name      = "TheStrongest",
+		modelName = "TheStrongest",
+		type      = "IconImage",
+		rarity    = "Impossible",
+		source    = "quest",
+		modelPath = "IconImages/TheStrongest",
+		image     = "rbxassetid://95254192477409",
+		iconText = "",
+		iconColor = Color3.fromRGB(255, 45, 45),
+		stats     = {},
+		obtainable = false,
+	},
 	-- Coming soon placeholders (locked grey cards in the Icon Images panel)
 	icon_coming_soon_1 = { id = "icon_coming_soon_1", name = "Coming Soon", type = "IconImage", rarity = "Rare",      source = "coming_soon", image = "", iconText = "", iconColor = Color3.fromRGB(80, 160, 255),  stats = {}, obtainable = false },
 	icon_coming_soon_2 = { id = "icon_coming_soon_2", name = "Coming Soon", type = "IconImage", rarity = "Epic",      source = "coming_soon", image = "", iconText = "", iconColor = Color3.fromRGB(180, 80, 255),  stats = {}, obtainable = false },
@@ -1654,7 +1683,7 @@ ItemCatalog.IconImages = {
 }
 
 ItemCatalog._iconImageOrder = {
-	"icon_67_kid", "icon_steve_harrington", "icon_imwatchingyourstream",
+	"icon_67_kid", "icon_steve_harrington", "icon_imwatchingyourstream", "icon_thestrongest",
 	"icon_coming_soon_1", "icon_coming_soon_2", "icon_coming_soon_3",
 	"icon_coming_soon_4", "icon_coming_soon_5", "icon_coming_soon_6",
 }
@@ -1894,11 +1923,12 @@ function ItemCatalog.GetRarityColor(rarity: string): Color3
 		Epic      = Color3.fromRGB(178, 42, 255),
 		Legendary = Color3.fromRGB(255, 198, 18),
 		Exclusive = Color3.fromRGB(255, 58, 58),
+		Impossible = Color3.fromRGB(255, 36, 36),
 	}
 	return colors[rarity] or colors.Common
 end
 
-local RARITY_ORDER = { Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5, Exclusive = 6 }
+local RARITY_ORDER = { Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5, Exclusive = 6, Impossible = 7 }
 
 function ItemCatalog.GetAllPetsSorted(): { any }
 	local list = {}
@@ -2051,6 +2081,8 @@ function ItemCatalog.GetPetAcquisitionLabel(petId: string): string?
 
 	if pet.source == "brainrot_bundle" then
 		return "Brainrot Bundle"
+	elseif pet.source == "quest" or pet.source == "quest_only" then
+		return "Quests"
 	elseif pet.source == "brainrot_mode" then
 		return "Save the Brainrot Mode"
 	elseif pet.source == "bundle_future" then

@@ -377,24 +377,11 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 	trs.Transparency = 0.22
 	trs.Parent = titleR
 
-	local countLbl = Instance.new("TextLabel")
-	countLbl.Name = "OwnedCount"
-	countLbl.Size = UDim2.new(1, -155, 0, 18)
-	countLbl.Position = UDim2.fromOffset(143, 26)
-	countLbl.BackgroundTransparency = 1
-	countLbl.Font = Enum.Font.GothamBold
-	countLbl.TextColor3 = Color3.fromRGB(255, 220, 120)
-	countLbl.TextSize = 12
-	countLbl.TextXAlignment = Enum.TextXAlignment.Left
-	countLbl.Text = string.format("Owned: %d", _crateCounts[crateData.id] or 0)
-	countLbl.Parent = section
-	_crateCountLabels[crateData.id] = countLbl
-
 	-- ── Right: Preview thumbnails row (horizontal scroll) ──
 	local thumbRow = Instance.new("ScrollingFrame")
 	thumbRow.Name = "Thumbnails"
 	thumbRow.Size = UDim2.new(1, -155, 0, 104)
-	thumbRow.Position = UDim2.fromOffset(143, 44)
+	thumbRow.Position = UDim2.fromOffset(143, 32)
 	thumbRow.BackgroundTransparency = 1
 	thumbRow.BorderSizePixel = 0
 	thumbRow.ScrollingDirection = Enum.ScrollingDirection.X
@@ -620,7 +607,6 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 			local result = buyCrate:InvokeServer(crateData.id, qty, "Coins")
 			if result and result.success then
 				local newCount = tonumber(result.newCount) or (_crateCounts[crateData.id] or 0)
-				updateCrateCountLabel(crateData.id, newCount)
 				if _buyOpenBusyByCrate[crateData.id] then
 					return
 				end
@@ -628,6 +614,8 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 				local opened = openPurchasedCrates(crateData.id, qty)
 				_buyOpenBusyByCrate[crateData.id] = nil
 				if not opened then
+					-- Keep the crate balance accurate if auto-open fails after purchase.
+					updateCrateCountLabel(crateData.id, newCount)
 					showToast(formatCratePurchaseToast(crateData.id, qty, newCount), true)
 				end
 			elseif result then

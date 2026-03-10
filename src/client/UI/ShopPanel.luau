@@ -1098,7 +1098,7 @@ local function populatePetsTab()
 		buyBtn.Parent = tile
 		Instance.new("UICorner", buyBtn).CornerRadius = UDim.new(0, 8)
 
-		buyBtn.MouseButton1Click:Connect(function()
+		AnimUtil.WireButton(buyBtn, function()
 			if isOwned or not buyRF then
 				return
 			end
@@ -1157,7 +1157,7 @@ local function populatePetsTab()
 	applyBuyAllStateFromQuote(getFnafBundleQuote())
 
 	local buyAllBusy = false
-	buyAllBtn.MouseButton1Click:Connect(function()
+	AnimUtil.WireButton(buyAllBtn, function()
 		if buyAllBusy then return end
 		local preQuote = getFnafBundleQuote()
 		applyBuyAllStateFromQuote(preQuote)

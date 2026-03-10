@@ -19,7 +19,7 @@ RoundConfig.RecoverySeconds = 0.55    -- Brief pause before next round (~8% fast
 
 -- Match limits (caps to prevent infinite matches)
 RoundConfig.MaxRoundsPerMatch = 20    -- 0 = unlimited
-RoundConfig.MaxMatchSeconds = 180     -- 3 minutes max, 0 = unlimited
+RoundConfig.MaxMatchSeconds = 360     -- 6 minutes max (allows full 20-round matches with current pacing)
 
 -- Winner detection
 RoundConfig.MinPlayersForWinner = 2   -- Need at least 2 players to declare a winner

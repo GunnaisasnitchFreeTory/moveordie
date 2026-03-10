@@ -206,6 +206,7 @@ end
 
 local equipEvent      = ensureRemote("EquipItem")
 local unequipEvent    = ensureRemote("UnequipItem")
+local equipIconEvent  = ensureRemote("EquipIconEvent")
 local inventoryUpdate = ensureRemote("InventoryUpdated")
 local openCrateFunc   = ensureRemoteFunction("OpenCrate")
 local buyCrateFunc    = ensureRemoteFunction("BuyCrate")
@@ -250,6 +251,72 @@ unequipEvent.OnServerEvent:Connect(function(player, category)
 	if result.success then
 		StatService.RecalculateStats(player)
 	end
+end)
+
+equipIconEvent.OnServerEvent:Connect(function(player, iconId)
+	if type(iconId) ~= "string" or iconId == "" then
+		equipIconEvent:FireClient(player, {
+			success = false,
+			reason = "Invalid icon id",
+			equippedIconId = player:GetAttribute("EquippedIconImage") or "",
+		})
+		return
+	end
+	if not PlayerDataService.IsLoaded(player) then
+		equipIconEvent:FireClient(player, {
+			success = false,
+			reason = "Data not loaded",
+			equippedIconId = player:GetAttribute("EquippedIconImage") or "",
+		})
+		return
+	end
+
+	local state = PlayerStateService.GetState(player)
+	if state == PlayerState.States.InMatch then
+		equipIconEvent:FireClient(player, {
+			success = false,
+			reason = "Cannot change icons during match",
+			equippedIconId = player:GetAttribute("EquippedIconImage") or "",
+		})
+		return
+	end
+
+	local iconDef = ItemCatalog.Get("IconImages", iconId)
+	if not iconDef then
+		equipIconEvent:FireClient(player, {
+			success = false,
+			reason = "Icon not found in catalog",
+			equippedIconId = player:GetAttribute("EquippedIconImage") or "",
+		})
+		return
+	end
+
+	if not InventoryService.OwnsItem(player, "IconImages", iconId) then
+		equipIconEvent:FireClient(player, {
+			success = false,
+			reason = "Icon not owned",
+			equippedIconId = player:GetAttribute("EquippedIconImage") or "",
+		})
+		return
+	end
+
+	local currentlyEquipped = PlayerDataService.GetField(player, "EquippedIconImage")
+	local result
+	local newEquippedIconId = ""
+	if currentlyEquipped == iconId then
+		result = InventoryService.UnequipItem(player, "IconImages")
+		newEquippedIconId = ""
+	else
+		result = InventoryService.EquipItem(player, "IconImages", iconId)
+		newEquippedIconId = iconId
+	end
+
+	local success = result and result.success == true
+	equipIconEvent:FireClient(player, {
+		success = success,
+		reason = success and "" or tostring(result and result.reason or "Unknown error"),
+		equippedIconId = success and newEquippedIconId or (player:GetAttribute("EquippedIconImage") or ""),
+	})
 end)
 
 -- =====================================================================

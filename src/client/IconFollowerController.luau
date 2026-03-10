@@ -19,6 +19,7 @@
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService       = game:GetService("HttpService")
 
 local Shared            = ReplicatedStorage:WaitForChild("Shared")
 local ItemCatalog       = require(Shared:WaitForChild("ItemCatalog"))
@@ -177,6 +178,26 @@ end
 local function getIconDef(iconId: string)
 	if not iconId or iconId == "" then return nil end
 	return ItemCatalog.IconImages and ItemCatalog.IconImages[iconId]
+end
+
+local function getOwnedIconImageSet(player: Player): { [string]: boolean }
+	local raw = player:GetAttribute("OwnedIconImages")
+	if type(raw) ~= "string" or raw == "" then
+		return {}
+	end
+	local ok, decoded = pcall(function()
+		return HttpService:JSONDecode(raw)
+	end)
+	if not ok or type(decoded) ~= "table" then
+		return {}
+	end
+	local set = {}
+	for _, id in ipairs(decoded) do
+		if type(id) == "string" and id ~= "" then
+			set[id] = true
+		end
+	end
+	return set
 end
 
 local function destroyIconFor(player: Player)
@@ -409,6 +430,17 @@ local function updateIconFor(player: Player)
 	local iconId = player:GetAttribute("EquippedIconImage")
 	log("updateIconFor", player.Name, "| EquippedIconImage attr =", tostring(iconId))
 	if iconId and iconId ~= "" then
+		local ownedSet = getOwnedIconImageSet(player)
+		if not ownedSet[iconId] then
+			warn(string.format(
+				"%s Skip invalid equipped icon spawn player=%s equipped=%s reason=not_owned",
+				TAG,
+				player.Name,
+				tostring(iconId)
+			))
+			destroyIconFor(player)
+			return
+		end
 		spawnIconFor(player, iconId)
 	else
 		log("No equipped icon image for", player.Name, "-- destroying any active icon")
@@ -422,6 +454,9 @@ local function setupPlayer(player: Player)
 	table.insert(conns, player:GetAttributeChangedSignal("EquippedIconImage"):Connect(function()
 		local newVal = player:GetAttribute("EquippedIconImage")
 		log("EquippedIconImage CHANGED for", player.Name, "->", tostring(newVal))
+		updateIconFor(player)
+	end))
+	table.insert(conns, player:GetAttributeChangedSignal("OwnedIconImages"):Connect(function()
 		updateIconFor(player)
 	end))
 
