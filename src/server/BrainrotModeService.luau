@@ -32,9 +32,9 @@ local MapManager        = require(Server:WaitForChild("MapManager"))
 
 local BRAINROT_FOLDER_NAME = "BrainrotPickups"
 local PICKUP_PROMPT_DISTANCE = 8
-local SPAWN_Y_OFFSET = 2.5
 local EDGE_MARGIN = 8
 local RAYCAST_HEIGHT = 80
+local SPAWN_BOTTOM_BUFFER = 0.5
 
 local COINS_NEW_PET = 50
 local COINS_DUPLICATE = 90
@@ -149,12 +149,52 @@ local function getRandomArenaPosition(): Vector3?
 	local result = Workspace:Raycast(rayOrigin, rayDir, params)
 	local y
 	if result then
-		y = result.Position.Y + SPAWN_Y_OFFSET
+		y = result.Position.Y
 	else
-		y = topY + SPAWN_Y_OFFSET
+		y = topY
 	end
 
 	return Vector3.new(x, y, z)
+end
+
+local function alignSpawnedBrainrotToGround(inst: Instance, groundPos: Vector3, contextName: string)
+	local desiredBottomY = groundPos.Y + SPAWN_BOTTOM_BUFFER
+
+	if inst:IsA("Model") then
+		local bboxCF, bboxSize = inst:GetBoundingBox()
+		local currentBottomY = bboxCF.Position.Y - (bboxSize.Y / 2)
+		local deltaY = desiredBottomY - currentBottomY
+		if math.abs(deltaY) > 0.001 then
+			inst:PivotTo(inst:GetPivot() + Vector3.new(0, deltaY, 0))
+		end
+		log(string.format(
+			"[SpawnAlign] type=Model context=%s groundY=%.2f desiredBottomY=%.2f currentBottomY=%.2f deltaY=%.2f bboxY=%.2f",
+			contextName,
+			groundPos.Y,
+			desiredBottomY,
+			currentBottomY,
+			deltaY,
+			bboxSize.Y
+		))
+		return
+	end
+
+	if inst:IsA("BasePart") then
+		local currentBottomY = inst.Position.Y - (inst.Size.Y / 2)
+		local deltaY = desiredBottomY - currentBottomY
+		if math.abs(deltaY) > 0.001 then
+			inst.Position = inst.Position + Vector3.new(0, deltaY, 0)
+		end
+		log(string.format(
+			"[SpawnAlign] type=BasePart context=%s groundY=%.2f desiredBottomY=%.2f currentBottomY=%.2f deltaY=%.2f partY=%.2f",
+			contextName,
+			groundPos.Y,
+			desiredBottomY,
+			currentBottomY,
+			deltaY,
+			inst.Size.Y
+		))
+	end
 end
 
 local function spawnBrainrot(petId: string)
@@ -219,6 +259,10 @@ local function spawnBrainrot(petId: string)
 			desc.CanCollide = false
 		end
 	end
+
+	-- Parent first so bounding box is valid, then align bottom to ground safely.
+	clone.Parent = getPickupsFolder()
+	alignSpawnedBrainrotToGround(clone, spawnPos, petId)
 
 	local promptPart = nil
 	if clone:IsA("Model") then
@@ -300,8 +344,7 @@ local function spawnBrainrot(petId: string)
 	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 	highlight.Parent = clone
 
-	clone.Parent = getPickupsFolder()
-	log(string.format("Spawned %s at (%.0f, %.0f, %.0f)", petDef.name, spawnPos.X, spawnPos.Y, spawnPos.Z))
+	log(string.format("Spawned %s at ground=(%.0f, %.0f, %.0f)", petDef.name, spawnPos.X, spawnPos.Y, spawnPos.Z))
 	return clone
 end
 

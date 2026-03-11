@@ -356,13 +356,13 @@ local function startCrownBgAnim()
 			slot.Image            = img
 			slot.ImageTransparency = 1
 			slot.Position = UDim2.fromScale(
-				math.random(20, 80) / 100,
-				math.random(12, 88) / 100
+				0.5 + (math.random(-3, 3) / 100),
+				0.5 + (math.random(-3, 3) / 100)
 			)
-			slot.Rotation = math.random(-20, 20)
+			slot.Rotation = math.random(-4, 4)
 
 			-- Fade IN  (1.2 s)
-			local targetTrans = math.random(94, 97) / 100   -- 0.94–0.97: very dark / barely visible
+			local targetTrans = math.random(82, 90) / 100   -- 0.82–0.90: clearer while still subtle
 			local tIn = TweenService:Create(
 				slot,
 				TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
@@ -594,7 +594,7 @@ local function setPetsBgVisible(visible_: boolean)
 					slot.Size = UDim2.fromScale(1, 1)
 					slot.Rotation = math.random(-2, 2)
 
-					local targetTrans = math.random(76, 86) / 100 -- visible but subtle
+					local targetTrans = math.random(66, 78) / 100 -- clearer pet bg imagery while preserving readability
 					local fadeInDur = math.random(25, 45) / 10
 					local holdDur = math.random(30, 70) / 10
 					local fadeOutDur = math.random(25, 45) / 10
@@ -1478,10 +1478,10 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		local cbf = Instance.new("Frame")
 		cbf.Name                  = "CrownBackground"
 		cbf.AnchorPoint           = Vector2.new(0, 0)
-		cbf.Position              = UDim2.fromScale(0, 0)   -- full canvas
-		cbf.Size                  = UDim2.fromScale(1, 1)   -- full canvas
+		cbf.Position              = content.Position         -- match scroll content viewport area
+		cbf.Size                  = content.Size             -- fill full crown panel background
 		cbf.BackgroundColor3      = Color3.fromRGB(5, 3, 18)  -- very dark purple-black
-		cbf.BackgroundTransparency = 0.35                   -- 65% opaque dark tint
+		cbf.BackgroundTransparency = 0.2                    -- lighter tint so crown bg art is easier to see
 		cbf.BorderSizePixel       = 0
 		cbf.ClipsDescendants      = true
 		cbf.ZIndex                = 4      -- behind contentFrame (ZIndex 5)
@@ -1497,10 +1497,10 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 			lbl.Name               = "CrownSlot" .. i
 			lbl.AnchorPoint        = Vector2.new(0.5, 0.5)
 			lbl.Position           = UDim2.fromScale(0.5, 0.5)
-			lbl.Size               = UDim2.fromScale(0.55, 0.88)
+			lbl.Size               = UDim2.fromScale(1.1, 1.1)
 			lbl.BackgroundTransparency = 1
 			lbl.Image              = ""
-			lbl.ScaleType          = Enum.ScaleType.Fit
+			lbl.ScaleType          = Enum.ScaleType.Crop
 			lbl.ImageTransparency  = 1
 			lbl.ZIndex             = 4
 			lbl.Active             = false
@@ -1518,7 +1518,7 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		pbf.Position              = UDim2.fromScale(0, 0)
 		pbf.Size                  = UDim2.fromScale(1, 1)
 		pbf.BackgroundColor3      = Color3.fromRGB(5, 3, 18)
-		pbf.BackgroundTransparency = 0.35
+		pbf.BackgroundTransparency = 0.2
 		pbf.BorderSizePixel       = 0
 		pbf.ZIndex                = 4
 		pbf.Active                = false
@@ -1564,7 +1564,7 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		shade.Size = UDim2.fromScale(1, 1)
 		shade.Position = UDim2.fromScale(0, 0)
 		shade.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		shade.BackgroundTransparency = 0.72
+		shade.BackgroundTransparency = 0.58
 		shade.BorderSizePixel = 0
 		shade.ZIndex = 4
 		shade.Active = false

@@ -46,6 +46,58 @@ local coinScale: UIScale = nil
 local roundFrame: Frame = nil
 local roundLabel: TextLabel = nil
 local stateLabel: TextLabel = nil
+local matchStateValue: StringValue? = nil
+local movementCountdownVisibleValue: BoolValue? = nil
+local movementCountdownEndTimeValue: NumberValue? = nil
+local stateLabelScale: UIScale? = nil
+local movementWarningToken: number = 0
+local movementWarningAnimating = false
+
+local MOVEMENT_WARNING_THRESHOLD = 3.7
+local MOVEMENT_WARNING_COLOR = Color3.fromRGB(255, 78, 78)
+
+local function stopMovementWarningVisual()
+	movementWarningToken += 1
+	movementWarningAnimating = false
+	if stateLabel then
+		stateLabel.TextColor3 = C.TextLight
+	end
+	if stateLabelScale then
+		stateLabelScale.Scale = 1
+	end
+end
+
+local function startMovementWarningVisual()
+	if movementWarningAnimating then
+		return
+	end
+	movementWarningAnimating = true
+	movementWarningToken += 1
+	local token = movementWarningToken
+	task.spawn(function()
+		while movementWarningAnimating and token == movementWarningToken do
+			if stateLabelScale then
+				local tIn = TweenService:Create(
+					stateLabelScale,
+					TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+					{ Scale = 1.07 }
+				)
+				tIn:Play()
+				tIn.Completed:Wait()
+				if not movementWarningAnimating or token ~= movementWarningToken then break end
+				local tOut = TweenService:Create(
+					stateLabelScale,
+					TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+					{ Scale = 1.0 }
+				)
+				tOut:Play()
+				tOut.Completed:Wait()
+			else
+				task.wait(0.16)
+			end
+		end
+	end)
+end
 
 -- Intermission bar elements
 local intermissionBar: Frame = nil
@@ -247,6 +299,9 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	slStroke.Thickness = 1.5
 	slStroke.Transparency = 0.22
 	slStroke.Parent = stateLabel
+	stateLabelScale = Instance.new("UIScale")
+	stateLabelScale.Scale = 1
+	stateLabelScale.Parent = stateLabel
 
 	-- INTERMISSION BAR (single bright horizontal pill)
 	intermissionBar = Instance.new("Frame")
@@ -601,6 +656,11 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		local stateVal = matchStatus:WaitForChild("State", 10)
 		local roundVal = matchStatus:WaitForChild("Round", 10)
 		local phaseEndVal = matchStatus:WaitForChild("PhaseEndTime", 10)
+		local moveCountdownVisibleVal = matchStatus:WaitForChild("MovementCountdownVisible", 10)
+		local moveCountdownEndTimeVal = matchStatus:WaitForChild("MovementCountdownEndTime", 10)
+		matchStateValue = stateVal
+		movementCountdownVisibleValue = moveCountdownVisibleVal
+		movementCountdownEndTimeValue = moveCountdownEndTimeVal
 
 		-- Helper: compute and display remaining time immediately (no waiting for Heartbeat)
 		local function updateCountdownNow()
@@ -613,10 +673,44 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 					if intermissionVisible and intermissionLabel then
 						intermissionLabel.Text = "Game starting in " .. tostring(secs)
 					end
-					if not intermissionVisible then
-						stateLabel.Text = string.format("%.0fs", secs)
-					end
 				end
+			end
+		end
+
+		local function updateMovementCountdownLabel()
+			if not stateLabel then return end
+			local isPlaying = stateVal and stateVal.Value == "Playing"
+			if not isPlaying then
+				stopMovementWarningVisual()
+				return
+			end
+			local canShow = isPlaying
+				and not intermissionVisible
+				and moveCountdownVisibleVal
+				and moveCountdownVisibleVal.Value == true
+				and moveCountdownEndTimeVal
+				and moveCountdownEndTimeVal.Value > 0
+			if not canShow then
+				stateLabel.Text = ""
+				stateLabel.Visible = false
+				stopMovementWarningVisual()
+				return
+			end
+			local remaining = math.max(0, moveCountdownEndTimeVal.Value - workspace:GetServerTimeNow())
+			if remaining <= 0 then
+				stateLabel.Text = ""
+				stateLabel.Visible = false
+				stopMovementWarningVisual()
+				return
+			end
+			stateLabel.Text = string.format("Players will be frozen in: %.1f", remaining)
+			stateLabel.Visible = not bannerOverrideHidden
+			local warningNow = remaining <= MOVEMENT_WARNING_THRESHOLD
+			if warningNow then
+				stateLabel.TextColor3 = MOVEMENT_WARNING_COLOR
+				startMovementWarningVisual()
+			else
+				stopMovementWarningVisual()
 			end
 		end
 
@@ -626,17 +720,21 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 				if st == "Playing" then
 					local r = roundVal and roundVal.Value or 0
 					roundLabel.Text = "Round " .. tostring(math.max(r, 1))
-					stateLabel.Text = ""
+					hideIntermission()
+					updateMovementCountdownLabel()
 					if not bannerOverrideHidden then
 						roundFrame.Visible = true
-						stateLabel.Visible = true
+						stateLabel.Visible = stateLabel.Text ~= ""
 					end
-					hideIntermission()
 				elseif st == "Intermission" then
+					stopMovementWarningVisual()
+					stateLabel.Text = ""
+					stateLabel.Visible = false
 					showIntermission()
 					-- Immediately show correct remaining time (don't wait for Heartbeat)
 					updateCountdownNow()
 				elseif st == "Ending" then
+					stopMovementWarningVisual()
 					roundLabel.Text = "Results"
 					stateLabel.Text = "Match ended!"
 					if not bannerOverrideHidden then
@@ -645,11 +743,12 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 					end
 					hideIntermission()
 				else
+					stopMovementWarningVisual()
 					roundLabel.Text = "Lobby"
 					stateLabel.Text = ""
 					if not bannerOverrideHidden then
 						roundFrame.Visible = true
-						stateLabel.Visible = true
+						stateLabel.Visible = false
 					end
 					hideIntermission()
 				end
@@ -678,12 +777,17 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 						if intermissionVisible and intermissionLabel then
 							intermissionLabel.Text = "Game starting in " .. tostring(secs)
 						end
-						if not intermissionVisible then
-							stateLabel.Text = string.format("%.0fs", secs)
-						end
 					end
 				end
+				updateMovementCountdownLabel()
 			end)
+		end
+
+		if moveCountdownVisibleVal then
+			moveCountdownVisibleVal.Changed:Connect(updateMovementCountdownLabel)
+		end
+		if moveCountdownEndTimeVal then
+			moveCountdownEndTimeVal.Changed:Connect(updateMovementCountdownLabel)
 		end
 	end
 end
@@ -709,7 +813,18 @@ function HUDPanel.SetBannerOverrideHidden(hidden: boolean)
 		else
 			if intermissionBar then intermissionBar.Visible = false end
 			if roundFrame then roundFrame.Visible = true end
-			if stateLabel then stateLabel.Visible = true end
+			if stateLabel then
+				local isPlaying = matchStateValue and matchStateValue.Value == "Playing"
+				if isPlaying then
+					local canShow = movementCountdownVisibleValue
+						and movementCountdownVisibleValue.Value == true
+						and movementCountdownEndTimeValue
+						and movementCountdownEndTimeValue.Value > workspace:GetServerTimeNow()
+					stateLabel.Visible = canShow == true
+				else
+					stateLabel.Visible = stateLabel.Text ~= ""
+				end
+			end
 		end
 	end
 end
