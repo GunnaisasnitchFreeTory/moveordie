@@ -1,10 +1,32 @@
-# Puzzle Pieces & Template Games (Non-Negotiable)
+---
+description: Build systems like modular puzzle pieces
+alwaysApply: true
+---
 
-All games must be treated as template games built from puzzle pieces.
+# Puzzle Piece Philosophy
 
-Rules:
-- Assume systems will be reused in future games
-- Design for copy/paste reuse across projects
-- Prefer small modular systems over one big script
-- Keep stable public APIs between systems
-- Avoid hidden coupling and “magic” dependencies
+Game features must be built as **small modular systems**.
+
+Each system should:
+
+- solve one clear responsibility
+- expose a simple public API
+- avoid hidden dependencies
+- be reusable in future games
+
+Prefer:
+
+Small reusable modules over large feature scripts.
+
+Example:
+
+Bad:
+RoundManager handling everything.
+
+Good:
+RoundSystem
+SpawnSystem
+WinDetectionSystem
+RewardSystem
+
+Systems should behave like **interchangeable puzzle pieces**.

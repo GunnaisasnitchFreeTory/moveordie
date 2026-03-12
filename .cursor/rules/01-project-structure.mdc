@@ -1,0 +1,34 @@
+---
+description: Defines the required Roblox project folder structure
+alwaysApply: true
+---
+
+# Project Structure
+
+All Roblox projects must follow this structure.
+
+ReplicatedStorage
+  Systems
+  Config
+  Shared
+
+ServerScriptService
+  Systems
+  Boot
+
+StarterPlayer
+  StarterPlayerScripts
+    ClientSystems
+
+StarterGui
+  Screens
+  UIControllers
+
+Guidelines:
+
+Systems → gameplay logic  
+UIControllers → UI logic only  
+Config → game data and configuration  
+Shared → utilities used by multiple systems
+
+Never place gameplay logic inside UI scripts.

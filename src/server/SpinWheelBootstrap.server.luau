@@ -64,9 +64,11 @@ local SpinWheelConfig = require(Shared:WaitForChild("SpinWheelConfig"))
 local UIConfig = require(Shared:WaitForChild("UIConfig"))
 local DeveloperProductConfig = require(Shared:WaitForChild("DeveloperProductConfig"))
 local FreezePlayerProductService = require(Server:WaitForChild("FreezePlayerProductService"))
+local ForceNextModeProductService = require(Server:WaitForChild("ForceNextModeProductService"))
 
 SpinWheelService.Init()
 FreezePlayerProductService.Init()
+ForceNextModeProductService.Init()
 
 -- Wire RemoteFunctions
 getDataRF.OnServerInvoke = function(player)
@@ -237,6 +239,16 @@ if freezeProductId > 0 then
 	}
 else
 	warn("[PurchaseSystem] FreezePlayer productId is not configured (>0 required)")
+end
+
+local forceNextModeProductId = tonumber(DeveloperProductConfig.ForceNextMode.productId) or 0
+if forceNextModeProductId > 0 then
+	PRODUCT_REWARD_MAP[forceNextModeProductId] = {
+		type = "ForceNextMode",
+		label = tostring(DeveloperProductConfig.ForceNextMode.name or "FORCE NEXT MODE!"),
+	}
+else
+	warn("[PurchaseSystem] ForceNextMode productId is not configured (>0 required)")
 end
 
 -- Auto-populate Fate Coin developer products from UIConfig (single source for shop UI + receipts)
@@ -605,6 +617,17 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 			granted = consumeOk
 			print(string.format(
 				"[FreezeProductReceipt] purchaser=%s productId=%d result=%s reason=%s",
+				player.Name,
+				productId,
+				tostring(granted),
+				tostring(consumeReason)
+			))
+
+		elseif reward.type == "ForceNextMode" then
+			local consumeOk, consumeReason = ForceNextModeProductService.ConsumePendingReceipt(player, receiptKey)
+			granted = consumeOk
+			print(string.format(
+				"[ForceNextModeReceipt] purchaser=%s productId=%d result=%s reason=%s",
 				player.Name,
 				productId,
 				tostring(granted),

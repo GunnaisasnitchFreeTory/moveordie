@@ -46,6 +46,7 @@ local coinScale: UIScale = nil
 local roundFrame: Frame = nil
 local roundLabel: TextLabel = nil
 local stateLabel: TextLabel = nil
+local forceNextModeBtn: TextButton? = nil
 local matchStateValue: StringValue? = nil
 local movementCountdownVisibleValue: BoolValue? = nil
 local movementCountdownEndTimeValue: NumberValue? = nil
@@ -115,6 +116,14 @@ local function formatCoins(n: number): string
 	return tostring(n)
 end
 
+local function setPreferredVisible(guiObject: GuiObject?, visible: boolean)
+	if not guiObject then
+		return
+	end
+	guiObject:SetAttribute("PreferredVisible", visible)
+	guiObject.Visible = visible
+end
+
 function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	onShop: () -> (),
 	onCrowns: () -> (),
@@ -127,6 +136,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	onDaily: () -> (),
 	onStats: () -> (),
 	onQuests: () -> (),
+	onForceNextMode: () -> (),
 })
 	-- COIN COUNTER (glossy capsule)
 	local coinFrame = Instance.new("Frame")
@@ -504,21 +514,22 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	Components.CreateSideButton(sidebar, "Icons", "", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end, "rbxassetid://93004565620109")
 
 	-- TOP-RIGHT BUTTON HELPER
-	local function createTopRightPill(name, yOffset, text, bgColor, gradTop, gradBot, onClick)
+	local function createTopRightPill(name, yOffset, text, bgColor, gradTop, gradBot, onClick, width, textSize)
 		local btn = Instance.new("TextButton")
 		btn.Name = name
 		btn.AnchorPoint = Vector2.new(1, 0)
 		btn.Position = UDim2.new(1, -16, 0, yOffset)
-		btn.Size = UDim2.fromOffset(100, 38)
+		btn.Size = UDim2.fromOffset(width or 100, 38)
 		btn.BackgroundColor3 = bgColor
 		btn.BorderSizePixel = 0
 		btn.Font = Enum.Font.GothamBold
 		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		btn.TextSize = 14
+		btn.TextSize = textSize or 14
 		btn.Text = text
 		btn.AutoButtonColor = true
 		btn.ZIndex = 5
 		btn.Parent = screenGui
+		btn:SetAttribute("PreferredVisible", true)
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 19)
 
 		local stroke = Instance.new("UIStroke")
@@ -559,9 +570,21 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		return btn
 	end
 
+	forceNextModeBtn = createTopRightPill(
+		"ForceNextModeBtn", 44,
+		"FORCE NEXT MODE!",
+		Color3.fromRGB(225, 120, 26),
+		Color3.fromRGB(255, 182, 78),
+		Color3.fromRGB(156, 72, 8),
+		function() if callbacks.onForceNextMode then callbacks.onForceNextMode() end end,
+		176,
+		13
+	)
+	setPreferredVisible(forceNextModeBtn, false)
+
 	-- TOP-RIGHT: Stats button
 	createTopRightPill(
-		"StatsBtn", 52,
+		"StatsBtn", 96,
 		"Stats",
 		C.SideStats,
 		Color3.fromRGB(80, 240, 220),
@@ -571,7 +594,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 
 	-- TOP-RIGHT: Daily Rewards button
 	createTopRightPill(
-		"DailyBtn", 96,
+		"DailyBtn", 140,
 		"Daily",
 		C.SideDaily,
 		Color3.fromRGB(100, 210, 255),
@@ -581,13 +604,19 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 
 	-- TOP-RIGHT: Daily Quests button
 	createTopRightPill(
-		"QuestsBtn", 140,
+		"QuestsBtn", 184,
 		"Quests",
 		Color3.fromRGB(180, 30, 30),
 		Color3.fromRGB(255, 70, 70),
 		Color3.fromRGB(120, 12, 12),
 		function() if callbacks.onQuests then callbacks.onQuests() end end
 	)
+
+	local function updateForceNextModeButtonVisibility()
+		local state = matchStateValue and matchStateValue.Value or ""
+		local shouldShow = state == "Intermission" or state == "Ending"
+		setPreferredVisible(forceNextModeBtn, shouldShow)
+	end
 
 	-- INTERMISSION SHOW/HIDE HELPERS
 	local function showIntermission()
@@ -752,6 +781,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 					end
 					hideIntermission()
 				end
+				updateForceNextModeButtonVisibility()
 			end
 			stateVal.Changed:Connect(onStateChange)
 			onStateChange()

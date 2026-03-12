@@ -1,16 +1,20 @@
-# Reuse & Iteration Rules
+---
+description: Encourage reuse of systems instead of rebuilding them
+alwaysApply: false
+---
 
-If a system already exists:
-- reuse the structure
-- improve only when needed
-- clearly explain what changed and why
+# Reuse and Iteration
 
-Treat each new game as:
-“A variant built on top of an existing core framework.”
+Prefer reusing existing systems instead of rebuilding new ones.
 
-Favor config-driven behavior over hard-coded logic.
+Example:
 
-Enable easy duplication by supporting:
-- folder copying
-- config swapping
-- theme reskinning without rewrites
+InventorySystem should work for:
+
+- pets
+- swords
+- cosmetics
+
+Avoid creating separate systems when a single reusable system works.
+
+Favor **iteration over rebuilding**.

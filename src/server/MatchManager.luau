@@ -34,6 +34,7 @@ local SwordSpawnService      = require(Server:WaitForChild("SwordSpawnService"))
 local TungTungSahurService   = require(Server:WaitForChild("TungTungSahurService"))
 local ModeLightingService    = require(Server:WaitForChild("ModeLightingService"))
 local FreezePlayerProductService = require(Server:WaitForChild("FreezePlayerProductService"))
+local ForceNextModeProductService = require(Server:WaitForChild("ForceNextModeProductService"))
 
 local _DQS = nil
 local function getDQS()
@@ -69,12 +70,26 @@ local replicatedMovementCountdownEndTime: NumberValue = nil
 local replicatedMode: StringValue = nil
 local replicatedVoteActive: BoolValue = nil
 local replicatedVoteEndTime: NumberValue = nil
+local replicatedVoteLocked: BoolValue = nil
+local replicatedVoteLockedMode: StringValue = nil
 local matchResultsEvent: RemoteEvent = nil
 
 -- Vote state
 local voteRemote: RemoteEvent = nil
 local votes: { [Player]: string } = {}
 local voteActive = false
+local voteLocked = false
+local lockedVoteMode: string? = nil
+local lockedVoteReceiptKey: string? = nil
+local lockedVoteUpcomingMatchId = 0
+
+type PendingForcedModeReservation = {
+	receiptKey: string,
+	forcedMode: string,
+	upcomingMatchId: number,
+}
+
+local pendingForcedModeReservation: PendingForcedModeReservation? = nil
 
 local MatchManager = {}
 
@@ -157,9 +172,38 @@ local function broadcastVoteCounts()
 	end
 end
 
+local function setReplicatedVoteLockState(locked: boolean, forcedMode: string?)
+	if replicatedVoteLocked then
+		replicatedVoteLocked.Value = locked
+	end
+	if replicatedVoteLockedMode then
+		replicatedVoteLockedMode.Value = if locked and type(forcedMode) == "string" then forcedMode else ""
+	end
+end
+
+local function clearCurrentVoteLockState()
+	voteLocked = false
+	lockedVoteMode = nil
+	lockedVoteReceiptKey = nil
+	lockedVoteUpcomingMatchId = 0
+	setReplicatedVoteLockState(false, nil)
+end
+
 local function startVote()
 	votes = {}
-	voteActive = true
+	clearCurrentVoteLockState()
+
+	local upcomingMatchId = EliminationTracker.GetMatchId() + 1
+	local forcedEntry = ForceNextModeProductService.PeekEligibleForUpcomingMatch(upcomingMatchId)
+	voteLocked = forcedEntry ~= nil
+	voteActive = not voteLocked
+
+	if voteLocked and forcedEntry then
+		lockedVoteMode = forcedEntry.requestedMode
+		lockedVoteReceiptKey = forcedEntry.receiptKey
+		lockedVoteUpcomingMatchId = upcomingMatchId
+		setReplicatedVoteLockState(true, lockedVoteMode)
+	end
 
 	-- Replicate vote-active state so late-joining / slow clients can catch up
 	if replicatedVoteActive then
@@ -172,11 +216,25 @@ local function startVote()
 	if voteRemote then
 		for _, player in ipairs(Players:GetPlayers()) do
 			if not PlayerStateService.IsAFK(player) then
-				voteRemote:FireClient(player, "Start", {})
+				voteRemote:FireClient(player, "Start", {
+					locked = voteLocked,
+					forcedMode = lockedVoteMode,
+				})
 			end
 		end
 	end
-	log("Mode vote started")
+
+	if voteLocked and forcedEntry then
+		log(string.format(
+			"[ModeVoteLocked] upcomingMatchId=%d mode=%s receipt=%s purchaser=%s",
+			upcomingMatchId,
+			tostring(lockedVoteMode),
+			tostring(lockedVoteReceiptKey),
+			forcedEntry.purchaserName
+		))
+	else
+		log("Mode vote started")
+	end
 end
 
 local function endVote(): string
@@ -186,11 +244,26 @@ local function endVote(): string
 	if replicatedVoteActive then
 		replicatedVoteActive.Value = false
 	end
+	if replicatedVoteEndTime then
+		replicatedVoteEndTime.Value = 0
+	end
 
-	local normal, brainrot = getVoteCounts()
+	local normal = 0
+	local brainrot = 0
 	local result = "Normal"
-	if brainrot > normal then
-		result = "Brainrot"
+	local wasLocked = voteLocked and lockedVoteMode ~= nil and lockedVoteReceiptKey ~= nil
+	if wasLocked then
+		result = lockedVoteMode or "Normal"
+		pendingForcedModeReservation = {
+			receiptKey = lockedVoteReceiptKey or "",
+			forcedMode = result,
+			upcomingMatchId = lockedVoteUpcomingMatchId,
+		}
+	else
+		normal, brainrot = getVoteCounts()
+		if brainrot > normal then
+			result = "Brainrot"
+		end
 	end
 	currentMode = result
 
@@ -200,12 +273,28 @@ local function endVote(): string
 
 	if voteRemote then
 		for _, player in ipairs(Players:GetPlayers()) do
-			voteRemote:FireClient(player, "End", { winner = result, normal = normal, brainrot = brainrot })
+			voteRemote:FireClient(player, "End", {
+				winner = result,
+				normal = normal,
+				brainrot = brainrot,
+				locked = wasLocked,
+				forcedMode = if wasLocked then result else nil,
+			})
 		end
 	end
 
 	votes = {}
-	log(string.format("Mode vote ended — %s wins (Normal=%d, Brainrot=%d)", result, normal, brainrot))
+	if wasLocked then
+		log(string.format(
+			"[ModeVoteLockedResult] mode=%s receipt=%s upcomingMatchId=%d",
+			result,
+			tostring(lockedVoteReceiptKey),
+			lockedVoteUpcomingMatchId
+		))
+	else
+		log(string.format("Mode vote ended — %s wins (Normal=%d, Brainrot=%d)", result, normal, brainrot))
+	end
+	clearCurrentVoteLockState()
 	return result
 end
 
@@ -475,6 +564,13 @@ local function runIntermission()
 	phaseEndTime = tick() + Config.IntermissionSeconds
 	replicatePhaseEnd(Config.IntermissionSeconds)
 	replicateRound(0)
+	clearCurrentVoteLockState()
+	if replicatedVoteActive then
+		replicatedVoteActive.Value = false
+	end
+	if replicatedVoteEndTime then
+		replicatedVoteEndTime.Value = 0
+	end
 
 	-- Reset mode to Normal at start of intermission
 	currentMode = "Normal"
@@ -550,6 +646,15 @@ local function runPlaying()
 	local waitingPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
 	
 	if #waitingPlayers < Config.MinPlayersToStart then
+		if pendingForcedModeReservation then
+			log(string.format(
+				"[ForceModeHold] reason=NO_PLAYERS receipt=%s mode=%s upcomingMatchId=%d",
+				pendingForcedModeReservation.receiptKey,
+				pendingForcedModeReservation.forcedMode,
+				pendingForcedModeReservation.upcomingMatchId
+			))
+			pendingForcedModeReservation = nil
+		end
 		log(string.format("Not enough players (%d/%d), skipping match", #waitingPlayers, Config.MinPlayersToStart))
 		for _, player in ipairs(waitingPlayers) do
 			PlayerStateService.SetState(player, PlayerState.States.Lobby)
@@ -558,6 +663,29 @@ local function runPlaying()
 	end
 	
 	setMatchState(MatchState.States.Playing)
+	if pendingForcedModeReservation then
+		local reservation = pendingForcedModeReservation
+		pendingForcedModeReservation = nil
+		local consumed = ForceNextModeProductService.ConsumeReservedForStartedMatch(
+			reservation.receiptKey,
+			reservation.upcomingMatchId
+		)
+		if consumed then
+			log(string.format(
+				"[ForceModeApplied] mode=%s receipt=%s upcomingMatchId=%d",
+				reservation.forcedMode,
+				reservation.receiptKey,
+				reservation.upcomingMatchId
+			))
+		else
+			warn(string.format(
+				"[MatchManager] Failed to consume forced mode reservation receipt=%s mode=%s upcomingMatchId=%d",
+				reservation.receiptKey,
+				reservation.forcedMode,
+				reservation.upcomingMatchId
+			))
+		end
+	end
 	log(string.format("Playing started (mode=%s) — waiting for RoundManager to complete", currentMode))
 
 	local played = false
@@ -829,6 +957,16 @@ function MatchManager.Init()
 	replicatedVoteActive.Value = false
 	replicatedVoteActive.Parent = matchStatusFolder
 
+	replicatedVoteLocked = Instance.new("BoolValue")
+	replicatedVoteLocked.Name = "ModeVoteLocked"
+	replicatedVoteLocked.Value = false
+	replicatedVoteLocked.Parent = matchStatusFolder
+
+	replicatedVoteLockedMode = Instance.new("StringValue")
+	replicatedVoteLockedMode.Name = "ModeVoteLockedMode"
+	replicatedVoteLockedMode.Value = ""
+	replicatedVoteLockedMode.Parent = matchStatusFolder
+
 	replicatedVoteEndTime = Instance.new("NumberValue")
 	replicatedVoteEndTime.Name = "ModeVoteEndTime"
 	replicatedVoteEndTime.Value = 0
@@ -871,7 +1009,19 @@ function MatchManager.Init()
 	end
 
 	voteRemote.OnServerEvent:Connect(function(player, action, data)
-		if action == "Cast" and voteActive and data and typeof(data) == "string" then
+		if action == "Cast" and data and typeof(data) == "string" then
+			if voteLocked then
+				log(string.format(
+					"[ModeVoteRejectedLocked] player=%s attempted=%s forcedMode=%s",
+					player.Name,
+					data,
+					tostring(lockedVoteMode or "")
+				))
+				return
+			end
+			if not voteActive then
+				return
+			end
 			if PlayerStateService.IsAFK(player) then return end
 			if data == "Normal" or data == "Brainrot" then
 				votes[player] = data
@@ -894,6 +1044,7 @@ function MatchManager.Init()
 	BrainrotModeService.Init()
 	ModeLightingService.Init()
 	FreezePlayerProductService.Init()
+	ForceNextModeProductService.Init()
 	RoundCoinService.Init()
 	TungTungSahurService.Init()
 

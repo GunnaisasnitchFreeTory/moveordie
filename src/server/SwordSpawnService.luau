@@ -1,6 +1,6 @@
 --[[
 	SwordSpawnService
-	Server-side sword spawning during rounds 1-7.
+	Server-side sword spawning during rounds 2-7.
 
 	- Spawns immediately at round start (if below cap), then recurs every
 	  SPAWN_INTERVAL_MIN–SPAWN_INTERVAL_MAX seconds while the round is active.
@@ -34,6 +34,7 @@ local PlayerState = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChil
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
 
+local MIN_SPAWN_ROUND = 2
 local MAX_SPAWN_ROUND = 7
 local SWORD_LIFESPAN_ROUNDS = 2
 local KILL_BONUS = 50
@@ -93,6 +94,10 @@ local _swordsSpawnedThisRound = 0
 
 local function log(...)
 	print("[SwordSpawn]", ...)
+end
+
+local function isSpawnRoundAllowed(roundNumber: number): boolean
+	return roundNumber >= MIN_SPAWN_ROUND and roundNumber <= MAX_SPAWN_ROUND
 end
 
 local function countActivePickups(): number
@@ -669,8 +674,12 @@ function SwordSpawnService.OnRoundStart(roundNumber: number)
 	_currentRound = roundNumber
 	_swordsSpawnedThisRound = 0
 
-	if roundNumber > MAX_SPAWN_ROUND then
-		log(string.format("Round %d > %d — force removing all swords", roundNumber, MAX_SPAWN_ROUND))
+	if not isSpawnRoundAllowed(roundNumber) then
+		if roundNumber < MIN_SPAWN_ROUND then
+			log(string.format("Round %d < %d — skipping sword spawns for opening round", roundNumber, MIN_SPAWN_ROUND))
+		else
+			log(string.format("Round %d > %d — force removing all swords", roundNumber, MAX_SPAWN_ROUND))
+		end
 		removeAllSwords()
 		clearPickupsFolder()
 		disconnectTouched()

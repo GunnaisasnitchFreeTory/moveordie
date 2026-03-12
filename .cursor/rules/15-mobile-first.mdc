@@ -1,16 +1,22 @@
-# Mobile-First Requirements (Non-Negotiable)
+---
+description: Ensure gameplay works well on mobile devices
+alwaysApply: false
+---
 
-All features must be playable and optimized for mobile.
+# Mobile First
 
-Requirements:
-- Touch-friendly UI (thumb-safe sizes and spacing)
-- Avoid heavy visuals, excessive particles, expensive post effects
-- Avoid expensive per-frame loops on client
-- Use efficient replication and keep Remote traffic minimal
+Roblox games must work well on mobile devices.
 
-Always test assumptions for:
-- low-end devices
-- poor network conditions
-- smaller screens / safe areas
+Avoid:
 
-Provide performance-safe defaults and allow scaling via config.
+- heavy RenderStepped loops
+- excessive physics objects
+- unnecessary UI updates
+
+Prefer:
+
+- event-driven systems
+- lightweight UI updates
+- simple interactions
+
+Always consider mobile performance when implementing systems.

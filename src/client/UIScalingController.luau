@@ -13,6 +13,7 @@ local SCALED_GUI_NAMES = {
 	HUDGui = true,
 	PanelGui = true,
 	ModeVoteGui = true,
+	ForceNextModeGui = true,
 	MatchResultsGui = true,
 }
 
@@ -171,6 +172,25 @@ local function removeModeVotePhoneClamp()
 	if not mvGui then return end
 	local votePanel = mvGui:FindFirstChild("VotePanel")
 	if votePanel then removePhoneClamp(votePanel) end
+end
+
+local function applyForceNextModePhoneClamp()
+	if deviceClass ~= "Phone" then return end
+	if not _playerGui then return end
+	local forceGui = _playerGui:FindFirstChild("ForceNextModeGui")
+	if not forceGui then return end
+	local forcePanel = forceGui:FindFirstChild("ForceNextModePanel")
+	if not forcePanel then return end
+	applyPhonePopupClamp(forcePanel, 0.88, 0.82)
+	print("[UI] ForceNextModePanel applied phone constraints")
+end
+
+local function removeForceNextModePhoneClamp()
+	if not _playerGui then return end
+	local forceGui = _playerGui:FindFirstChild("ForceNextModeGui")
+	if not forceGui then return end
+	local forcePanel = forceGui:FindFirstChild("ForceNextModePanel")
+	if forcePanel then removePhoneClamp(forcePanel) end
 end
 
 local function applyLeftStackPhoneTuning()
@@ -407,6 +427,7 @@ local function applyPhoneTuning()
 	applyLeftStackPhoneTuning()
 	applyDailyRewardsPhoneConstraint()
 	applyModeVotePhoneClamp()
+	applyForceNextModePhoneClamp()
 	applyIntermissionPhoneTuning()
 	applyCoinFramePhoneTuning()
 end
@@ -415,6 +436,7 @@ local function removePhoneTuning()
 	removeLeftStackPhoneTuning()
 	removeDailyRewardsPhoneConstraint()
 	removeModeVotePhoneClamp()
+	removeForceNextModePhoneClamp()
 	removeIntermissionPhoneTuning()
 	removeCoinFramePhoneTuning()
 end
@@ -441,6 +463,7 @@ local function runUIAudit()
 	local auditTargets = {
 		{ name = "DailyRewards",  guiName = "PanelGui",         frameName = DAILY_PANEL_NAME },
 		{ name = "ModeVote",      guiName = "ModeVoteGui",      frameName = "VotePanel" },
+		{ name = "ForceNextMode", guiName = "ForceNextModeGui", frameName = "ForceNextModePanel" },
 		{ name = "PremiumShop",   guiName = "PanelGui",         frameName = "PREMIUMSHOPPanel" },
 		{ name = "FateCrowns",    guiName = "PanelGui",         frameName = "FATECROWNSPanel" },
 		{ name = "MatchResults",  guiName = "MatchResultsGui",  frameName = "ResultsPanel" },
@@ -495,6 +518,7 @@ function UIScalingController.Init()
 			if deviceClass == "Phone" then
 				task.defer(function()
 					applyModeVotePhoneClamp()
+					applyForceNextModePhoneClamp()
 				end)
 			end
 		end

@@ -12,7 +12,7 @@
 
 local PlayerData = {}
 
-PlayerData.VERSION = 4
+PlayerData.VERSION = 5
 
 -- DataStore key — Studio uses a separate namespace to prevent leaking test data into production
 local RunService = game:GetService("RunService")
@@ -72,6 +72,7 @@ function PlayerData.GetDefaults(): { [string]: any }
 		LifetimeDeaths        = 0,
 		TimePlayedSeconds     = 0,
 		DailyQuestData        = "",
+		PendingForceNextModeIntent = nil,
 		ProcessedReceipts     = {},
 		ProcessedGrants       = {},
 	}
@@ -104,6 +105,17 @@ function PlayerData.Validate(data: { [string]: any }): { [string]: any }
 	if type(data.LifetimeDeaths) ~= "number" then data.LifetimeDeaths = 0 end
 	if type(data.TimePlayedSeconds) ~= "number" then data.TimePlayedSeconds = 0 end
 	if type(data.DailyQuestData) ~= "string" then data.DailyQuestData = "" end
+	if data.PendingForceNextModeIntent ~= nil then
+		local pending = data.PendingForceNextModeIntent
+		if type(pending) ~= "table"
+			or type(pending.requestedMode) ~= "string"
+			or (pending.requestedMode ~= "Normal" and pending.requestedMode ~= "Brainrot")
+			or type(pending.createdAt) ~= "number"
+			or type(pending.availableFromMatchId) ~= "number"
+		then
+			data.PendingForceNextModeIntent = nil
+		end
+	end
 	if type(data.ProcessedReceipts) ~= "table" then data.ProcessedReceipts = {} end
 	if type(data.ProcessedGrants) ~= "table" then data.ProcessedGrants = {} end
 

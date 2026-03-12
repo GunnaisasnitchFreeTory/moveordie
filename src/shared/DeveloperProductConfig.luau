@@ -15,4 +15,11 @@ DeveloperProductConfig.FreezePlayer = {
 	productId = 3552077669,
 }
 
+DeveloperProductConfig.ForceNextMode = {
+	id = "force_next_mode",
+	name = "FORCE NEXT MODE!",
+	robux = 5,
+	productId = 3554497295,
+}
+
 return DeveloperProductConfig

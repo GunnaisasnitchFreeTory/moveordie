@@ -1,19 +1,25 @@
-# Output Requirements & Prompt Accuracy
+---
+description: Ensures code output is concise, practical, and implementation focused
+alwaysApply: true
+---
 
-Output Requirements:
-- Prefer working code over long explanations
-- Provide clear folder structures (ReplicatedStorage, ServerScriptService, StarterGui, etc.)
-- Clearly label reusable systems/modules
-- Explain only what is necessary to implement/reuse
-- Avoid vague advice and theory
+# Output and Accuracy
 
-Rules:
-- If something can be a ModuleScript → make it one
-- If something can be a config value → do not hard-code it
-- If something can be reused later → design for it now
+When generating solutions:
 
-Prompt Accuracy:
-- Read prompts carefully and literally
-- Do not assume missing requirements
-- If unclear, choose safest implementation and add config switches
-- Always include verifiable logs/debug flags so debugging is minimal
+Prefer:
+
+- working Roblox Lua code
+- clear module structure
+- minimal explanation
+- practical implementation
+
+Avoid:
+
+- long essays
+- unnecessary theory
+- academic explanations
+
+If a feature can be implemented as a ModuleScript, it should be.
+
+Focus on **producing working game code quickly**.

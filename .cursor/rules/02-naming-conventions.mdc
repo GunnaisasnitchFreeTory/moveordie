@@ -1,0 +1,37 @@
+---
+description: Standard naming conventions for modules and systems
+alwaysApply: true
+---
+
+# Naming Conventions
+
+Use consistent module naming.
+
+Gameplay modules:
+
+RoundSystem  
+InventorySystem  
+RewardSystem  
+
+UI modules:
+
+InventoryController  
+ShopController  
+CrateController  
+
+Configuration modules:
+
+RoundConfig  
+ItemConfig  
+
+Utilities:
+
+MathUtils  
+TableUtils  
+
+Rules:
+
+Gameplay logic → *System  
+UI logic → *Controller  
+Configuration → *Config  
+Utilities → *Utils

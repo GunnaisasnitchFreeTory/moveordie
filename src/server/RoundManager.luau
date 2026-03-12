@@ -732,7 +732,7 @@ local function runRoundCycle(): boolean
 		RoundCoinService.OnRoundStart(currentRound)
 	end
 
-	-- Sword spawns (both modes, rounds 1-7 only)
+	-- Sword spawns (both modes, rounds 2-7 only)
 	SwordSpawnService.OnRoundStart(currentRound)
 	
 	-- Check caps before round starts

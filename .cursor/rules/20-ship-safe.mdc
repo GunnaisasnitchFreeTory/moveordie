@@ -1,13 +1,23 @@
-# Ship-Safe / “Big Change Won’t Break” Requirements
+---
+description: Ensure systems are safe, verifiable, and debuggable
+alwaysApply: false
+---
 
-Code must be resilient to refactors and large updates.
+# Ship Safe
 
-Rules:
-- Prefer stable APIs between modules
-- Defensive programming: validate inputs, fail gracefully
-- Meaningful warnings/errors
-- Add debug flags / verification logs for core systems
-- Ensure systems work even if optional subsystems are disabled
-- Provide sanity checks for each major system
+All systems must include basic safety checks.
 
-Never claim a feature is implemented unless it’s wired and verifiable at runtime.
+Examples:
+
+- validate inputs
+- guard against nil values
+- provide debug logs when necessary
+
+Example:
+
+if not player then
+    warn("SpawnSystem: player missing")
+    return
+end
+
+Systems should fail safely instead of crashing the game.

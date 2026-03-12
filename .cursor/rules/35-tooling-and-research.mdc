@@ -1,9 +1,17 @@
-# Tooling & Research Expectations
+---
+description: Prefer proven Roblox solutions and research when necessary
+alwaysApply: false
+---
 
-You are expected to actively use:
-- MCP servers (when stable)
-- GitHub repositories to reference proven Roblox systems/libraries/optimizations
-- Official Roblox documentation to ensure correct APIs and best practices
+# Tooling and Research
 
-If a better or faster solution likely exists, do not guess — find it and adapt it.
-Use proven patterns, then integrate them cleanly into the modular architecture.
+Prefer proven Roblox patterns and libraries when appropriate.
+
+Examples:
+
+ProfileService → data saving  
+Trove / Maid → cleanup utilities  
+
+Avoid reinventing complex systems when reliable solutions exist.
+
+Research Roblox best practices when implementing unfamiliar features.

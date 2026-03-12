@@ -107,19 +107,58 @@ local function setOverlayUIVisible(show: boolean)
 	local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
 	if not playerGui then return end
 
+	local function restoreGuiObjectVisible(guiObject: GuiObject?)
+		if not guiObject then
+			return
+		end
+		local preferred = guiObject:GetAttribute("PreferredVisible")
+		if type(preferred) == "boolean" then
+			guiObject.Visible = preferred
+		else
+			guiObject.Visible = true
+		end
+	end
+
+	local function restoreScreenGuiEnabled(screenGui: ScreenGui?)
+		if not screenGui then
+			return
+		end
+		local preferred = screenGui:GetAttribute("PreferredEnabled")
+		if type(preferred) == "boolean" then
+			screenGui.Enabled = preferred
+		else
+			screenGui.Enabled = true
+		end
+	end
+
 	local hudGui = playerGui:FindFirstChild("HUDGui")
 	if hudGui then
 		local statsBtn = hudGui:FindFirstChild("StatsBtn")
-		if statsBtn then statsBtn.Visible = show end
+		if statsBtn and statsBtn:IsA("GuiObject") then
+			if show then restoreGuiObjectVisible(statsBtn) else statsBtn.Visible = false end
+		end
 		local dailyBtn = hudGui:FindFirstChild("DailyBtn")
-		if dailyBtn then dailyBtn.Visible = show end
+		if dailyBtn and dailyBtn:IsA("GuiObject") then
+			if show then restoreGuiObjectVisible(dailyBtn) else dailyBtn.Visible = false end
+		end
 		local questsBtn = hudGui:FindFirstChild("QuestsBtn")
-		if questsBtn then questsBtn.Visible = show end
+		if questsBtn and questsBtn:IsA("GuiObject") then
+			if show then restoreGuiObjectVisible(questsBtn) else questsBtn.Visible = false end
+		end
+		local forceBtn = hudGui:FindFirstChild("ForceNextModeBtn")
+		if forceBtn and forceBtn:IsA("GuiObject") then
+			if show then restoreGuiObjectVisible(forceBtn) else forceBtn.Visible = false end
+		end
 	end
 
 	local modeVoteGui = playerGui:FindFirstChild("ModeVoteGui")
-	if modeVoteGui then
-		modeVoteGui.Enabled = show
+	if modeVoteGui and modeVoteGui:IsA("ScreenGui") then
+		if show then restoreScreenGuiEnabled(modeVoteGui) else modeVoteGui.Enabled = false end
+	end
+
+	local forceNextModeGui = playerGui:FindFirstChild("ForceNextModeGui")
+	if forceNextModeGui and forceNextModeGui:IsA("ScreenGui") then
+		if show then restoreScreenGuiEnabled(forceNextModeGui) else forceNextModeGui.Enabled = false end
 	end
 end
 

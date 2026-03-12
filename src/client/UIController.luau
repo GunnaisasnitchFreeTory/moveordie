@@ -111,6 +111,7 @@ local DailyRewardsPanel = safeRequire("DailyRewardsPanel")
 local StatsPanel        = safeRequire("StatsPanel")
 local ModeVotePanel     = safeRequire("ModeVotePanel")
 local QuestsPanel       = safeRequire("QuestsPanel")
+local ForceNextModePanel = safeRequire("ForceNextModePanel")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -155,6 +156,8 @@ local function closeCurrentPanel()
 		StatsPanel.Hide()
 	elseif currentPanel == "Quests" and QuestsPanel.IsVisible() then
 		QuestsPanel.Hide()
+	elseif currentPanel == "ForceNextMode" and ForceNextModePanel.IsVisible() then
+		ForceNextModePanel.Hide()
 	end
 	currentPanel = nil
 
@@ -200,6 +203,8 @@ local function openPanel(name: string)
 		StatsPanel.Show()
 	elseif name == "Quests" then
 		QuestsPanel.Show()
+	elseif name == "ForceNextMode" then
+		ForceNextModePanel.Show()
 	end
 
 	HUDPanel.SetBannerOverrideHidden(true)
@@ -303,6 +308,7 @@ function UIController.Init()
 	safeInit("DailyRewardsPanel", DailyRewardsPanel.Init, panelGui, onPanelClosed)
 	safeInit("StatsPanel", StatsPanel.Init, panelGui, onPanelClosed)
 	safeInit("QuestsPanel", QuestsPanel.Init, panelGui, onPanelClosed)
+	safeInit("ForceNextModePanel", ForceNextModePanel.Init, onPanelClosed)
 
 	safeInit("ModeVotePanel", ModeVotePanel.Init)
 
@@ -322,6 +328,7 @@ function UIController.Init()
 			onDaily    = function() openPanel("Daily") end,
 			onStats    = function() openPanel("Stats") end,
 			onQuests   = function() openPanel("Quests") end,
+			onForceNextMode = function() openPanel("ForceNextMode") end,
 			onAFK      = function()
 				task.spawn(function()
 					local remotes = ReplicatedStorage:FindFirstChild("Remotes")

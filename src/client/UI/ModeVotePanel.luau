@@ -2,29 +2,14 @@
 	ModeVotePanel
 	Client-side mode vote overlay shown during intermission.
 
-	Appears at 12s remaining, disappears when intermission ends.
-	Players pick "Normal Mode" or "Save the Brainrot Mode".
-	Live vote counts update in real-time.
+	Appears during the mode vote window and stays catch-up safe through
+	replicated MatchStatus values for late joiners and slow-loading clients.
 
-	Features:
-	  - Close button (X) to dismiss manually
-	  - Small "Vote" button to reopen during vote window
-	  - AFK players do NOT see the panel
-	  - Panel auto-closes when intermission ends
-	  - Resilient to timing: catches up via replicated ModeVoteActive value
-	  - High DisplayOrder (150) + Global ZIndex so it renders above all panels
-
-	NOT part of the "one panel at a time" system -- this is a
-	priority overlay that floats above everything (including DailyRewards).
-
-	Top-right layout (no overlaps):
-	  Vote  reopen btn : Y=8   h=36 (ends Y=44)
-	  Stats btn (HUD)  : Y=52  h=38 (ends Y=90)
-	  Daily btn (HUD)  : Y=96  h=38 (ends Y=134)
-	  KillFeed         : vertically centered at 45% (mid-right, no overlap)
-
-	API:
-		Init()
+	Top-right layout:
+	  Vote reopen btn : Y=8
+	  Force next mode : Y=44
+	  Stats btn       : Y=96
+	  Daily btn       : Y=140
 ]]
 
 local Players = game:GetService("Players")
@@ -38,21 +23,28 @@ local ModeVotePanel = {}
 local player = Players.LocalPlayer
 local initialized = false
 local panelReady = false
-local gui = nil
-local panelFrame = nil
-local normalBtn = nil
-local brainrotBtn = nil
-local disasterBtn = nil
-local normalCountLbl = nil
-local brainrotCountLbl = nil
-local currentVote = nil
-local voteRemote = nil
-local reopenBtn = nil
+
+local gui: ScreenGui? = nil
+local panelFrame: Frame? = nil
+local titleLabel: TextLabel? = nil
+local subtitleLabel: TextLabel? = nil
+local normalBtn: TextButton? = nil
+local brainrotBtn: TextButton? = nil
+local disasterBtn: TextButton? = nil
+local normalCountLbl: TextLabel? = nil
+local brainrotCountLbl: TextLabel? = nil
+local voteRemote: RemoteEvent? = nil
+local reopenBtn: TextButton? = nil
+local voteLockedValue: BoolValue? = nil
+local voteLockedModeValue: StringValue? = nil
+
+local currentVote: string? = nil
 local voteWindowOpen = false
+local currentVoteLocked = false
+local forcedVoteMode: string? = nil
 
 local VOTE_DISPLAY_ORDER = 150
 
--- Event queue: if remote fires before panel is ready, buffer events here
 local eventQueue = {}
 
 local PANEL_BG = Color3.fromRGB(22, 25, 38)
@@ -69,15 +61,57 @@ local BRAINROT_MODE_IMAGE = "rbxassetid://85473787445447"
 
 local updateSelection
 
-local function isPlayerAFK()
+local function isPlayerAFK(): boolean
 	local state = player:GetAttribute("PlayerState")
 	return state == "AFK"
 end
 
+local function setGuiPreferredEnabled(enabled: boolean)
+	if gui then
+		gui:SetAttribute("PreferredEnabled", enabled)
+	end
+end
+
+local function getModeDisplayName(modeName: string?): string
+	if modeName == "Brainrot" then
+		return "Save the Brainrot"
+	end
+	return "Normal Mode"
+end
+
+local function setVoteLockState(locked: boolean, forcedMode: string?)
+	currentVoteLocked = locked == true
+	if currentVoteLocked and (forcedMode == "Normal" or forcedMode == "Brainrot") then
+		forcedVoteMode = forcedMode
+	else
+		forcedVoteMode = nil
+	end
+
+	if titleLabel then
+		titleLabel.Text = currentVoteLocked and "NEXT MODE LOCKED" or "CHOOSE NEXT MODE"
+	end
+
+	if subtitleLabel then
+		if currentVoteLocked then
+			subtitleLabel.Text = string.format(
+				"Voting is locked. Next match is forced to %s.",
+				getModeDisplayName(forcedVoteMode)
+			)
+		else
+			subtitleLabel.Text = "Vote for the next match mode"
+		end
+	end
+end
+
 local function createGui()
-	if gui and gui.Parent then return end
-	local pg = player:FindFirstChild("PlayerGui")
-	if not pg then return end
+	if gui and gui.Parent then
+		return
+	end
+
+	local playerGui = player:FindFirstChild("PlayerGui")
+	if not playerGui then
+		return
+	end
 
 	gui = Instance.new("ScreenGui")
 	gui.Name = "ModeVoteGui"
@@ -85,7 +119,8 @@ local function createGui()
 	gui.IgnoreGuiInset = true
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 	gui.Enabled = false
-	gui.Parent = pg
+	gui.Parent = playerGui
+	setGuiPreferredEnabled(false)
 
 	panelFrame = Instance.new("Frame")
 	panelFrame.Name = "VotePanel"
@@ -95,10 +130,11 @@ local function createGui()
 	panelFrame.BackgroundColor3 = PANEL_BG
 	panelFrame.BackgroundTransparency = 0.04
 	panelFrame.BorderSizePixel = 0
+	panelFrame.Visible = false
 	panelFrame.ZIndex = 2
+	panelFrame.ClipsDescendants = true
 	panelFrame.Parent = gui
 
-	panelFrame.ClipsDescendants = true
 	Instance.new("UICorner", panelFrame).CornerRadius = UDim.new(0, 16)
 
 	local stroke = Instance.new("UIStroke")
@@ -107,7 +143,6 @@ local function createGui()
 	stroke.Transparency = 0.3
 	stroke.Parent = panelFrame
 
-	-- Fate Beams stud texture overlay
 	local studTex = Instance.new("ImageLabel")
 	studTex.Name = "StudTexture"
 	studTex.Size = UDim2.fromScale(1, 1)
@@ -150,42 +185,46 @@ local function createGui()
 			AnimUtil.PopupClose(panelFrame)
 		end
 		task.delay(0.25, function()
-			if panelFrame then panelFrame.Visible = false end
-			if reopenBtn then reopenBtn.Visible = voteWindowOpen end
+			if panelFrame then
+				panelFrame.Visible = false
+			end
+			if reopenBtn then
+				reopenBtn.Visible = voteWindowOpen
+			end
 		end)
 		print("[ModeVote] Closed by player")
 	end)
 
-	local title = Instance.new("TextLabel")
-	title.Name = "Title"
-	title.AnchorPoint = Vector2.new(0.5, 0)
-	title.Position = UDim2.new(0.5, 0, 0, 14)
-	title.Size = UDim2.new(1, -20, 0, 30)
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.GothamBold
-	title.TextColor3 = HEADER_COLOR
-	title.TextSize = 22
-	title.Text = "CHOOSE NEXT MODE"
-	title.ZIndex = 3
-	title.Parent = panelFrame
+	titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "Title"
+	titleLabel.AnchorPoint = Vector2.new(0.5, 0)
+	titleLabel.Position = UDim2.new(0.5, 0, 0, 14)
+	titleLabel.Size = UDim2.new(1, -20, 0, 30)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.TextColor3 = HEADER_COLOR
+	titleLabel.TextSize = 22
+	titleLabel.Text = "CHOOSE NEXT MODE"
+	titleLabel.ZIndex = 3
+	titleLabel.Parent = panelFrame
 
 	local titleStroke = Instance.new("UIStroke")
 	titleStroke.Color = Color3.fromRGB(0, 0, 0)
 	titleStroke.Thickness = 2
-	titleStroke.Parent = title
+	titleStroke.Parent = titleLabel
 
-	local subtitle = Instance.new("TextLabel")
-	subtitle.Name = "Subtitle"
-	subtitle.AnchorPoint = Vector2.new(0.5, 0)
-	subtitle.Position = UDim2.new(0.5, 0, 0, 44)
-	subtitle.Size = UDim2.new(1, -20, 0, 18)
-	subtitle.BackgroundTransparency = 1
-	subtitle.Font = Enum.Font.GothamSemibold
-	subtitle.TextColor3 = Color3.fromRGB(180, 185, 200)
-	subtitle.TextSize = 13
-	subtitle.Text = "Vote for the next match mode"
-	subtitle.ZIndex = 3
-	subtitle.Parent = panelFrame
+	subtitleLabel = Instance.new("TextLabel")
+	subtitleLabel.Name = "Subtitle"
+	subtitleLabel.AnchorPoint = Vector2.new(0.5, 0)
+	subtitleLabel.Position = UDim2.new(0.5, 0, 0, 44)
+	subtitleLabel.Size = UDim2.new(1, -20, 0, 18)
+	subtitleLabel.BackgroundTransparency = 1
+	subtitleLabel.Font = Enum.Font.GothamSemibold
+	subtitleLabel.TextColor3 = Color3.fromRGB(180, 185, 200)
+	subtitleLabel.TextSize = 13
+	subtitleLabel.Text = "Vote for the next match mode"
+	subtitleLabel.ZIndex = 3
+	subtitleLabel.Parent = panelFrame
 
 	local btnContainer = Instance.new("Frame")
 	btnContainer.Name = "Buttons"
@@ -203,9 +242,16 @@ local function createGui()
 	listLayout.Padding = UDim.new(0, 16)
 	listLayout.Parent = btnContainer
 
-	local function createVoteButton(bName, label, imageId, bgColor, layoutOrder, locked)
+	local function createVoteButton(
+		buttonName: string,
+		label: string,
+		imageId: string,
+		bgColor: Color3,
+		layoutOrder: number,
+		locked: boolean
+	)
 		local btn = Instance.new("TextButton")
-		btn.Name = bName
+		btn.Name = buttonName
 		btn.Size = UDim2.fromOffset(170, 120)
 		btn.BackgroundColor3 = bgColor
 		btn.BackgroundTransparency = locked and 0.2 or 0.08
@@ -227,7 +273,7 @@ local function createGui()
 		btnStroke.Transparency = 0.3
 		btnStroke.Parent = btn
 
-		if type(imageId) == "string" and imageId ~= "" then
+		if imageId ~= "" then
 			local bgImage = Instance.new("ImageLabel")
 			bgImage.Name = "BackgroundImage"
 			bgImage.Position = UDim2.fromScale(0, 0)
@@ -291,34 +337,40 @@ local function createGui()
 
 		if not locked then
 			btn.MouseEnter:Connect(function()
+				if currentVoteLocked then
+					return
+				end
 				TweenService:Create(darkOverlay, TweenInfo.new(0.15), { BackgroundTransparency = 0.65 }):Play()
 			end)
 			btn.MouseLeave:Connect(function()
+				if currentVoteLocked then
+					return
+				end
 				TweenService:Create(darkOverlay, TweenInfo.new(0.15), { BackgroundTransparency = 0.5 }):Play()
 			end)
 		else
 			local lockLbl = Instance.new("TextLabel")
 			lockLbl.Name = "LockLabel"
 			lockLbl.AnchorPoint = Vector2.new(0.5, 0.5)
-			lockLbl.Position = UDim2.fromScale(0.5, 0.62)
-			lockLbl.Size = UDim2.new(1, -12, 0, 24)
+			lockLbl.Position = UDim2.fromScale(0.5, 0.66)
+			lockLbl.Size = UDim2.new(1, -12, 0, 20)
 			lockLbl.BackgroundTransparency = 1
-			lockLbl.Font = Enum.Font.GothamBlack
+			lockLbl.Font = Enum.Font.GothamBold
 			lockLbl.TextColor3 = Color3.fromRGB(230, 230, 230)
-			lockLbl.TextSize = 22
-			lockLbl.Text = "🔒"
+			lockLbl.TextSize = 16
+			lockLbl.Text = "LOCKED"
 			lockLbl.ZIndex = 7
 			lockLbl.Parent = btn
 
 			local soonLbl = Instance.new("TextLabel")
 			soonLbl.Name = "ComingSoonLabel"
 			soonLbl.AnchorPoint = Vector2.new(0.5, 0.5)
-			soonLbl.Position = UDim2.fromScale(0.5, 0.78)
-			soonLbl.Size = UDim2.new(1, -12, 0, 20)
+			soonLbl.Position = UDim2.fromScale(0.5, 0.82)
+			soonLbl.Size = UDim2.new(1, -12, 0, 18)
 			soonLbl.BackgroundTransparency = 1
 			soonLbl.Font = Enum.Font.GothamBold
 			soonLbl.TextColor3 = Color3.fromRGB(215, 215, 220)
-			soonLbl.TextSize = 13
+			soonLbl.TextSize = 12
 			soonLbl.Text = "coming soon"
 			soonLbl.ZIndex = 7
 			soonLbl.Parent = btn
@@ -333,17 +385,31 @@ local function createGui()
 	print("[ModeVote] Added locked placeholder: Disaster Mode (disabled)")
 
 	normalBtn.MouseButton1Click:Connect(function()
-		if currentVote == "Normal" then return end
+		if currentVoteLocked then
+			return
+		end
+		if currentVote == "Normal" then
+			return
+		end
 		currentVote = "Normal"
 		updateSelection()
-		if voteRemote then voteRemote:FireServer("Cast", "Normal") end
+		if voteRemote then
+			voteRemote:FireServer("Cast", "Normal")
+		end
 	end)
 
 	brainrotBtn.MouseButton1Click:Connect(function()
-		if currentVote == "Brainrot" then return end
+		if currentVoteLocked then
+			return
+		end
+		if currentVote == "Brainrot" then
+			return
+		end
 		currentVote = "Brainrot"
 		updateSelection()
-		if voteRemote then voteRemote:FireServer("Cast", "Brainrot") end
+		if voteRemote then
+			voteRemote:FireServer("Cast", "Brainrot")
+		end
 	end)
 
 	reopenBtn = Instance.new("TextButton")
@@ -388,73 +454,144 @@ local function createGui()
 end
 
 updateSelection = function()
-	if not normalBtn or not brainrotBtn then return end
-
-	local normalStroke = normalBtn:FindFirstChild("SelectStroke")
-	local brainrotStroke = brainrotBtn:FindFirstChild("SelectStroke")
-
-	if currentVote == "Normal" then
-		if normalStroke then normalStroke.Color = BTN_SELECTED_STROKE; normalStroke.Thickness = 3; normalStroke.Transparency = 0 end
-		if brainrotStroke then brainrotStroke.Color = BTN_UNSELECTED_STROKE; brainrotStroke.Thickness = 2.5; brainrotStroke.Transparency = 0.3 end
-	elseif currentVote == "Brainrot" then
-		if normalStroke then normalStroke.Color = BTN_UNSELECTED_STROKE; normalStroke.Thickness = 2.5; normalStroke.Transparency = 0.3 end
-		if brainrotStroke then brainrotStroke.Color = BTN_SELECTED_STROKE; brainrotStroke.Thickness = 3; brainrotStroke.Transparency = 0 end
-	else
-		if normalStroke then normalStroke.Color = BTN_UNSELECTED_STROKE; normalStroke.Thickness = 2.5; normalStroke.Transparency = 0.3 end
-		if brainrotStroke then brainrotStroke.Color = BTN_UNSELECTED_STROKE; brainrotStroke.Thickness = 2.5; brainrotStroke.Transparency = 0.3 end
+	if not normalBtn or not brainrotBtn then
+		return
 	end
+
+	local function applyChoiceState(btn: TextButton?, countLbl: TextLabel?, modeName: string)
+		if not btn then
+			return
+		end
+
+		local isForced = currentVoteLocked and forcedVoteMode == modeName
+		local isSelected = (not currentVoteLocked) and currentVote == modeName
+		local isHighlighted = isForced or isSelected
+
+		local stroke = btn:FindFirstChild("SelectStroke")
+		local bgImage = btn:FindFirstChild("BackgroundImage")
+		local darkOverlay = btn:FindFirstChild("DarkOverlay")
+
+		btn.Active = not currentVoteLocked
+		btn.AutoButtonColor = not currentVoteLocked
+		btn.BackgroundTransparency = currentVoteLocked and 0.18 or 0.08
+
+		if stroke and stroke:IsA("UIStroke") then
+			stroke.Color = isHighlighted and BTN_SELECTED_STROKE or BTN_UNSELECTED_STROKE
+			stroke.Thickness = isHighlighted and 3 or 2.5
+			stroke.Transparency = isHighlighted and 0 or 0.3
+		end
+
+		if bgImage and bgImage:IsA("ImageLabel") then
+			bgImage.ImageColor3 = currentVoteLocked
+				and (isForced and Color3.fromRGB(230, 230, 230) or Color3.fromRGB(125, 125, 125))
+				or Color3.fromRGB(255, 255, 255)
+		end
+
+		if darkOverlay and darkOverlay:IsA("Frame") then
+			darkOverlay.BackgroundTransparency = currentVoteLocked
+				and (isForced and 0.34 or 0.18)
+				or 0.5
+		end
+
+		if countLbl then
+			if currentVoteLocked then
+				countLbl.Text = isForced and "FORCED NEXT" or "LOCKED"
+				countLbl.TextColor3 = isForced and Color3.fromRGB(255, 240, 185) or Color3.fromRGB(220, 225, 240)
+			else
+				countLbl.TextColor3 = Color3.fromRGB(220, 225, 240)
+			end
+		end
+	end
+
+	applyChoiceState(normalBtn, normalCountLbl, "Normal")
+	applyChoiceState(brainrotBtn, brainrotCountLbl, "Brainrot")
 end
 
-local function showPanel()
+local function showPanel(data)
 	if isPlayerAFK() then
 		print("[ModeVote] Skipping show -- player is AFK")
 		return
 	end
 
-	if not gui then createGui() end
-	if not gui then return end
+	if not gui then
+		createGui()
+	end
+	if not gui or not panelFrame then
+		return
+	end
 
 	currentVote = nil
 	voteWindowOpen = true
+	setVoteLockState(data and data.locked == true, data and data.forcedMode or nil)
 	updateSelection()
 
-	if normalCountLbl then normalCountLbl.Text = "0 votes" end
-	if brainrotCountLbl then brainrotCountLbl.Text = "0 votes" end
+	if not currentVoteLocked then
+		if normalCountLbl then
+			normalCountLbl.Text = "0 votes"
+		end
+		if brainrotCountLbl then
+			brainrotCountLbl.Text = "0 votes"
+		end
+	end
 
 	gui.Enabled = true
-	if panelFrame then
-		panelFrame.BackgroundTransparency = 0.04
-		panelFrame.Visible = true
-	end
-	if reopenBtn then reopenBtn.Visible = false end
-
-	if panelFrame then
-		AnimUtil.PopupOpen(panelFrame)
+	setGuiPreferredEnabled(true)
+	panelFrame.BackgroundTransparency = 0.04
+	panelFrame.Visible = true
+	if reopenBtn then
+		reopenBtn.Visible = false
 	end
 
-	print(string.format("[ModeVote] Showing UI displayOrder=%d enabled=%s visible=%s",
-		gui.DisplayOrder, tostring(gui.Enabled), tostring(panelFrame and panelFrame.Visible)))
+	AnimUtil.PopupOpen(panelFrame)
+
+	print(string.format(
+		"[ModeVote] Showing UI displayOrder=%d enabled=%s visible=%s locked=%s forcedMode=%s",
+		gui.DisplayOrder,
+		tostring(gui.Enabled),
+		tostring(panelFrame.Visible),
+		tostring(currentVoteLocked),
+		tostring(forcedVoteMode)
+	))
 end
 
 local function hidePanel()
 	voteWindowOpen = false
-	if not gui then return end
+	if not gui then
+		return
+	end
+
+	setGuiPreferredEnabled(false)
 
 	if panelFrame then
 		AnimUtil.PopupClose(panelFrame)
 	end
 
 	task.delay(0.25, function()
-		if gui then gui.Enabled = false end
-		if panelFrame then panelFrame.Visible = false end
-		if reopenBtn then reopenBtn.Visible = false end
+		if gui then
+			gui.Enabled = false
+		end
+		if panelFrame then
+			panelFrame.Visible = false
+		end
+		if reopenBtn then
+			reopenBtn.Visible = false
+		end
+		setVoteLockState(false, nil)
 	end)
 
 	print("[ModeVote] Hidden")
 end
 
 local function updateCounts(data)
-	if not data then return end
+	if not data then
+		return
+	end
+
+	if currentVoteLocked then
+		updateSelection()
+		return
+	end
+
 	local normal = data.normal or 0
 	local brainrot = data.brainrot or 0
 
@@ -466,11 +603,10 @@ local function updateCounts(data)
 	end
 end
 
--- Process a single remote event action
 local function handleVoteEvent(action, data)
 	print("[ModeVote] Received:", action)
 	if action == "Start" then
-		showPanel()
+		showPanel(data)
 	elseif action == "Update" then
 		updateCounts(data)
 	elseif action == "End" then
@@ -479,9 +615,10 @@ local function handleVoteEvent(action, data)
 	end
 end
 
--- Drain any queued events that arrived before panel was ready
 local function drainQueue()
-	if #eventQueue == 0 then return end
+	if #eventQueue == 0 then
+		return
+	end
 	print(string.format("[ModeVote] Draining %d queued events", #eventQueue))
 	for _, entry in ipairs(eventQueue) do
 		handleVoteEvent(entry.action, entry.data)
@@ -490,7 +627,9 @@ local function drainQueue()
 end
 
 function ModeVotePanel.Init()
-	if initialized then return end
+	if initialized then
+		return
+	end
 	initialized = true
 
 	print("[ModeVote] Init starting...")
@@ -509,7 +648,6 @@ function ModeVotePanel.Init()
 			return
 		end
 
-		-- Connect to the remote event
 		voteRemote.OnClientEvent:Connect(function(action, data)
 			if panelReady then
 				handleVoteEvent(action, data)
@@ -521,41 +659,73 @@ function ModeVotePanel.Init()
 
 		print("[ModeVote] Connected to ModeVote remote")
 
-		-- Mark panel as ready and drain any buffered events
 		panelReady = true
 		drainQueue()
 		print("[ModeVote] Panel ready")
 
-		-- ── Replicated state catch-up ──
 		local matchStatus = ReplicatedStorage:WaitForChild("MatchStatus", 10)
-		if matchStatus then
-			local voteActiveVal = matchStatus:WaitForChild("ModeVoteActive", 5)
+		if not matchStatus then
+			warn("[ModeVote] MatchStatus folder not found - replicated catch-up disabled")
+			return
+		end
 
-			if voteActiveVal then
-				if voteActiveVal.Value == true and not voteWindowOpen then
-					print("[ModeVote] Replicated active detected on init — showing UI")
-					showPanel()
-				end
+		local voteActiveVal = matchStatus:WaitForChild("ModeVoteActive", 5)
+		local lockedVal = matchStatus:WaitForChild("ModeVoteLocked", 5)
+		local lockedModeVal = matchStatus:WaitForChild("ModeVoteLockedMode", 5)
 
-				voteActiveVal.Changed:Connect(function(newVal)
-					print("[ModeVote] ModeVoteActive changed to:", tostring(newVal))
-					if newVal == true and not voteWindowOpen then
-						print("[ModeVote] Replicated active detected — showing UI")
-						showPanel()
-					elseif newVal == false and voteWindowOpen then
-						task.delay(1.5, function()
-							if not voteWindowOpen then return end
-							hidePanel()
-						end)
-					end
-				end)
+		if lockedVal and lockedVal:IsA("BoolValue") then
+			voteLockedValue = lockedVal
+		end
+		if lockedModeVal and lockedModeVal:IsA("StringValue") then
+			voteLockedModeValue = lockedModeVal
+		end
 
-				print("[ModeVote] Watching MatchStatus.ModeVoteActive for changes")
-			else
-				warn("[ModeVote] ModeVoteActive value not found in MatchStatus")
+		if voteActiveVal then
+			if voteActiveVal.Value == true and not voteWindowOpen then
+				print("[ModeVote] Replicated active detected on init - showing UI")
+				showPanel({
+					locked = voteLockedValue and voteLockedValue.Value or false,
+					forcedMode = voteLockedModeValue and voteLockedModeValue.Value or nil,
+				})
 			end
+
+			voteActiveVal.Changed:Connect(function(newVal)
+				print("[ModeVote] ModeVoteActive changed to:", tostring(newVal))
+				if newVal == true and not voteWindowOpen then
+					print("[ModeVote] Replicated active detected - showing UI")
+					showPanel({
+						locked = voteLockedValue and voteLockedValue.Value or false,
+						forcedMode = voteLockedModeValue and voteLockedModeValue.Value or nil,
+					})
+				elseif newVal == false and voteWindowOpen then
+					task.delay(1.5, function()
+						if not voteWindowOpen then
+							return
+						end
+						hidePanel()
+					end)
+				end
+			end)
+
+			print("[ModeVote] Watching MatchStatus.ModeVoteActive for changes")
 		else
-			warn("[ModeVote] MatchStatus folder not found — replicated catch-up disabled")
+			warn("[ModeVote] ModeVoteActive value not found in MatchStatus")
+		end
+
+		if voteLockedValue then
+			voteLockedValue.Changed:Connect(function(newVal)
+				setVoteLockState(newVal == true, voteLockedModeValue and voteLockedModeValue.Value or nil)
+				updateSelection()
+			end)
+		end
+
+		if voteLockedModeValue then
+			voteLockedModeValue.Changed:Connect(function(newVal)
+				if currentVoteLocked or (voteLockedValue and voteLockedValue.Value == true) then
+					setVoteLockState(true, newVal)
+					updateSelection()
+				end
+			end)
 		end
 	end)
 

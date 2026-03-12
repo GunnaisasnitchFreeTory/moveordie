@@ -1,20 +1,29 @@
-# How Features Must Be Built
+---
+description: All gameplay features must be implemented as systems
+alwaysApply: true
+---
 
-When asked to build a game or feature:
+# System Architecture
 
-- Break it into clearly defined systems
-- Implement each system as a standalone ModuleScript
-- Keep dependencies minimal, explicit, and injected where possible
-- Assume every system will be reused in future games
+Gameplay logic must be implemented as **standalone systems**.
 
-Core systems to always think in:
-- Round / match flow
-- Player spawning & elimination
-- RNG / chance logic
-- Finish detection & winners
-- Currency & rewards
-- Shop systems
-- Pets, auras, cosmetics
-- Spectating
-- DataStore saving/loading
-- UI logic (strictly separated from game logic)
+Rules:
+
+• Each major feature → its own ModuleScript  
+• Systems must have a clear API  
+• Systems must not directly manipulate UI  
+
+Example system structure:
+
+RoundSystem  
+SpawnSystem  
+InventorySystem  
+RewardSystem  
+
+UI must interact with systems instead of implementing gameplay logic.
+
+Avoid:
+
+- giant scripts
+- tightly coupled modules
+- UI-driven game logic

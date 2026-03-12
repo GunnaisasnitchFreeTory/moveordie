@@ -1,0 +1,24 @@
+---
+description: Standard architecture for round-based gameplay
+alwaysApply: false
+---
+
+# Round Loop Architecture
+
+Round-based games should follow this system structure.
+
+Core systems:
+
+RoundSystem  
+PlayerSpawnSystem  
+EliminationSystem  
+WinDetectionSystem  
+RewardSystem  
+
+Each system should communicate through events rather than direct coupling.
+
+Example flow:
+
+Lobby → Round Start → Spawn Players → Gameplay → Win Detection → Rewards → Reset
+
+Avoid implementing the entire round loop in one script.
