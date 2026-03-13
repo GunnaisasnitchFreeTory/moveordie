@@ -53,9 +53,13 @@ local movementCountdownEndTimeValue: NumberValue? = nil
 local stateLabelScale: UIScale? = nil
 local movementWarningToken: number = 0
 local movementWarningAnimating = false
+local topRightButtons: {GuiObject} = {}
+local rightSideSafeArea: Frame? = nil
 
 local MOVEMENT_WARNING_THRESHOLD = 3.7
 local MOVEMENT_WARNING_COLOR = Color3.fromRGB(255, 78, 78)
+local RIGHT_SAFE_AREA_NAME = "HUDRightSafeArea"
+local RIGHT_SAFE_AREA_GAP = 16
 
 local function stopMovementWarningVisual()
 	movementWarningToken += 1
@@ -122,6 +126,53 @@ local function setPreferredVisible(guiObject: GuiObject?, visible: boolean)
 	end
 	guiObject:SetAttribute("PreferredVisible", visible)
 	guiObject.Visible = visible
+end
+
+-- Use local GUI coordinates so the safe area stays correct under ResponsiveScale.
+local function updateRightSideSafeArea()
+	if not rightSideSafeArea then
+		return
+	end
+
+	local rightScale, rightOffset
+	local minY, maxBottom, maxWidth
+	for _, button in ipairs(topRightButtons) do
+		if button.Visible then
+			local top = button.Position.Y.Offset
+			local bottom = top + button.Size.Y.Offset
+			local width = button.Size.X.Offset
+
+			rightScale = rightScale or button.Position.X.Scale
+			if rightOffset == nil then
+				rightOffset = button.Position.X.Offset
+			else
+				rightOffset = math.min(rightOffset, button.Position.X.Offset)
+			end
+			minY = minY and math.min(minY, top) or top
+			maxBottom = maxBottom and math.max(maxBottom, bottom) or bottom
+			maxWidth = maxWidth and math.max(maxWidth, width) or width
+		end
+	end
+
+	if not minY or not maxBottom or not maxWidth then
+		rightSideSafeArea.Position = UDim2.fromOffset(0, 0)
+		rightSideSafeArea.Size = UDim2.fromOffset(0, 0)
+		rightSideSafeArea:SetAttribute("BottomOffset", 0)
+		return
+	end
+
+	rightSideSafeArea.AnchorPoint = Vector2.new(1, 0)
+	rightSideSafeArea.Position = UDim2.new(rightScale or 1, rightOffset or -16, 0, math.floor(minY))
+	rightSideSafeArea.Size = UDim2.fromOffset(math.ceil(maxWidth), math.ceil(maxBottom - minY))
+	rightSideSafeArea:SetAttribute("BottomOffset", math.ceil(maxBottom))
+end
+
+local function trackTopRightButton(button: GuiObject)
+	table.insert(topRightButtons, button)
+	button:GetPropertyChangedSignal("Position"):Connect(updateRightSideSafeArea)
+	button:GetPropertyChangedSignal("Size"):Connect(updateRightSideSafeArea)
+	button:GetPropertyChangedSignal("Visible"):Connect(updateRightSideSafeArea)
+	task.defer(updateRightSideSafeArea)
 end
 
 function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
@@ -513,6 +564,18 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 
 	Components.CreateSideButton(sidebar, "Icons", "", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end, "rbxassetid://93004565620109")
 
+	rightSideSafeArea = Instance.new("Frame")
+	rightSideSafeArea.Name = RIGHT_SAFE_AREA_NAME
+	rightSideSafeArea.Position = UDim2.fromOffset(0, 0)
+	rightSideSafeArea.Size = UDim2.fromOffset(0, 0)
+	rightSideSafeArea.BackgroundTransparency = 1
+	rightSideSafeArea.BorderSizePixel = 0
+	rightSideSafeArea.Active = false
+	rightSideSafeArea.ZIndex = 0
+	rightSideSafeArea.Parent = screenGui
+	rightSideSafeArea:SetAttribute("RecommendedGap", RIGHT_SAFE_AREA_GAP)
+	rightSideSafeArea:SetAttribute("BottomOffset", 0)
+
 	-- TOP-RIGHT BUTTON HELPER
 	local function createTopRightPill(name, yOffset, text, bgColor, gradTop, gradBot, onClick, width, textSize)
 		local btn = Instance.new("TextButton")
@@ -567,6 +630,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		textStroke.Parent = btn
 
 		AnimUtil.WireButton(btn, onClick)
+		trackTopRightButton(btn)
 		return btn
 	end
 
@@ -616,7 +680,10 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		local state = matchStateValue and matchStateValue.Value or ""
 		local shouldShow = state == "Intermission" or state == "Ending"
 		setPreferredVisible(forceNextModeBtn, shouldShow)
+		task.defer(updateRightSideSafeArea)
 	end
+
+	task.defer(updateRightSideSafeArea)
 
 	-- INTERMISSION SHOW/HIDE HELPERS
 	local function showIntermission()

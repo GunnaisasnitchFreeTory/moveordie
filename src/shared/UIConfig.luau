@@ -267,6 +267,8 @@ UIConfig.MockPremiumItems = {
 	{ id = "crown_portal",        name = "Portal Crown",        type = "ExclusiveCrown", fateCoins = 75000, iconColor = Color3.fromRGB(88, 255, 200),  tag = "EXCLUSIVE", rarity = "Legendary" },
 	{ id = "crown_freddy_mask",   name = "FreddyMaskCrown",     type = "ExclusiveCrown", fateCoins = 80000, iconColor = Color3.fromRGB(186, 132, 92),  tag = "NEW",       rarity = "Legendary" },
 	{ id = "crown_6am",           name = "6AMCrown",            type = "ExclusiveCrown", fateCoins = 5000,  iconColor = Color3.fromRGB(120, 185, 255), tag = "NEW",       rarity = "Epic" },
+	{ id = "crown_ce",            name = "CE Crown",            type = "ExclusiveCrown", fateCoins = 10000, iconColor = Color3.fromRGB(235, 235, 245), tag = "NEW",       rarity = "Epic" },
+	{ id = "crown_purple_sparks", name = "PurpleSparks Crown",  type = "ExclusiveCrown", fateCoins = 7500,  iconColor = Color3.fromRGB(164, 72, 212),  tag = "NEW",       rarity = "Epic" },
 	{ id = "crown_fire_circle",   name = "Fire Circle Crown",   type = "ExclusiveCrown", robux = 450, gamepassId = 1728155288, iconColor = Color3.fromRGB(255, 90, 30),   tag = "NEW",       rarity = "Legendary" },
 	{ id = "crown_nen_x_killua",  name = "Nen X Killua Crown",  type = "ExclusiveCrown", robux = 400, gamepassId = 1728821173, iconColor = Color3.fromRGB(140, 200, 255), tag = "EXCLUSIVE", rarity = "Legendary" },
 	{ id = "crown_slashes",       name = "Slashes Crown",       type = "ExclusiveCrown", robux = 300, gamepassId = 1727051517, iconColor = Color3.fromRGB(255, 215, 255), tag = "EXCLUSIVE", rarity = "Legendary" },
@@ -274,7 +276,7 @@ UIConfig.MockPremiumItems = {
 	{ id = "crown_rengoku",       name = "Rengoku Crown",       type = "ExclusiveCrown", robux = 200, gamepassId = 1716918881, iconColor = Color3.fromRGB(255, 128, 28),  tag = "NEW",       rarity = "Legendary" },
 	{ id = "crown_ultra",         name = "Ultra Crown",         type = "ExclusiveCrown", robux = 300, gamepassId = 1717864767, iconColor = Color3.fromRGB(218, 48, 255),  tag = "EXCLUSIVE", rarity = "Legendary" },
 	-- Bundles
-	{ id = "bundle_vip",     name = "VIP Bundle",  type = "Bundle", robux = 500, iconColor = Color3.fromRGB(255, 215, 78), tag = "VIP",  rarity = "Legendary" },
+	{ id = "bundle_vip",     name = "VIP Bundle",  type = "Bundle", robux = 500, gamepassId = 1745607323, iconColor = Color3.fromRGB(255, 215, 78), tag = "VIP",  rarity = "Legendary" },
 	{ id = "bundle_starter", name = "Starter Pack", type = "Bundle", robux = 100, iconColor = Color3.fromRGB(78, 208, 255), tag = "DEAL", rarity = "Rare" },
 }
 

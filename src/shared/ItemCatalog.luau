@@ -580,6 +580,21 @@ ItemCatalog.Pets = {
 		stats     = { CoinMultiplier = 1.14, WalkSpeed = 3, JumpPower = 6 },
 		shopOnly  = true,
 	},
+	pet_all_knowing_eye = {
+		id         = "pet_all_knowing_eye",
+		name       = "AllKnowing Eye",
+		modelName  = "AllKnowing Eye",
+		type       = "Pet",
+		rarity     = "Legendary",
+		source     = "bundle_vip",
+		modelPath  = "ItemModels.Pets.Legendary.VIP.AllKnowing Eye",
+		image      = "",
+		iconText   = "",
+		iconColor  = Color3.fromRGB(255, 92, 112),
+		thumbnailBgColor = Color3.fromRGB(34, 10, 14),
+		stats      = nil,
+		obtainable = false,
+	},
 
 	-- ── Brainrot (10) — Save the Brainrot Mode exclusives ──
 	pet_brainrot_torrtuginni = {
@@ -1335,6 +1350,38 @@ ItemCatalog.Crowns = {
 		shopOnly  = true,
 		fateCoins = 5000,
 	},
+	crown_ce = {
+		id        = "crown_ce",
+		name      = "CE Crown",
+		modelName = "CE Crown",
+		type      = "Crown",
+		rarity    = "Epic",
+		source    = "Exclusive",
+		modelPath = "ItemModels.Crowns.Exclusive.CE Crown",
+		image     = "",
+		iconText = "",
+		iconColor = Color3.fromRGB(235, 235, 245),
+		thumbnailBgColor = Color3.fromRGB(16, 16, 20),
+		stats     = { CoinMultiplier = 1.08, JumpPower = 3 },
+		shopOnly  = true,
+		fateCoins = 10000,
+	},
+	crown_purple_sparks = {
+		id        = "crown_purple_sparks",
+		name      = "PurpleSparks Crown",
+		modelName = "PurpleSparks Crown",
+		type      = "Crown",
+		rarity    = "Epic",
+		source    = "Exclusive",
+		modelPath = "ItemModels.Crowns.Exclusive.PurpleSparks Crown",
+		image     = "",
+		iconText = "",
+		iconColor = Color3.fromRGB(164, 72, 212),
+		thumbnailBgColor = Color3.fromRGB(28, 14, 38),
+		stats     = { CoinMultiplier = 1.08, WalkSpeed = 1 },
+		shopOnly  = true,
+		fateCoins = 7500,
+	},
 	crown_fire_circle = {
 		id         = "crown_fire_circle",
 		name       = "Fire Circle Crown",
@@ -1424,6 +1471,36 @@ ItemCatalog.Crowns = {
 		iconColor = Color3.fromRGB(218, 48, 255),
 		stats     = { CoinMultiplier = 1.15, WalkSpeed = 2, JumpPower = 4 },
 		shopOnly  = true,
+	},
+	crown_vip = {
+		id        = "crown_vip",
+		name      = "VIP Crown",
+		modelName = "VIP Crown",
+		type      = "Crown",
+		rarity    = "Legendary",
+		source    = "bundle_vip",
+		modelPath = "ItemModels.Crowns.Exclusive.VIP.VIP Crown",
+		image     = "",
+		iconText  = "",
+		iconColor = Color3.fromRGB(255, 196, 72),
+		thumbnailBgColor = Color3.fromRGB(42, 24, 8),
+		stats     = nil,
+		obtainable = false,
+	},
+	crown_whiteeyed = {
+		id        = "crown_whiteeyed",
+		name      = "WhiteEyed Crown",
+		modelName = "WhiteEyed Crown",
+		type      = "Crown",
+		rarity    = "Legendary",
+		source    = "bundle_vip",
+		modelPath = "ItemModels.Crowns.Exclusive.VIP.WhiteEyed Crown",
+		image     = "",
+		iconText  = "",
+		iconColor = Color3.fromRGB(240, 240, 255),
+		thumbnailBgColor = Color3.fromRGB(26, 26, 36),
+		stats     = nil,
+		obtainable = false,
 	},
 
 	-- ── Brainrot Bundle Crown ──
@@ -1569,6 +1646,8 @@ ItemCatalog.Premium = {
 	crown_portal        = { id = "crown_portal",        name = "Portal Crown",        type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://81166013366597",  iconText = "", iconColor = Color3.fromRGB(88, 255, 200),  thumbnailBgColor = Color3.fromRGB(8, 30, 25),  fateCoins = 75000, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Portal Crown" },
 	crown_freddy_mask   = { id = "crown_freddy_mask",   name = "FreddyMaskCrown",     type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://73872999924845", iconText = "", iconColor = Color3.fromRGB(186, 132, 92), thumbnailBgColor = Color3.fromRGB(30, 20, 14), fateCoins = 80000, tag = "NEW", modelPath = "ItemModels.Crowns.Exclusive.FreddyMaskCrown" },
 	crown_6am           = { id = "crown_6am",           name = "6AMCrown",             type = "ExclusiveCrown", rarity = "Epic",      image = "rbxassetid://123607214574977", iconText = "", iconColor = Color3.fromRGB(120, 185, 255), thumbnailBgColor = Color3.fromRGB(12, 20, 32), fateCoins = 5000, tag = "NEW", modelPath = "ItemModels.Crowns.Exclusive.6AMCrown" },
+	crown_ce            = { id = "crown_ce",            name = "CE Crown",             type = "ExclusiveCrown", rarity = "Epic",      image = "",                         iconText = "", iconColor = Color3.fromRGB(235, 235, 245), thumbnailBgColor = Color3.fromRGB(16, 16, 20), fateCoins = 10000, tag = "NEW", modelPath = "ItemModels.Crowns.Exclusive.CE Crown" },
+	crown_purple_sparks = { id = "crown_purple_sparks", name = "PurpleSparks Crown",   type = "ExclusiveCrown", rarity = "Epic",      image = "",                         iconText = "", iconColor = Color3.fromRGB(164, 72, 212), thumbnailBgColor = Color3.fromRGB(28, 14, 38), fateCoins = 7500,  tag = "NEW", modelPath = "ItemModels.Crowns.Exclusive.PurpleSparks Crown" },
 	crown_fire_circle   = { id = "crown_fire_circle",   name = "Fire Circle Crown",   type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://121758348091203", iconText = "", iconColor = Color3.fromRGB(255, 90, 30),   thumbnailBgColor = Color3.fromRGB(38, 15, 5),  robux = 450, gamepassId = 1728155288, tag = "NEW",       modelPath = "ItemModels.Crowns.Exclusive.Fire Circle Crown" },
 	crown_nen_x_killua  = { id = "crown_nen_x_killua",  name = "Nen X Killua Crown",  type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://111628191491649", iconText = "", iconColor = Color3.fromRGB(140, 200, 255), thumbnailBgColor = Color3.fromRGB(10, 18, 38), robux = 400, gamepassId = 1728821173, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Nen X Killua Crown" },
 	crown_slashes       = { id = "crown_slashes",       name = "Slashes Crown",       type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://132744048265245", iconText = "", iconColor = Color3.fromRGB(255, 215, 255), thumbnailBgColor = Color3.fromRGB(28, 18, 38), robux = 300, gamepassId = 1727051517, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Slashes Crown" },
@@ -1577,7 +1656,7 @@ ItemCatalog.Premium = {
 	crown_ultra         = { id = "crown_ultra",         name = "Ultra Crown",         type = "ExclusiveCrown", rarity = "Legendary", image = "rbxassetid://113224946425402", iconText = "", iconColor = Color3.fromRGB(218, 48, 255),  thumbnailBgColor = Color3.fromRGB(28, 15, 42), robux = 300, gamepassId = 1717864767, tag = "EXCLUSIVE", modelPath = "ItemModels.Crowns.Exclusive.Ultra Crown" },
 
 	-- Bundles
-	bundle_vip     = { id = "bundle_vip",     name = "VIP Bundle",  type = "Bundle", image = "", iconText = "", iconColor = Color3.fromRGB(255, 215, 78),  robux = 500, tag = "VIP",  rarity = "Legendary" },
+	bundle_vip     = { id = "bundle_vip",     name = "VIP Bundle",  type = "Bundle", image = "", iconText = "", iconColor = Color3.fromRGB(255, 215, 78),  robux = 500, gamepassId = 1745607323, tag = "VIP",  rarity = "Legendary" },
 	bundle_starter = { id = "bundle_starter", name = "Starter Pack", type = "Bundle", image = "", iconText = "", iconColor = Color3.fromRGB(78, 208, 255),  robux = 100, tag = "DEAL", rarity = "Rare" },
 }
 
@@ -1645,6 +1724,21 @@ ItemCatalog.IconImages = {
 		stats     = {},
 		obtainable = false,
 	},
+	icon_flights_laugh = {
+		id        = "icon_flights_laugh",
+		name      = "Flights Laugh",
+		modelName = "Flights Laugh",
+		type      = "IconImage",
+		rarity    = "Legendary",
+		source    = "bundle_vip",
+		modelPath = "IconImages/VIP/Flights Laugh",
+		image     = "rbxassetid://116615586913751",
+		iconText  = "",
+		iconColor = Color3.fromRGB(168, 96, 255),
+		thumbnailBgColor = Color3.fromRGB(26, 12, 36),
+		stats     = {},
+		obtainable = false,
+	},
 	icon_imwatchingyourstream = {
 		id        = "icon_imwatchingyourstream",
 		name      = "ImWatchingYourStream",
@@ -1683,7 +1777,7 @@ ItemCatalog.IconImages = {
 }
 
 ItemCatalog._iconImageOrder = {
-	"icon_67_kid", "icon_steve_harrington", "icon_imwatchingyourstream", "icon_thestrongest",
+	"icon_67_kid", "icon_steve_harrington", "icon_flights_laugh", "icon_imwatchingyourstream", "icon_thestrongest",
 	"icon_coming_soon_1", "icon_coming_soon_2", "icon_coming_soon_3",
 	"icon_coming_soon_4", "icon_coming_soon_5", "icon_coming_soon_6",
 }
@@ -1792,9 +1886,35 @@ end
 -- HELPER FUNCTIONS
 -- ═══════════════════════════════════════════════════════════════════
 
+ItemCatalog.BundleRewards = {
+	fate_coins_8000 = {
+		id = "fate_coins_8000",
+		name = "8000 Fate Coins",
+		type = "BundleReward",
+		rarity = "Legendary",
+		image = ItemCatalog.CoinImage,
+		iconText = "F",
+		iconColor = Color3.fromRGB(255, 215, 38),
+		thumbnailBgColor = Color3.fromRGB(38, 28, 12),
+		previewMode = "none",
+	},
+	coins_1_5x_permanent = {
+		id = "coins_1_5x_permanent",
+		name = "1.5x coins permanently",
+		type = "BundleReward",
+		rarity = "Legendary",
+		image = "",
+		iconText = "1.5X",
+		iconColor = Color3.fromRGB(188, 72, 255),
+		thumbnailBgColor = Color3.fromRGB(30, 12, 40),
+		previewMode = "none",
+	},
+}
+
 local TABLES = {
 	Pets       = ItemCatalog.Pets,
 	Crowns     = ItemCatalog.Crowns,
+	BundleRewards = ItemCatalog.BundleRewards,
 	Premium    = ItemCatalog.Premium,
 	Crates     = ItemCatalog.Crates,
 	Icons      = ItemCatalog.Icons,
@@ -2068,6 +2188,8 @@ function ItemCatalog.GetCrownAcquisitionLabel(crownId: string): string?
 		return "Daily Reward"
 	elseif crown.source == "brainrot_bundle" then
 		return "Brainrot Bundle"
+	elseif crown.source == "bundle_vip" then
+		return "VIP Bundle"
 	elseif crown.source == "Quest" then
 		return "Quests"
 	end
@@ -2081,6 +2203,8 @@ function ItemCatalog.GetPetAcquisitionLabel(petId: string): string?
 
 	if pet.source == "brainrot_bundle" then
 		return "Brainrot Bundle"
+	elseif pet.source == "bundle_vip" then
+		return "VIP Bundle"
 	elseif pet.source == "quest" or pet.source == "quest_only" then
 		return "Quests"
 	elseif pet.source == "brainrot_mode" then
@@ -2110,6 +2234,8 @@ function ItemCatalog.GetIconImageAcquisitionLabel(iconImageId: string): string?
 	local source = iconImage.source
 	if source == "brainrot_bundle" then
 		return "Brainrot Bundle"
+	elseif source == "bundle_vip" then
+		return "VIP Bundle"
 	elseif source == "quest" or source == "quest_only" then
 		return "Quests"
 	elseif source == "coming_soon" then
@@ -2143,6 +2269,8 @@ function ItemCatalog.GetItemAcquisitionInfo(itemType: string, itemId: string): (
 
 	local badgeType: string? = nil
 	if label == "Brainrot Bundle" then
+		badgeType = "EXCLUSIVE_BUNDLE"
+	elseif label == "VIP Bundle" then
 		badgeType = "EXCLUSIVE_BUNDLE"
 	elseif label == "Save the Brainrot Mode" then
 		badgeType = "SAVE_BRAINROT_MODE"

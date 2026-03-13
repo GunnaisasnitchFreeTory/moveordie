@@ -8,8 +8,8 @@
 	* Stacks nicely (max 5 visible at once)
 	* Vibrant, readable text with dark stroke
 
-	Position: right side, vertically centered at ~45% from top.
-	This avoids overlap with top-right HUD buttons (Stats, Daily, Vote).
+	Position: top-right, anchored below the HUD's right-side safe area.
+	This keeps the feed clear of the top-right button stack.
 
 	Used by: UIController (initialized once)
 ]]
@@ -17,7 +17,6 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local UIConfig = require(Shared:WaitForChild("UIConfig"))
@@ -28,10 +27,17 @@ local KillFeed = {}
 
 local feedGui = nil
 local feedContainer = nil
+local safeAreaFrame: GuiObject? = nil
 local MAX_MESSAGES = 5
 local MESSAGE_LIFETIME = 2.6
 local SLIDE_DURATION = 0.25
 local FADE_DURATION = 0.4
+local FEED_WIDTH = 320
+local FEED_ENTRY_HEIGHT = 32
+local FEED_ENTRY_GAP = 6
+local FEED_RIGHT_MARGIN = 16
+local FEED_FALLBACK_TOP_OFFSET = 240
+local RIGHT_SAFE_AREA_NAME = "HUDRightSafeArea"
 
 local REASON_MAP = {
 	Beam           = "a Beam",
@@ -105,6 +111,50 @@ local function resolvePlayerKillerName(rawReason: any): string?
 	return reason
 end
 
+local function repositionFeedContainer()
+	if not feedContainer then
+		return
+	end
+
+	local topOffset = FEED_FALLBACK_TOP_OFFSET
+	if safeAreaFrame and safeAreaFrame.Parent then
+		local recommendedGap = safeAreaFrame:GetAttribute("RecommendedGap")
+		if typeof(recommendedGap) ~= "number" then
+			recommendedGap = 16
+		end
+		topOffset = safeAreaFrame.Position.Y.Offset + safeAreaFrame.Size.Y.Offset + recommendedGap
+	end
+
+	feedContainer.AnchorPoint = Vector2.new(1, 0)
+	feedContainer.Position = UDim2.new(1, -FEED_RIGHT_MARGIN, 0, math.floor(topOffset))
+end
+
+local function bindSafeArea(frame: GuiObject)
+	if safeAreaFrame == frame then
+		repositionFeedContainer()
+		return
+	end
+
+	safeAreaFrame = frame
+	frame:GetPropertyChangedSignal("Position"):Connect(repositionFeedContainer)
+	frame:GetPropertyChangedSignal("Size"):Connect(repositionFeedContainer)
+	frame:GetAttributeChangedSignal("RecommendedGap"):Connect(repositionFeedContainer)
+	repositionFeedContainer()
+end
+
+local function observeSafeArea(screenGui: ScreenGui)
+	local existing = screenGui:FindFirstChild(RIGHT_SAFE_AREA_NAME)
+	if existing and existing:IsA("GuiObject") then
+		bindSafeArea(existing)
+	end
+
+	screenGui.ChildAdded:Connect(function(child)
+		if child.Name == RIGHT_SAFE_AREA_NAME and child:IsA("GuiObject") then
+			bindSafeArea(child)
+		end
+	end)
+end
+
 local function createFeedEntry(text, color)
 	color = color or C.TextWhite
 
@@ -120,10 +170,11 @@ local function createFeedEntry(text, color)
 
 	local entry = Instance.new("Frame")
 	entry.Name = "FeedEntry"
-	entry.Size = UDim2.new(1, 0, 0, 32)
+	entry.Size = UDim2.new(1, 0, 0, FEED_ENTRY_HEIGHT)
 	entry.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	entry.BackgroundTransparency = 0.45
 	entry.BorderSizePixel = 0
+	entry.ZIndex = 2
 	entry.Parent = feedContainer
 
 	Instance.new("UICorner", entry).CornerRadius = UDim.new(0, 8)
@@ -139,6 +190,7 @@ local function createFeedEntry(text, color)
 	label.Text = text
 	label.TextXAlignment = Enum.TextXAlignment.Right
 	label.TextTruncate = Enum.TextTruncate.AtEnd
+	label.ZIndex = 3
 	label.Parent = entry
 
 	local ls = Instance.new("UIStroke")
@@ -179,30 +231,25 @@ end
 function KillFeed.Init(screenGui)
 	feedGui = screenGui
 
-	-- On mobile the top-right button stack (Stats/Daily/Quests) ends at ~178px.
-	-- Anchor to top-right and push the feed below with a 17px gap.
-	local isMobile = UserInputService.TouchEnabled
-	local QUESTS_BTN_BOTTOM = 178  -- y=140 + height=38
-	local MOBILE_TOP_OFFSET = QUESTS_BTN_BOTTOM + 17
-
 	feedContainer = Instance.new("Frame")
 	feedContainer.Name = "KillFeedContainer"
-	feedContainer.Size = UDim2.new(0, 320, 0, (32 + 6) * MAX_MESSAGES)
+	feedContainer.Size = UDim2.new(
+		0,
+		FEED_WIDTH,
+		0,
+		(FEED_ENTRY_HEIGHT * MAX_MESSAGES) + (FEED_ENTRY_GAP * math.max(MAX_MESSAGES - 1, 0))
+	)
 	feedContainer.BackgroundTransparency = 1
 	feedContainer.BorderSizePixel = 0
+	feedContainer.ZIndex = 2
 	feedContainer.Parent = screenGui
 
-	if isMobile then
-		feedContainer.AnchorPoint = Vector2.new(1, 0)
-		feedContainer.Position    = UDim2.new(1, -16, 0, MOBILE_TOP_OFFSET)
-	else
-		feedContainer.AnchorPoint = Vector2.new(1, 0.5)
-		feedContainer.Position    = UDim2.new(1, -16, 0.45, 0)
-	end
+	repositionFeedContainer()
+	observeSafeArea(screenGui)
 
 	local layout = Instance.new("UIListLayout")
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 6)
+	layout.Padding = UDim.new(0, FEED_ENTRY_GAP)
 	layout.FillDirection = Enum.FillDirection.Vertical
 	layout.VerticalAlignment = Enum.VerticalAlignment.Top
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Right

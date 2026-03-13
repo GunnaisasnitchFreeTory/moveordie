@@ -323,7 +323,7 @@ local function selectBundle(bundleId: string)
 	end
 
 	if viewBtn then
-		local canView = bundle.isAvailable and #bundle.includes > 0
+		local canView = #bundle.includes > 0
 		viewBtn.Active = canView
 		viewBtn.BackgroundColor3 = canView and C.Blue or C.DisabledBtn
 	end
@@ -481,7 +481,19 @@ local function showFallbackPreview(card: Frame, itemData)
 	end
 end
 
+local function canPreviewItem(itemData): boolean
+	if not itemData or itemData.previewMode == "none" then
+		return false
+	end
+	local hasModel = type(itemData.modelPath) == "string" and itemData.modelPath ~= ""
+	local hasImage = type(itemData.image) == "string" and itemData.image ~= ""
+	return hasModel or hasImage
+end
+
 local function showItemPreview(itemData)
+	if not canPreviewItem(itemData) then
+		return
+	end
 	closeItemPreview()
 	local previewHost = bundleContainer or externalPreviewHost
 	if not previewHost then return end
@@ -849,6 +861,7 @@ local function showDetailView()
 			iconText = itemData.iconText,
 			image = ItemCatalog.GetImage and ItemCatalog.GetImage(itemData) or itemData.image or "",
 			modelPath = itemData.modelPath,
+			previewMode = itemData.previewMode,
 			locked = nil,
 			owned = hasPerItemCoinBuy and isOwned or nil,
 			actionText = actionText,
@@ -862,22 +875,24 @@ local function showDetailView()
 		local card = Components.CreateItemCard(gridFrame, cardData)
 		card.LayoutOrder = i
 
-		-- Preview is always available regardless of ownership.
-		-- For Brainrot, keep overlay off CTA row so BUY remains clickable.
-		local clickOverlay = Instance.new("TextButton")
-		clickOverlay.Name = "PreviewClick"
-		clickOverlay.Size = if hasPerItemCoinBuy then UDim2.new(1, 0, 1, -50) else UDim2.fromScale(1, 1)
-		clickOverlay.BackgroundTransparency = 1
-		clickOverlay.Text = ""
-		clickOverlay.ZIndex = 20
-		clickOverlay.Parent = card
-		clickOverlay.MouseButton1Click:Connect(function()
-			if isBrainrotBundle then
-				print(string.format("[BrainrotCard] ClickPreview item=%s", tostring(inc.itemId)))
-			end
-			SoundUtil.Click()
-			showItemPreview(cardData)
-		end)
+		if canPreviewItem(cardData) then
+			-- Preview is always available regardless of ownership.
+			-- For Brainrot, keep overlay off CTA row so BUY remains clickable.
+			local clickOverlay = Instance.new("TextButton")
+			clickOverlay.Name = "PreviewClick"
+			clickOverlay.Size = if hasPerItemCoinBuy then UDim2.new(1, 0, 1, -50) else UDim2.fromScale(1, 1)
+			clickOverlay.BackgroundTransparency = 1
+			clickOverlay.Text = ""
+			clickOverlay.ZIndex = 20
+			clickOverlay.Parent = card
+			clickOverlay.MouseButton1Click:Connect(function()
+				if isBrainrotBundle then
+					print(string.format("[BrainrotCard] ClickPreview item=%s", tostring(inc.itemId)))
+				end
+				SoundUtil.Click()
+				showItemPreview(cardData)
+			end)
+		end
 
 		if hasPerItemCoinBuy and isOwned then
 			local btn = card:FindFirstChild("ActionBtn")

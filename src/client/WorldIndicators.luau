@@ -36,6 +36,11 @@ local INDICATORS = {
 		extraPadding = 3,
 	},
 	{
+		targetName   = "CustomSwords",
+		text         = "Customize Sword",
+		extraPadding = 4,
+	},
+	{
 		targetName   = "JJK Game Bun",
 		text         = "COMING SOON",
 		extraPadding = 4,
@@ -81,6 +86,16 @@ local GRAD_TOP             = Color3.fromRGB(30, 36, 64)
 local GRAD_BOT             = Color3.fromRGB(12, 14, 28)
 
 local ANCHOR_PREFIX = "WorldIndicatorAnchor_"
+local BRAINROT_SIGN_OFFSET = 6
+local FNAF_PIRATE_COVE_OFFSET = 6
+
+local function isBrainrotIndicatorTarget(targetName: string): boolean
+	return targetName == "Brainrot Game Bun"
+end
+
+local function isFnafIndicatorTarget(targetName: string): boolean
+	return targetName == "FNAFGameBun" or targetName == "FNAF Game Bun"
+end
 
 -- ═══════════════════════════════════════════════════════════════════
 -- HELPERS
@@ -180,15 +195,162 @@ local function computeAnchorPosition(target: Instance, padding: number): (Vector
 	return Vector3.new(cx, topY + padding, cz), bboxSize
 end
 
-local function findBrainrotAnchorPart(target: Instance): BasePart?
-	-- Deterministic Brainrot anchor rule:
-	-- use one explicit stable display part only, never generic/floor/top-extents fallback.
-	-- This keeps the badge above/on the visible Brainrot bun (matching Crate/Spin style).
+local function getPivotCFrame(instance: Instance): CFrame?
+	if instance:IsA("BasePart") then
+		return instance.CFrame
+	end
+
+	if instance:IsA("Model") then
+		if instance.PrimaryPart then
+			return instance.PrimaryPart.CFrame
+		end
+
+		local ok, pivot = pcall(function()
+			return instance:GetPivot()
+		end)
+		if ok and pivot then
+			return pivot
+		end
+
+		local okBox, boxCFrame = pcall(function()
+			local cframe, _ = instance:GetBoundingBox()
+			return cframe
+		end)
+		if okBox and boxCFrame then
+			return boxCFrame
+		end
+	end
+
+	return nil
+end
+
+local function findBrainrotIndicatorSource(target: Instance): (Instance?, string)
+	local sign = target:FindFirstChild("Sign")
+	if sign then
+		return sign, "BrainrotSign"
+	end
+
+	local nestedSign = target:FindFirstChild("Sign", true)
+	if nestedSign then
+		return nestedSign, "BrainrotSign"
+	end
+
+	local poster = target:FindFirstChild("Poster")
+	if poster then
+		return poster, "BrainrotPosterFallback"
+	end
+
+	local nestedPoster = target:FindFirstChild("Poster", true)
+	if nestedPoster then
+		return nestedPoster, "BrainrotPosterFallback"
+	end
+
 	local displayPart = target:FindFirstChild("Steve Harrington Icon Image")
 	if displayPart and displayPart:IsA("BasePart") then
-		return displayPart
+		return displayPart, "BrainrotDisplayPartFallback"
 	end
-	return nil
+
+	return nil, "BrainrotSign"
+end
+
+local function computeBrainrotAnchorPosition(target: Instance): (Vector3?, Vector3?, string)
+	local source, placementSource = findBrainrotIndicatorSource(target)
+	if not source then
+		return nil, nil, placementSource
+	end
+
+	local pivot = getPivotCFrame(source)
+	if not pivot then
+		return nil, nil, placementSource
+	end
+
+	local bboxSize = nil
+	if source:IsA("BasePart") then
+		bboxSize = source.Size
+	else
+		local _, _, _, computedSize = computeBounds(source)
+		bboxSize = computedSize
+	end
+
+	local verticalOffset = BRAINROT_SIGN_OFFSET
+	if bboxSize then
+		verticalOffset = math.max(BRAINROT_SIGN_OFFSET, (bboxSize.Y * 0.5) + 1.5)
+	end
+
+	return (pivot * CFrame.new(0, verticalOffset, 0)).Position, bboxSize, placementSource
+end
+
+local function startBrainrotAnchorTracking(target: Instance, anchor: BasePart)
+	task.spawn(function()
+		while anchor.Parent and target.Parent do
+			local anchorPos = computeBrainrotAnchorPosition(target)
+			if anchorPos then
+				anchor.Position = anchorPos
+			end
+			task.wait(0.25)
+		end
+	end)
+end
+
+local function findFnafIndicatorSource(target: Instance): (Instance?, string)
+	local pirateCove = target:FindFirstChild("PirateCove")
+	if pirateCove and (pirateCove:IsA("Model") or pirateCove:IsA("BasePart")) then
+		return pirateCove, "FNAFPirateCove"
+	end
+
+	local nestedPirateCove = target:FindFirstChild("PirateCove", true)
+	if nestedPirateCove and (nestedPirateCove:IsA("Model") or nestedPirateCove:IsA("BasePart")) then
+		return nestedPirateCove, "FNAFPirateCove"
+	end
+
+	for _, desc in ipairs(target:GetDescendants()) do
+		local loweredName = string.lower(desc.Name)
+		if (desc:IsA("Model") or desc:IsA("BasePart"))
+			and (string.find(loweredName, "piratecove", 1, true) or string.find(loweredName, "pirate cove", 1, true)) then
+			return desc, "FNAFPirateCoveFallback"
+		end
+	end
+
+	return nil, "FNAFPirateCove"
+end
+
+local function computeFnafAnchorPosition(target: Instance): (Vector3?, Vector3?, string)
+	local source, placementSource = findFnafIndicatorSource(target)
+	if not source then
+		return nil, nil, placementSource
+	end
+
+	local pivot = getPivotCFrame(source)
+	if not pivot then
+		return nil, nil, placementSource
+	end
+
+	local bboxSize = nil
+	if source:IsA("BasePart") then
+		bboxSize = source.Size
+	else
+		local _, _, _, computedSize = computeBounds(source)
+		bboxSize = computedSize
+	end
+
+	local verticalOffset = FNAF_PIRATE_COVE_OFFSET
+	if bboxSize then
+		verticalOffset = math.max(FNAF_PIRATE_COVE_OFFSET, (bboxSize.Y * 0.5) + 1.5)
+	end
+
+	return (pivot * CFrame.new(0, verticalOffset, 0)).Position, bboxSize, placementSource
+end
+
+local function startFnafAnchorTracking(target: Instance, anchor: BasePart)
+	task.spawn(function()
+		while anchor.Parent and target.Parent do
+			local anchorPos = computeFnafAnchorPosition(target)
+			if anchorPos then
+				anchor.Position = anchorPos
+			end
+			task.wait(0.25)
+		end
+	end)
 end
 
 --- Find or create an invisible anchor Part at the bounding-box top-center.
@@ -197,14 +359,18 @@ local function getOrCreateAnchor(target: Instance, targetName: string, padding: 
 	local anchorName = ANCHOR_PREFIX .. targetName
 
 	local anchorPos, bboxSize
-	if targetName == "Brainrot Game Bun" then
-		local brainrotPart = findBrainrotAnchorPart(target)
-		if not brainrotPart then
+	if isBrainrotIndicatorTarget(targetName) then
+		local placementSource
+		anchorPos, bboxSize, placementSource = computeBrainrotAnchorPosition(target)
+		if not anchorPos then
 			return nil
 		end
-		local topY = brainrotPart.Position.Y + brainrotPart.Size.Y * 0.5
-		anchorPos = Vector3.new(brainrotPart.Position.X, topY + padding, brainrotPart.Position.Z)
-		bboxSize = brainrotPart.Size
+	elseif isFnafIndicatorTarget(targetName) then
+		local placementSource
+		anchorPos, bboxSize, placementSource = computeFnafAnchorPosition(target)
+		if not anchorPos then
+			return nil
+		end
 	else
 		-- Always recompute desired position from LIVE bounds so streaming cannot leave a stale anchor.
 		anchorPos, bboxSize = computeAnchorPosition(target, padding)
@@ -360,18 +526,34 @@ function WorldIndicators.Init()
 
 			-- Wait for descendant BaseParts to stream in, then create anchor
 			local anchor = nil
-			if cfg.targetName == "Brainrot Game Bun" then
-				local anchorPart = nil
+			if isBrainrotIndicatorTarget(cfg.targetName) then
+				local anchorSource = nil
+				local placementSource = "BrainrotSign"
 				for attempt = 1, 120 do
-					anchorPart = findBrainrotAnchorPart(target)
-					if anchorPart then break end
+					anchorSource, placementSource = findBrainrotIndicatorSource(target)
+					if anchorSource then break end
 					initDelayedUntilAnchor = true
-					log("[BrainrotPrompt] anchorFound=false placementSource=BrainrotDisplayPart initDelayedUntilAnchor=true")
+					log("[BrainrotPrompt] anchorFound=false placementSource=BrainrotSign initDelayedUntilAnchor=true")
 					task.wait(1)
 				end
-				if anchorPart then
-					log(string.format("[BrainrotPrompt] anchorFound=%s placementSource=BrainrotDisplayPart initDelayedUntilAnchor=%s",
-						anchorPart:GetFullName(), tostring(initDelayedUntilAnchor)))
+				if anchorSource then
+					log(string.format("[BrainrotPrompt] anchorFound=%s placementSource=%s initDelayedUntilAnchor=%s",
+						anchorSource:GetFullName(), placementSource, tostring(initDelayedUntilAnchor)))
+				end
+				anchor = getOrCreateAnchor(target, cfg.targetName, cfg.extraPadding or 3)
+			elseif isFnafIndicatorTarget(cfg.targetName) then
+				local anchorSource = nil
+				local placementSource = "FNAFPirateCove"
+				for attempt = 1, (cfg.retries or 120) do
+					anchorSource, placementSource = findFnafIndicatorSource(target)
+					if anchorSource then break end
+					initDelayedUntilAnchor = true
+					log("[FNAFPrompt] anchorFound=false placementSource=FNAFPirateCove initDelayedUntilAnchor=true")
+					task.wait(1)
+				end
+				if anchorSource then
+					log(string.format("[FNAFPrompt] anchorFound=%s placementSource=%s initDelayedUntilAnchor=%s",
+						anchorSource:GetFullName(), placementSource, tostring(initDelayedUntilAnchor)))
 				end
 				anchor = getOrCreateAnchor(target, cfg.targetName, cfg.extraPadding or 3)
 			else
@@ -399,9 +581,14 @@ function WorldIndicators.Init()
 			if cfg.pulse then
 				startPulse(billboard)
 			end
-			-- Brainrot indicator is fixed-anchor only (no runtime re-position loop).
-			if cfg.targetName == "Brainrot Game Bun" then
-				log(string.format("[BrainrotPrompt] finalY=%.2f placementSource=BrainrotDisplayPart", anchor.Position.Y))
+			if isBrainrotIndicatorTarget(cfg.targetName) then
+				local _, _, placementSource = computeBrainrotAnchorPosition(target)
+				startBrainrotAnchorTracking(target, anchor)
+				log(string.format("[BrainrotPrompt] finalY=%.2f placementSource=%s", anchor.Position.Y, placementSource))
+			elseif isFnafIndicatorTarget(cfg.targetName) then
+				local _, _, placementSource = computeFnafAnchorPosition(target)
+				startFnafAnchorTracking(target, anchor)
+				log(string.format("[FNAFPrompt] finalY=%.2f placementSource=%s", anchor.Position.Y, placementSource))
 			end
 			successCount += 1
 			log(string.format("Created: %s above %s", cfg.text, cfg.targetName))

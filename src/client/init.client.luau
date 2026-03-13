@@ -119,6 +119,18 @@ else
 end
 
 -- 3. UIController (has Init method — panels use cached deps)
+-- CloudLayerController
+local cloudOk, cloudErr = pcall(function()
+	local CloudLayerController = require(Client:WaitForChild("CloudLayerController"))
+	CloudLayerController.Init()
+end)
+if cloudOk then
+	print("[Client] CloudLayerController loaded OK")
+else
+	warn("[Client] CloudLayerController FAILED:", cloudErr)
+end
+
+-- UIController
 local uiOk, uiErr = pcall(function()
 	local UIController = require(Client:WaitForChild("UIController"))
 	UIController.Init()
@@ -186,17 +198,6 @@ if indicatorsOk then
 	print("[Client] WorldIndicators loaded OK")
 else
 	warn("[Client] WorldIndicators FAILED:", indicatorsErr)
-end
-
--- 6b. FNAF indicator wiring (clone working Brainrot indicator)
-local fnafIndicatorOk, fnafIndicatorErr = pcall(function()
-	local FnafIndicatorWiring = require(Client:WaitForChild("FnafIndicatorWiring"))
-	FnafIndicatorWiring.Init()
-end)
-if fnafIndicatorOk then
-	print("[Client] FnafIndicatorWiring loaded OK")
-else
-	warn("[Client] FnafIndicatorWiring FAILED:", fnafIndicatorErr)
 end
 
 -- 7. BrainrotPickupController (floating animation + pickup popup)

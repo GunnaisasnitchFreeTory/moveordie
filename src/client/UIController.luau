@@ -50,6 +50,12 @@ if not okCfg or not UIConfig then
 	return { Init = function() warn("[UIController] FAILED") end }
 end
 
+local okLobbyNpcConfig, LobbyNpcConfig = pcall(require, Shared:WaitForChild("LobbyNpcConfig", 10))
+if not okLobbyNpcConfig or not LobbyNpcConfig then
+	warn("[UIController] require(LobbyNpcConfig) FAILED:", LobbyNpcConfig)
+	LobbyNpcConfig = {}
+end
+
 local Client = script.Parent
 local UI = Client:WaitForChild("UI")
 
@@ -112,6 +118,10 @@ local StatsPanel        = safeRequire("StatsPanel")
 local ModeVotePanel     = safeRequire("ModeVotePanel")
 local QuestsPanel       = safeRequire("QuestsPanel")
 local ForceNextModePanel = safeRequire("ForceNextModePanel")
+local CustomSwordComingSoonPanel = safeRequire("CustomSwordComingSoonPanel")
+local NpcDialoguePanel = safeRequire("NpcDialoguePanel")
+local ToolboxDialoguePanel = safeRequire("ToolboxDialoguePanel")
+local EmoteShopPanel = safeRequire("EmoteShopPanel")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -119,7 +129,18 @@ local initialized = false
 local currentPanel: string? = nil
 local matchLocked = false
 
-local MATCH_LOCKED_PANELS = { Shop = true, Crowns = true, Pets = true, Daily = true, Stats = true, Spectate = true }
+local MATCH_LOCKED_PANELS = {
+	Shop = true,
+	Crowns = true,
+	Pets = true,
+	Daily = true,
+	Stats = true,
+	Spectate = true,
+	CustomSwordComingSoon = true,
+	NpcDialogue = true,
+	ToolboxDialogue = true,
+	EmoteShop = true,
+}
 
 local UIController = {}
 
@@ -158,6 +179,14 @@ local function closeCurrentPanel()
 		QuestsPanel.Hide()
 	elseif currentPanel == "ForceNextMode" and ForceNextModePanel.IsVisible() then
 		ForceNextModePanel.Hide()
+	elseif currentPanel == "CustomSwordComingSoon" and CustomSwordComingSoonPanel.IsVisible() then
+		CustomSwordComingSoonPanel.Hide()
+	elseif currentPanel == "NpcDialogue" and NpcDialoguePanel.IsVisible() then
+		NpcDialoguePanel.Hide()
+	elseif currentPanel == "ToolboxDialogue" and ToolboxDialoguePanel.IsVisible() then
+		ToolboxDialoguePanel.Hide()
+	elseif currentPanel == "EmoteShop" and EmoteShopPanel.IsVisible() then
+		EmoteShopPanel.Hide()
 	end
 	currentPanel = nil
 
@@ -166,7 +195,7 @@ end
 
 UIController.CloseAllPanels = closeCurrentPanel
 
-local function openPanel(name: string)
+local function openPanel(name: string, payload: any?)
 	if matchLocked and MATCH_LOCKED_PANELS[name] then
 		log("Blocked opening " .. name .. " -- player is InMatch")
 		return
@@ -205,6 +234,14 @@ local function openPanel(name: string)
 		QuestsPanel.Show()
 	elseif name == "ForceNextMode" then
 		ForceNextModePanel.Show()
+	elseif name == "CustomSwordComingSoon" then
+		CustomSwordComingSoonPanel.Show()
+	elseif name == "NpcDialogue" then
+		NpcDialoguePanel.Show(payload)
+	elseif name == "ToolboxDialogue" then
+		ToolboxDialoguePanel.Show(payload)
+	elseif name == "EmoteShop" then
+		EmoteShopPanel.Show()
 	end
 
 	HUDPanel.SetBannerOverrideHidden(true)
@@ -308,11 +345,37 @@ function UIController.Init()
 	safeInit("DailyRewardsPanel", DailyRewardsPanel.Init, panelGui, onPanelClosed)
 	safeInit("StatsPanel", StatsPanel.Init, panelGui, onPanelClosed)
 	safeInit("QuestsPanel", QuestsPanel.Init, panelGui, onPanelClosed)
+	safeInit("CustomSwordComingSoonPanel", CustomSwordComingSoonPanel.Init, panelGui, onPanelClosed)
+	safeInit("NpcDialoguePanel", NpcDialoguePanel.Init, panelGui, onPanelClosed)
+	safeInit("ToolboxDialoguePanel", ToolboxDialoguePanel.Init, panelGui, onPanelClosed)
+	safeInit("EmoteShopPanel", EmoteShopPanel.Init, panelGui, onPanelClosed)
 	safeInit("ForceNextModePanel", ForceNextModePanel.Init, onPanelClosed)
 
-	safeInit("ModeVotePanel", ModeVotePanel.Init)
+	if NpcDialoguePanel.SetResponseHandlers then
+		NpcDialoguePanel.SetResponseHandlers({
+			onYes = function(dialogueData)
+				local nextPanel = dialogueData and dialogueData.nextPanel or "EmoteShop"
+				openPanel(nextPanel)
+			end,
+			onNo = function()
+				closeCurrentPanel()
+			end,
+		})
+	end
 
-	safeInit("KillFeed", KillFeed.Init, hudGui)
+	if ToolboxDialoguePanel.SetResponseHandlers then
+		ToolboxDialoguePanel.SetResponseHandlers({
+			onYes = function(dialogueData)
+				local nextPanel = dialogueData and dialogueData.nextPanel or "EmoteShop"
+				openPanel(nextPanel)
+			end,
+			onNo = function()
+				closeCurrentPanel()
+			end,
+		})
+	end
+
+	safeInit("ModeVotePanel", ModeVotePanel.Init)
 
 	safeInit("MatchResultsPanel", MatchResultsPanel.Init, hudGui)
 
@@ -347,6 +410,8 @@ function UIController.Init()
 		return
 	end
 
+	safeInit("KillFeed", KillFeed.Init, hudGui)
+
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 		if input.KeyCode == Enum.KeyCode.Escape and currentPanel then
@@ -371,6 +436,120 @@ function UIController.Init()
 	end
 	onPlayerStateChanged()
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(onPlayerStateChanged)
+
+	task.spawn(function()
+		local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+		if not remotes then
+			warn("[UIController] Remotes folder missing -- NPC dialogue disabled")
+			return
+		end
+
+		local remote = remotes:WaitForChild("NpcDialogueRequest", 10)
+		if not remote or not remote:IsA("RemoteEvent") then
+			warn("[UIController] NpcDialogueRequest remote missing")
+			return
+		end
+
+		remote.OnClientEvent:Connect(function(npcId: string, dialoguePayload)
+			if currentPanel == "EmoteShop" or EmoteShopPanel.IsVisible() then
+				return
+			end
+
+			local npcConfig = LobbyNpcConfig and LobbyNpcConfig[npcId]
+			local dialogueData = dialoguePayload or (npcConfig and npcConfig.dialogue)
+			if not dialogueData then
+				warn("[UIController] Missing dialogue data for NPC:", tostring(npcId))
+				return
+			end
+
+			local panelName = "NpcDialogue"
+			if npcConfig and type(npcConfig.dialoguePanel) == "string" and npcConfig.dialoguePanel ~= "" then
+				panelName = npcConfig.dialoguePanel
+			end
+
+			if panelName == "ToolboxDialogue" then
+				if currentPanel == "ToolboxDialogue" or ToolboxDialoguePanel.IsVisible() then
+					return
+				end
+				if ToolboxDialoguePanel.SetDialogue then
+					ToolboxDialoguePanel.SetDialogue(dialogueData)
+				end
+				openPanel("ToolboxDialogue", dialogueData)
+				return
+			end
+
+			if currentPanel == "NpcDialogue" or NpcDialoguePanel.IsVisible() then
+				return
+			end
+
+			if NpcDialoguePanel.SetDialogue then
+				NpcDialoguePanel.SetDialogue(dialogueData)
+			end
+			openPanel("NpcDialogue", dialogueData)
+		end)
+	end)
+
+	task.spawn(function()
+		local customSwordsModel = workspace:FindFirstChild("CustomSwords")
+		if not customSwordsModel then
+			customSwordsModel = workspace:FindFirstChild("CustomSwords", true)
+		end
+
+		if not customSwordsModel then
+			warn("[UIController] CustomSwords NOT FOUND -- custom sword prompt disabled")
+			return
+		end
+
+		local promptPart = customSwordsModel:FindFirstChild("Part")
+		if not (promptPart and promptPart:IsA("BasePart")) then
+			promptPart = customSwordsModel:FindFirstChildWhichIsA("BasePart", true)
+		end
+
+		if not promptPart then
+			warn("[UIController] CustomSwords has NO BasePart -- custom sword prompt disabled")
+			return
+		end
+
+		local prompt = customSwordsModel:FindFirstChild("CustomSwordPrompt", true)
+		if prompt and not prompt:IsA("ProximityPrompt") then
+			prompt = nil
+		end
+
+		if not prompt then
+			for _, desc in ipairs(customSwordsModel:GetDescendants()) do
+				if desc:IsA("ProximityPrompt") then
+					prompt = desc
+					break
+				end
+			end
+		end
+
+		if not prompt then
+			prompt = Instance.new("ProximityPrompt")
+			prompt.Parent = promptPart
+		elseif prompt.Parent ~= promptPart then
+			prompt.Parent = promptPart
+		end
+
+		prompt.Name = "CustomSwordPrompt"
+		prompt.ActionText = "Customize"
+		prompt.ObjectText = "Sword"
+		prompt.KeyboardKeyCode = Enum.KeyCode.E
+		prompt.HoldDuration = 0
+		prompt.MaxActivationDistance = 15
+		prompt.RequiresLineOfSight = false
+		prompt.Enabled = true
+
+		prompt.Triggered:Connect(function(playerWhoTriggered)
+			if playerWhoTriggered ~= LocalPlayer then
+				return
+			end
+			if currentPanel == "CustomSwordComingSoon" or CustomSwordComingSoonPanel.IsVisible() then
+				return
+			end
+			openPanel("CustomSwordComingSoon")
+		end)
+	end)
 
 	task.spawn(function()
 		local crateShopModel = nil
@@ -854,7 +1033,6 @@ function UIController.Init()
 			prompt = Instance.new("ProximityPrompt")
 			prompt.Name = "FNAFBundlePrompt"
 			prompt.ActionText = "Buy"
-			prompt.ObjectText = "Animatronic Pets"
 			prompt.KeyboardKeyCode = Enum.KeyCode.E
 			prompt.HoldDuration = 0
 			prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE
@@ -862,6 +1040,13 @@ function UIController.Init()
 			prompt.Parent = promptPart
 			log("[FNAFBundle] Prompt parented directly to poster at " .. tostring(promptPart.Position))
 		end
+		prompt.Name = "FNAFBundlePrompt"
+		prompt.ActionText = "Buy"
+		prompt.ObjectText = ""
+		prompt.KeyboardKeyCode = Enum.KeyCode.E
+		prompt.HoldDuration = 0
+		prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE
+		prompt.RequiresLineOfSight = false
 		print(string.format("[BundleIndicator] bundle=fnaf visible=true part=%s", promptPart:GetFullName()))
 
 		prompt.Triggered:Connect(function(playerWhoTriggered)

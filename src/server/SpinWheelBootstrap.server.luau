@@ -375,6 +375,18 @@ local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 			{ category = "Pets", itemId = "pet_cupcake" },
 		},
 	},
+	[1745607323] = {
+		type = "Bundle",
+		bundleId = "bundle_vip",
+		label = "VIP Bundle",
+		items = {
+			{ category = "Crowns", itemId = "crown_vip" },
+			{ category = "Crowns", itemId = "crown_whiteeyed" },
+			{ category = "IconImages", itemId = "icon_flights_laugh" },
+			{ category = "Pets", itemId = "pet_all_knowing_eye" },
+			{ type = "Currency", amount = 8000, label = "8000 Fate Coins" },
+		},
+	},
 }
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -394,20 +406,37 @@ local function grantGamepassReward(player: Player, gamepassId: number, emitPurch
 	if reward.type == "Bundle" then
 		local grantedItems = {}
 		for _, item in ipairs(reward.items) do
-			local grantType = (item.category == "Crowns") and "Crown" or "Pet"
-			local okGrant = grant.GrantItem(player, grantType, item.itemId, "GamePass", {
+			local grantType = nil
+			local grantValue = nil
+			local grantKey = nil
+			if item.type == "Currency" then
+				grantType = "Currency"
+				grantValue = tonumber(item.amount) or 0
+				grantKey = string.format("coins:%d", grantValue)
+			elseif item.category and item.itemId then
+				grantType = toRewardTypeFromCategory(item.category)
+				grantValue = item.itemId
+				grantKey = tostring(item.itemId)
+			end
+			if not grantType or grantValue == nil or grantKey == nil or (grantType == "Currency" and grantValue <= 0) then
+				warn(string.format("[PurchaseSystem] Gamepass bundle item invalid: pass=%d label=%s",
+					gamepassId, tostring(item.label or item.itemId or item.type)))
+				return false
+			end
+			local okGrant = grant.GrantItem(player, grantType, grantValue, "GamePass", {
 				fireReward = false,
-				idempotencyKey = string.format("gamepass:%d:%d:%s", player.UserId, gamepassId, item.itemId),
+				idempotencyKey = string.format("gamepass:%d:%d:%s", player.UserId, gamepassId, grantKey),
 			})
 			if not okGrant.success then
 				warn(string.format("[PurchaseSystem] Gamepass bundle grant failed: %s/%s for %s reason=%s",
-					item.category, item.itemId, player.Name, tostring(okGrant.reason)))
+					tostring(item.category or item.type), tostring(item.itemId or item.amount), player.Name, tostring(okGrant.reason)))
 				return false
 			end
-			table.insert(grantedItems, {
+			table.insert(grantedItems, okGrant.payload or {
 				type = grantType,
-				id = item.itemId,
+				id = item.itemId or "fate_coins",
 				category = item.category,
+				amount = grantType == "Currency" and tonumber(grantValue) or nil,
 				source = "GamePass",
 			})
 		end
@@ -420,7 +449,7 @@ local function grantGamepassReward(player: Player, gamepassId: number, emitPurch
 			})
 		end
 	else
-		local grantType = (reward.category == "Crowns") and "Crown" or "Pet"
+		local grantType = toRewardTypeFromCategory(reward.category)
 		local okGrant = grant.GrantItem(player, grantType, reward.itemId, "GamePass", {
 			fireReward = false,
 			idempotencyKey = string.format("gamepass:%d:%d:%s", player.UserId, gamepassId, reward.itemId),
