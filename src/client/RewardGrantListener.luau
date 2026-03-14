@@ -27,7 +27,7 @@ local function mapSinglePayload(payload)
 			itemType = "Coins",
 			itemId = "fate_coins",
 			rarityText = "Common",
-			icon = payload.popupImageOverride or "rbxassetid://72345557707985",
+			icon = payload.popupImageOverride or "rbxassetid://81959864063463",
 			okText = "NICE!",
 			popupSource = tostring(payload.source or ""),
 		}

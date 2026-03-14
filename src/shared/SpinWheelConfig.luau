@@ -39,8 +39,9 @@ SpinWheelConfig.DEBUG_UNLIMITED_SPINS = false
 --
 -- wheelImage = "rbxassetid://..."
 --   Explicit wheel-only icon for this segment.
---   The wheel renderer uses ONLY this field (no ItemCatalog lookups).
---   If nil/empty, the wheel shows a "?" placeholder and warns.
+--   Pet slices use this directly. Crown slices ignore wheelImage and
+--   resolve the exact ItemCatalog crown entry through ThumbnailRenderer.
+--   If no usable image/model is available, the wheel shows a "?" placeholder and warns.
 -- ═══════════════════════════════════════════
 
 SpinWheelConfig.Segments = {
@@ -98,7 +99,7 @@ SpinWheelConfig.Segments = {
 		icon = "",
 		reward     = "Crown",
 		catalogId  = "crown_sparkle",
-		wheelImage = "rbxassetid://123657387753624",
+		wheelImage = "rbxassetid://137567080814300",
 		amount     = 0,
 		weight     = 10,
 		rarity     = "Rare",

@@ -300,7 +300,7 @@ function IndexPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	do
 		local stud = canvas:FindFirstChild("StudTexture")
 		if stud then
-			stud.Image = "rbxassetid://70851348312450"
+			stud.Image = "rbxassetid://84772207963553"
 			stud.TileSize = UDim2.fromOffset(96, 96)
 			stud.ImageTransparency = 0.88
 			stud.ImageColor3 = Color3.fromRGB(255, 255, 255)

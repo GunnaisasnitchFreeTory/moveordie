@@ -21,6 +21,8 @@
 
 local ReplicatedStorage   = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+local MarketplaceService  = game:GetService("MarketplaceService")
+local Players             = game:GetService("Players")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Server = ServerScriptService:WaitForChild("Server")
@@ -36,6 +38,16 @@ end
 if not ItemCatalog then
 	warn("[StatService] ItemCatalog not found — stats will use base values only")
 	ItemCatalog = { Get = function() return nil end }
+end
+
+local BundleCatalogModule = Shared:WaitForChild("BundleCatalog", 10)
+local BundleCatalog
+if BundleCatalogModule then
+	local ok, mod = pcall(require, BundleCatalogModule)
+	if ok then BundleCatalog = mod else warn("[StatService] BundleCatalog failed:", mod) end
+end
+if not BundleCatalog then
+	warn("[StatService] BundleCatalog not found — VIP checks will fail")
 end
 
 local StatService = {}
@@ -93,9 +105,60 @@ local function isMovementTemporarilyLocked(player: Player, humanoid: Humanoid): 
 	return humanoid.WalkSpeed == 0 and humanoid.JumpPower == 0
 end
 
+local function getVipBundleGamepassId(): number?
+	if not BundleCatalog then
+		return nil
+	end
+
+	local vipBundle = nil
+	if type(BundleCatalog.Get) == "function" then
+		vipBundle = BundleCatalog.Get("bundle_vip")
+	end
+	if type(vipBundle) ~= "table" then
+		vipBundle = BundleCatalog.bundle_vip
+	end
+	if type(vipBundle) ~= "table" then
+		return nil
+	end
+
+	return tonumber(vipBundle.gamepassId)
+end
+
+local function checkVipOwnership(player: Player)
+	local gamepassId = getVipBundleGamepassId()
+	if not player or not player.Parent or not gamepassId or gamepassId <= 0 then
+		return
+	end
+
+	task.spawn(function()
+		local success, hasPass = pcall(function()
+			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
+		end)
+
+		if success then
+			player:SetAttribute("OwnsVIP", hasPass == true)
+			if hasPass then
+				StatService.RecalculateStats(player)
+				log(string.format("VIP verified for %s", player.Name))
+			end
+		else
+			warn(string.format("[StatService] VIP check failed for %s: %s", player.Name, tostring(hasPass)))
+		end
+	end)
+end
+
 function StatService.Init()
 	if initialized then return end
 	initialized = true
+
+	Players.PlayerAdded:Connect(function(player)
+		checkVipOwnership(player)
+	end)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		checkVipOwnership(player)
+	end
+
 	log("Initialized")
 end
 
@@ -120,6 +183,12 @@ function StatService.RecalculateStats(player: Player)
 		jumpPower += (crownStats.JumpPower or 0)
 		coinMult  *= (crownStats.CoinMultiplier or 1)
 	end
+
+	local vipOwned = player:GetAttribute("OwnsVIP")
+	if vipOwned then
+		coinMult = coinMult * 1.5
+	end
+
 	walkSpeed = getEffectiveWalkSpeed(walkSpeed, player.UserId)
 
 	coinMultiplierCache[player.UserId] = coinMult
@@ -138,8 +207,8 @@ function StatService.RecalculateStats(player: Player)
 		end
 	end
 
-	log(string.format("%s stats: WalkSpeed=%.1f JumpPower=%.1f CoinMult=%.2fx",
-		player.Name, walkSpeed, jumpPower, coinMult))
+	log(string.format("%s stats: WalkSpeed=%.1f JumpPower=%.1f CoinMult=%.2fx (VIP=%s)",
+		player.Name, walkSpeed, jumpPower, coinMult, tostring(vipOwned)))
 end
 
 function StatService.SetWalkSpeedOverride(player: Player, key: string, value: number)

@@ -64,6 +64,7 @@ local currentMode: string = "Normal"
 
 local replicatedState: StringValue = nil
 local replicatedRound: IntValue = nil
+local replicatedRoundPhase: StringValue = nil
 local replicatedPhaseEnd: NumberValue = nil
 local replicatedMovementCountdownVisible: BoolValue = nil
 local replicatedMovementCountdownEndTime: NumberValue = nil
@@ -931,6 +932,11 @@ function MatchManager.Init()
 	replicatedRound.Name = "Round"
 	replicatedRound.Value = 0
 	replicatedRound.Parent = matchStatusFolder
+
+	replicatedRoundPhase = Instance.new("StringValue")
+	replicatedRoundPhase.Name = "RoundPhase"
+	replicatedRoundPhase.Value = ""
+	replicatedRoundPhase.Parent = matchStatusFolder
 
 	replicatedPhaseEnd = Instance.new("NumberValue")
 	replicatedPhaseEnd.Name = "PhaseEndTime"

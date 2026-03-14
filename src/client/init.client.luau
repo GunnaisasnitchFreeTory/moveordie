@@ -43,13 +43,93 @@ _loadBg.BorderSizePixel       = 0
 _loadBg.ZIndex                = 1
 _loadBg.Parent                = _loadGui
 
+local function logBlackScreenDiagnostics(context: string)
+	local Lighting = game:GetService("Lighting")
+	local playerGui = Players.LocalPlayer and Players.LocalPlayer:FindFirstChild("PlayerGui")
+	if not playerGui then
+		warn(string.format("[BlackScreenDebug] context=%s playerGui=missing", context))
+		return
+	end
+
+	local foundBlackFullscreen = false
+	for _, gui in ipairs(playerGui:GetChildren()) do
+		if gui:IsA("ScreenGui") and gui.Enabled ~= false then
+			for _, desc in ipairs(gui:GetDescendants()) do
+				if desc:IsA("Frame") and desc.Visible ~= false then
+					local full = desc.Size.X.Scale >= 1 and desc.Size.Y.Scale >= 1
+					local black = desc.BackgroundTransparency <= 0.05 and desc.BackgroundColor3 == Color3.new(0, 0, 0)
+					if full and black then
+						foundBlackFullscreen = true
+						warn(string.format(
+							"[BlackScreenDebug] context=%s fullscreenBlack=true gui=%s frame=%s zIndex=%d script=Client/init.client.luau(LoadingScreen)",
+							context,
+							gui.Name,
+							desc.Name,
+							desc.ZIndex
+						))
+					end
+				end
+			end
+		end
+	end
+	if not foundBlackFullscreen then
+		print(string.format("[BlackScreenDebug] context=%s fullscreenBlack=false", context))
+	end
+
+	local cc = Lighting:FindFirstChild("StormFX_CC")
+	local bloom = Lighting:FindFirstChild("StormFX_Bloom")
+	print(string.format(
+		"[BlackScreenDebug] context=%s stormCCEnabled=%s stormBloomEnabled=%s stormProfile=%s presentation=%s",
+		context,
+		tostring(cc and cc:IsA("ColorCorrectionEffect") and cc.Enabled or false),
+		tostring(bloom and bloom:IsA("BloomEffect") and bloom.Enabled or false),
+		tostring(Lighting:GetAttribute("StormVfxProfile")),
+		tostring(Lighting:GetAttribute("BarrierPresentationProfile"))
+	))
+end
+
 local function dismissLoadingScreen()
+	print(string.format("[BlackScreenDebug] context=DismissLoadingScreen action=fade_out source=Client/init.client.luau"))
 	TweenService:Create(_loadBg, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		BackgroundTransparency = 1,
 	}):Play()
 	task.delay(0.4, function()
-		if _loadGui and _loadGui.Parent then _loadGui:Destroy() end
+		if _loadGui and _loadGui.Parent then
+			_loadGui:Destroy()
+		end
+		logBlackScreenDiagnostics("PostDismiss")
 	end)
+end
+
+local function logFinalRemoteContents()
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then
+		warn("[RemoteBootstrapClient] final remotes folder missing")
+		return
+	end
+
+	local remoteNames = {}
+	for _, child in ipairs(remotes:GetChildren()) do
+		table.insert(remoteNames, string.format("%s:%s", child.Name, child.ClassName))
+	end
+	table.sort(remoteNames)
+
+	local matchStatus = ReplicatedStorage:FindFirstChild("MatchStatus")
+	local matchStatusNames = {}
+	if matchStatus then
+		for _, child in ipairs(matchStatus:GetChildren()) do
+			table.insert(matchStatusNames, string.format("%s:%s", child.Name, child.ClassName))
+		end
+		table.sort(matchStatusNames)
+	end
+
+	print(string.format(
+		"[RemoteBootstrapClient] final remotes count=%d contents=%s matchStatusExists=%s matchStatusChildren=%s",
+		#remoteNames,
+		table.concat(remoteNames, ", "),
+		tostring(matchStatus ~= nil),
+		(#matchStatusNames > 0 and table.concat(matchStatusNames, ", ")) or "(none)"
+	))
 end
 -- ─────────────────────────────────────────────────────────────────────────────
 
@@ -145,6 +225,18 @@ end
 -- The 0.35s fade reveals the fully-styled UI instead of the grey-box flash.
 dismissLoadingScreen()
 
+-- Safety net: if bootstrap is interrupted before normal cleanup, never leave screen black.
+task.delay(8, function()
+	if _loadGui and _loadGui.Parent then
+		warn("[BlackScreenDebug] FAILSAFE fired: stale LoadingScreen detected; destroying to restore visibility")
+		logBlackScreenDiagnostics("FailsafeBeforeDestroy")
+		_loadGui:Destroy()
+		task.defer(function()
+			logBlackScreenDiagnostics("FailsafeAfterDestroy")
+		end)
+	end
+end)
+
 -- 3b. UIScalingController (device-class responsive scaling)
 local scalingOk, scalingErr = pcall(function()
 	local UIScalingController = require(Client:WaitForChild("UIScalingController"))
@@ -187,6 +279,17 @@ if musicOk then
 	print("[Client] MusicController loaded OK")
 else
 	warn("[Client] MusicController FAILED:", musicErr)
+end
+
+-- 6a. MatchAudioController (round feedback cues)
+local matchAudioOk, matchAudioErr = pcall(function()
+	local MatchAudioController = require(Client:WaitForChild("MatchAudioController"))
+	MatchAudioController.Init()
+end)
+if matchAudioOk then
+	print("[Client] MatchAudioController loaded OK")
+else
+	warn("[Client] MatchAudioController FAILED:", matchAudioErr)
 end
 
 -- 6. WorldIndicators (floating labels above SpinWheel + CrateShop)
@@ -354,3 +457,4 @@ pcall(function()
 end)
 
 print(string.format("[Client] Init complete (t=%s)", ts()))
+task.delay(2, logFinalRemoteContents)

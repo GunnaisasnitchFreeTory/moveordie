@@ -37,9 +37,6 @@ local COIN_DEFS = {
 	["More Fate Coin"] = { value = 50,  minRound = 6, weight = 40 },
 }
 
-local COLLECT_SOUND_ID = "rbxassetid://135303694517645"
-local COLLECT_SOUND_VOLUME = 0.5
-
 local GLOW_FILL_COLOR        = Color3.fromRGB(255, 215, 0)
 local GLOW_FILL_TRANSPARENCY = 0.7
 local GLOW_OUTLINE_COLOR     = Color3.fromRGB(255, 255, 255)
@@ -50,6 +47,7 @@ local RoundCoinService = {}
 local initialized = false
 local coinsFolder: Folder? = nil
 local touchConnections: { RBXScriptConnection } = {}
+local collectRemote: RemoteEvent? = nil
 
 local function log(...)
 	print("[RoundCoins]", ...)
@@ -86,6 +84,31 @@ local function disconnectTouched()
 		end
 	end
 	touchConnections = {}
+end
+
+local function ensureCollectRemote(): RemoteEvent?
+	if collectRemote and collectRemote.Parent then
+		return collectRemote
+	end
+
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then
+		remotes = Instance.new("Folder")
+		remotes.Name = "Remotes"
+		remotes.Parent = ReplicatedStorage
+	end
+
+	local existing = remotes:FindFirstChild("RoundCoinCollected")
+	if existing and existing:IsA("RemoteEvent") then
+		collectRemote = existing
+		return collectRemote
+	end
+
+	local remote = Instance.new("RemoteEvent")
+	remote.Name = "RoundCoinCollected"
+	remote.Parent = remotes
+	collectRemote = remote
+	return collectRemote
 end
 
 local function getRandomArenaPosition(): Vector3?
@@ -225,21 +248,18 @@ local function spawnCoin(coinName: string)
 			clone:SetAttribute("Collected", true)
 
 			local coinValue = clone:GetAttribute("CoinValue") or def.value
-			EconomyService.AwardCoins(player, coinValue, "RoundCoin:" .. coinName)
+			local awardOk = EconomyService.AwardCoins(player, coinValue, "RoundCoin:" .. coinName)
 			EconomyService.TrackMatchCoins(player, coinValue)
 			log(string.format("%s collected %s → +%d coins", player.Name, coinName, coinValue))
 
-			local hrp = character:FindFirstChild("HumanoidRootPart")
-			if hrp then
-				local sfx = Instance.new("Sound")
-				sfx.SoundId = COLLECT_SOUND_ID
-				sfx.Volume = COLLECT_SOUND_VOLUME
-				sfx.RollOffMaxDistance = 50
-				sfx.Parent = hrp
-				sfx:Play()
-				task.delay(3, function()
-					if sfx and sfx.Parent then sfx:Destroy() end
-				end)
+			if awardOk then
+				local remote = ensureCollectRemote()
+				if remote then
+					remote:FireClient(player, {
+						coinType = coinName,
+						coinValue = coinValue,
+					})
+				end
 			end
 
 			clone:Destroy()
@@ -255,6 +275,7 @@ end
 function RoundCoinService.Init()
 	if initialized then return end
 	initialized = true
+	ensureCollectRemote()
 	log("Initialized")
 end
 

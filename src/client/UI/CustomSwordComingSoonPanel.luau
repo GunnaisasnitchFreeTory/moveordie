@@ -117,7 +117,7 @@ local function buildPanel(parent: Instance)
 	studTex.Position = UDim2.fromScale(0, 0)
 	studTex.Size = UDim2.fromScale(1, 1)
 	studTex.BackgroundTransparency = 1
-	studTex.Image = "rbxassetid://70851348312450"
+	studTex.Image = "rbxassetid://84772207963553"
 	studTex.ImageTransparency = 0.93
 	studTex.ScaleType = Enum.ScaleType.Tile
 	studTex.TileSize = UDim2.fromOffset(64, 64)

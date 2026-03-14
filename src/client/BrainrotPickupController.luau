@@ -48,7 +48,7 @@ local HOVER_ABOVE_GROUND = 3.0  -- studs above floor to lock baseY
 
 local POPUP_DISPLAY_ORDER = 135
 local POPUP_DURATION = 3.0
-local BRAINROT_FALLBACK_IMAGE = "rbxassetid://85473787445447"
+local BRAINROT_FALLBACK_IMAGE = "rbxassetid://99759801373492"
 
 -- Image holder styling (deep purple, no placeholder vibe)
 local ICON_BG_COLOR = Color3.fromRGB(48, 16, 70)

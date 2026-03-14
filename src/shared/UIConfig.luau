@@ -166,7 +166,7 @@ UIConfig.Sizes = {
 -- ═══════════════════════════════════════════════════════════════════
 
 UIConfig.StudTexture = {
-	AssetId      = "rbxassetid://14861368908",
+	AssetId      = "rbxassetid://84772207963553",
 	TileSize     = UDim2.fromOffset(64, 64),
 	Transparency = 0.46,
 	Color        = Color3.fromRGB(92, 108, 168),
@@ -216,6 +216,7 @@ UIConfig.Sounds = {
 	Open        = { Id = "rbxassetid://9119713951", Volume = 0.24, Speed = 0.60 },
 	Close       = { Id = "rbxassetid://9119713951", Volume = 0.18, Speed = 1.30 },
 	CoinCollect = { Id = "rbxassetid://9119713951", Volume = 0.32, Speed = 1.80 },
+	RoundCoinCollect = { Id = "rbxassetid://135303694517645", Volume = 0.50, Speed = 1.00 },
 	Equip       = { Id = "rbxassetid://9119713951", Volume = 0.25, Speed = 1.40 },
 }
 

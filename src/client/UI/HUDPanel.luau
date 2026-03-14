@@ -220,8 +220,6 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	coinGrad.Rotation = 90
 	coinGrad.Parent = coinFrame
 
-	Components.AddStudTexture(coinFrame, S.HudCoinH / 2)
-
 	local coinShadow = Instance.new("Frame")
 	coinShadow.Name = "Shadow"
 	coinShadow.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -311,8 +309,6 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	rGrad.Rotation = 90
 	rGrad.Parent = roundFrame
 
-	Components.AddStudTexture(roundFrame, S.HudRoundH / 2)
-
 	local rShadow = Instance.new("Frame")
 	rShadow.Name = "Shadow"
 	rShadow.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -393,7 +389,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	Components.AddStudTexture(intermissionBar, S.IntermissionCorner)
 	local ibStud = intermissionBar:FindFirstChild("StudTexture")
 	if ibStud then
-		ibStud.Image = "rbxassetid://70851348312450"
+		ibStud.Image = "rbxassetid://84772207963553"
 		ibStud.TileSize = UDim2.fromOffset(96, 96)
 		ibStud.ImageTransparency = 0.88
 		ibStud.ImageColor3 = Color3.fromRGB(255, 255, 255)
@@ -487,12 +483,12 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	sGrid.SortOrder = Enum.SortOrder.LayoutOrder
 	sGrid.Parent = sidebar
 
-	Components.CreateSideButton(sidebar, "Shop",     "", C.SideShop,     1, function() if callbacks.onShop then callbacks.onShop() end end, "rbxassetid://76222720040195")
-	Components.CreateSideButton(sidebar, "Crowns",   "", C.SideCrowns,   2, function() if callbacks.onCrowns then callbacks.onCrowns() end end, "rbxassetid://71138927931452")
-	Components.CreateSideButton(sidebar, "Pets",     "", C.SidePets,     3, function() if callbacks.onPets then callbacks.onPets() end end, "rbxassetid://104698501592471")
-	Components.CreateSideButton(sidebar, "Index",    "", C.SideIndex,    4, function() if callbacks.onIndex then callbacks.onIndex() end end, "rbxassetid://113701401947593")
-	Components.CreateSideButton(sidebar, "Spectate", "", C.SideSpectate, 5, function() if callbacks.onSpectate then callbacks.onSpectate() end end, "rbxassetid://132423664388523")
-	Components.CreateSideButton(sidebar, "Settings", "",  C.SideSettings, 6, function() if callbacks.onSettings then callbacks.onSettings() end end, "rbxassetid://121220698644847")
+	Components.CreateSideButton(sidebar, "Shop",     "", C.SideShop,     1, function() if callbacks.onShop then callbacks.onShop() end end, "rbxassetid://107098750187021")
+	Components.CreateSideButton(sidebar, "Crowns",   "", C.SideCrowns,   2, function() if callbacks.onCrowns then callbacks.onCrowns() end end, "rbxassetid://89367687221894")
+	Components.CreateSideButton(sidebar, "Pets",     "", C.SidePets,     3, function() if callbacks.onPets then callbacks.onPets() end end, "rbxassetid://73191619361965")
+	Components.CreateSideButton(sidebar, "Index",    "", C.SideIndex,    4, function() if callbacks.onIndex then callbacks.onIndex() end end, "rbxassetid://116320041810735")
+	Components.CreateSideButton(sidebar, "Spectate", "", C.SideSpectate, 5, function() if callbacks.onSpectate then callbacks.onSpectate() end end, "rbxassetid://79490615087008")
+	Components.CreateSideButton(sidebar, "Settings", "",  C.SideSettings, 6, function() if callbacks.onSettings then callbacks.onSettings() end end, "rbxassetid://98012855587350")
 
 	local afkBtn = Components.CreateSideButton(
 		sidebar,
@@ -503,7 +499,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		function()
 			if callbacks.onAFK then callbacks.onAFK() end
 		end,
-		"rbxassetid://94572633578005"
+		"rbxassetid://93630249524250"
 	)
 
 	local afkLabel = afkBtn:FindFirstChild("Label")
@@ -541,7 +537,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 		end
 		if afkIcon then
 			if afkIcon:IsA("ImageLabel") then
-				afkIcon.Image = isAFK and "rbxassetid://94572633578005" or "rbxassetid://135444718943556"
+				afkIcon.Image = isAFK and "rbxassetid://92632399407544" or "rbxassetid://93630249524250"
 				afkIcon.BackgroundTransparency = 1
 				afkIcon.ScaleType = Enum.ScaleType.Fit
 				afkIcon.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -562,7 +558,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	updateAFKVisual()
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(updateAFKVisual)
 
-	Components.CreateSideButton(sidebar, "Icons", "", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end, "rbxassetid://93004565620109")
+	Components.CreateSideButton(sidebar, "Icons", "", C.SideIcons, 8, function() if callbacks.onIcons then callbacks.onIcons() end end, "rbxassetid://112403972973605")
 
 	rightSideSafeArea = Instance.new("Frame")
 	rightSideSafeArea.Name = RIGHT_SAFE_AREA_NAME

@@ -117,6 +117,10 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 
 	local content, closeBtn
 	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "SETTINGS", C.HeaderSettings, "Settings")
+	local studTexture = canvas:FindFirstChild("StudTexture")
+	if studTexture then
+		studTexture:Destroy()
+	end
 
 	-- Hide scrolling, use fixed layout
 	content.ScrollBarThickness = 0
@@ -140,9 +144,6 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	r1s.Thickness = S.PanelStroke
 	r1s.Transparency = 0.35
 	r1s.Parent = row1
-
-	-- Stud texture on row
-	Components.AddStudTexture(row1, S.BtnCorner)
 
 	local r1pad = Instance.new("UIPadding")
 	r1pad.PaddingLeft = UDim.new(0, 16)
@@ -228,9 +229,6 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	r2s.Transparency = 0.35
 	r2s.Parent = row2
 
-	-- Stud texture on row
-	Components.AddStudTexture(row2, S.BtnCorner)
-
 	local r2pad = Instance.new("UIPadding")
 	r2pad.PaddingLeft = UDim.new(0, 16)
 	r2pad.PaddingRight = UDim.new(0, 14)
@@ -263,6 +261,7 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	volumeLabel.TextColor3 = C.Gold
 	volumeLabel.TextSize = 18
 	volumeLabel.Text = "50%"
+	volumeLabel.ZIndex = 4
 	volumeLabel.Parent = row2
 
 	local vls = Instance.new("UIStroke")
@@ -272,20 +271,28 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	vls.Parent = volumeLabel
 
 	-- Slider track
-	local sliderTrack = Instance.new("TextButton")
+	-- Keep the visible bar as a Frame so hover/click feedback never moves the bar itself.
+	-- A transparent hitbox handles interaction on top of it.
+	local sliderTrack = Instance.new("Frame")
 	sliderTrack.Name = "SliderTrack"
 	sliderTrack.Size = UDim2.new(1, -220, 0, 16)
 	sliderTrack.AnchorPoint = Vector2.new(0, 0.5)
 	sliderTrack.Position = UDim2.new(0, 134, 0.5, 0)
 	sliderTrack.BackgroundColor3 = C.CardBgDark
 	sliderTrack.BorderSizePixel = 0
-	sliderTrack.AutoButtonColor = false
-	sliderTrack.Text = ""
+	sliderTrack.ClipsDescendants = true
+	sliderTrack.ZIndex = 1
 	sliderTrack.Parent = row2
 
 	local stc = Instance.new("UICorner")
 	stc.CornerRadius = UDim.new(0, 8)
 	stc.Parent = sliderTrack
+
+	local trackStroke = Instance.new("UIStroke")
+	trackStroke.Color = Color3.fromRGB(255, 255, 255)
+	trackStroke.Thickness = 1.25
+	trackStroke.Transparency = 0.72
+	trackStroke.Parent = sliderTrack
 
 	-- Slider fill
 	sliderFill = Instance.new("Frame")
@@ -293,14 +300,41 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
 	sliderFill.BackgroundColor3 = C.Blue
 	sliderFill.BorderSizePixel = 0
+	sliderFill.ZIndex = 2
 	sliderFill.Parent = sliderTrack
 
 	local sfc = Instance.new("UICorner")
 	sfc.CornerRadius = UDim.new(0, 8)
 	sfc.Parent = sliderFill
 
+	local sliderHitbox = Instance.new("TextButton")
+	sliderHitbox.Name = "SliderHitbox"
+	sliderHitbox.Size = UDim2.fromScale(1, 1)
+	sliderHitbox.BackgroundTransparency = 1
+	sliderHitbox.BorderSizePixel = 0
+	sliderHitbox.AutoButtonColor = false
+	sliderHitbox.Text = ""
+	sliderHitbox.ZIndex = 3
+	sliderHitbox.Parent = sliderTrack
+
 	-- Slider interaction
 	local dragging = false
+	local trackBaseColor = C.CardBgDark
+	local trackHoverColor = trackBaseColor:Lerp(Color3.new(1, 1, 1), 0.08)
+	local fillBaseColor = C.Blue
+	local fillHoverColor = fillBaseColor:Lerp(Color3.new(1, 1, 1), 0.06)
+
+	local function setSliderHoverState(isHovering: boolean)
+		AnimUtil.Tween(sliderTrack, {
+			BackgroundColor3 = isHovering and trackHoverColor or trackBaseColor,
+		}, 0.10, Enum.EasingStyle.Quad)
+		AnimUtil.Tween(sliderFill, {
+			BackgroundColor3 = isHovering and fillHoverColor or fillBaseColor,
+		}, 0.10, Enum.EasingStyle.Quad)
+		AnimUtil.Tween(trackStroke, {
+			Transparency = isHovering and 0.56 or 0.72,
+		}, 0.10, Enum.EasingStyle.Quad)
+	end
 
 	local function updateSliderFromInput(input)
 		local trackAbsPos = sliderTrack.AbsolutePosition.X
@@ -311,16 +345,32 @@ function SettingsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		applyMusicSettings()
 	end
 
-	sliderTrack.InputBegan:Connect(function(input)
+	sliderHitbox.MouseEnter:Connect(function()
+		setSliderHoverState(true)
+	end)
+
+	sliderHitbox.MouseLeave:Connect(function()
+		if not dragging then
+			setSliderHoverState(false)
+		end
+	end)
+
+	sliderHitbox.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
+			setSliderHoverState(true)
 			updateSliderFromInput(input)
 		end
 	end)
 
-	sliderTrack.InputEnded:Connect(function(input)
+	sliderHitbox.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = false
+			local mouse = game:GetService("UserInputService"):GetMouseLocation()
+			local pos = sliderTrack.AbsolutePosition
+			local size = sliderTrack.AbsoluteSize
+			local inside = mouse.X >= pos.X and mouse.X <= pos.X + size.X and mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y
+			setSliderHoverState(inside)
 		end
 	end)
 

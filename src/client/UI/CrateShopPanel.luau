@@ -332,7 +332,7 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 			crateImg.Size = UDim2.new(0.78, 0, 0, 84)
 			crateImg.Position = UDim2.new(0.5, 0, 0, 14)
 			crateImg.BackgroundTransparency = 1
-			crateImg.Image = "rbxassetid://108812530080296"
+			crateImg.Image = "rbxassetid://102125624504903"
 			crateImg.ScaleType = Enum.ScaleType.Fit
 			crateImg.ImageTransparency = 0
 			crateImg.ZIndex = 2
@@ -660,7 +660,7 @@ function CrateShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	do
 		local stud = canvas:FindFirstChild("StudTexture")
 		if stud then
-			stud.Image = "rbxassetid://70851348312450"
+			stud.Image = "rbxassetid://84772207963553"
 			stud.TileSize = UDim2.fromOffset(96, 96)
 			stud.ImageTransparency = 0.88
 			stud.ImageColor3 = Color3.fromRGB(255, 255, 255)

@@ -384,7 +384,7 @@ local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
 			{ category = "Crowns", itemId = "crown_whiteeyed" },
 			{ category = "IconImages", itemId = "icon_flights_laugh" },
 			{ category = "Pets", itemId = "pet_all_knowing_eye" },
-			{ type = "Currency", amount = 8000, label = "8000 Fate Coins" },
+			{ type = "Currency", amount = 8000, label = "8000 Fate Coins", popupImageOverride = "rbxassetid://81959864063463", imageAssetId = "rbxassetid://81959864063463" },
 		},
 	},
 }
@@ -432,13 +432,20 @@ local function grantGamepassReward(player: Player, gamepassId: number, emitPurch
 					tostring(item.category or item.type), tostring(item.itemId or item.amount), player.Name, tostring(okGrant.reason)))
 				return false
 			end
-			table.insert(grantedItems, okGrant.payload or {
+			local grantedPayload = okGrant.payload or {
 				type = grantType,
 				id = item.itemId or "fate_coins",
 				category = item.category,
 				amount = grantType == "Currency" and tonumber(grantValue) or nil,
 				source = "GamePass",
-			})
+			}
+			if item.popupImageOverride and item.popupImageOverride ~= "" then
+				grantedPayload.popupImageOverride = item.popupImageOverride
+			end
+			if item.imageAssetId and item.imageAssetId ~= "" then
+				grantedPayload.imageAssetId = item.imageAssetId
+			end
+			table.insert(grantedItems, grantedPayload)
 		end
 		if #grantedItems > 0 then
 			grant.EmitRewardGranted(player, {

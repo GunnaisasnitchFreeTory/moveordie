@@ -125,13 +125,13 @@ local _crownSlots: {ImageLabel} = {}        -- 3 reusable ImageLabel slots
 local _crownBgThread: thread? = nil         -- single animation coroutine
 local _crownBgRunning = false               -- guard: prevents duplicate loops
 local _petsBgImages: {string} = {
-	"rbxassetid://125284831618843",
-	"rbxassetid://134436052421277",
-	"rbxassetid://104828243058275",
-	"rbxassetid://91529728615582",
-	"rbxassetid://99697942325285",
-	"rbxassetid://110624123106515",
-	"rbxassetid://96775279467975",
+	"rbxassetid://84847454887103",
+	"rbxassetid://97858535294595",
+	"rbxassetid://118819421897796",
+	"rbxassetid://137775607333387",
+	"rbxassetid://125769583015852",
+	"rbxassetid://125946470745616",
+	"rbxassetid://92719736522880",
 }
 local _petsBgSlidesRoot: Frame? = nil
 local _petsBgSlots: {ImageLabel} = {}
@@ -670,7 +670,7 @@ local function resolvePremiumVisual(item, filterType: string)
 	return catEntry, catalogImage, modelPath, catalogIconText
 end
 
-local FNAF_BANNER_IMAGE = "rbxassetid://73558749824817"
+local FNAF_BANNER_IMAGE = "rbxassetid://113086091854147"
 local FNAF_SINGLE_PRICE = 70000
 local function formatCoinText(n: number): string
 	local s = tostring(math.max(0, math.floor(n)))
@@ -1199,7 +1199,7 @@ local function populatePetsTab()
 						title = "PURCHASE FAILED",
 						name = "Not enough Fate Coins",
 						itemType = "Currency",
-						icon = "rbxassetid://72345557707985",
+						icon = "rbxassetid://81959864063463",
 						okText = "OK",
 					})
 				end
@@ -1208,7 +1208,7 @@ local function populatePetsTab()
 					title = "PURCHASE FAILED",
 					name = tostring(reason),
 					itemType = "Currency",
-					icon = "rbxassetid://72345557707985",
+					icon = "rbxassetid://81959864063463",
 					okText = "OK",
 				})
 			end
@@ -1402,6 +1402,10 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	local content, closeBtn
 	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "PREMIUM SHOP", C.HeaderShop, "Shop")
 	contentFrame = content
+	local studTexture = canvas:FindFirstChild("StudTexture")
+	if studTexture then
+		studTexture:Destroy()
+	end
 
 	closeBtn.MouseButton1Click:Connect(function()
 		SoundUtil.Close()
@@ -1465,7 +1469,7 @@ function ShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	coinsBgArt.Position = content.Position
 	coinsBgArt.Size = content.Size
 	coinsBgArt.BackgroundTransparency = 1
-	coinsBgArt.Image = "rbxassetid://92371827400252"
+	coinsBgArt.Image = "rbxassetid://138104104740746"
 	coinsBgArt.ImageTransparency = 0.55
 	coinsBgArt.ScaleType = Enum.ScaleType.Crop  -- cover-fill, no distortion
 	coinsBgArt.ZIndex = 4                   -- below contentFrame (ZIndex 5)

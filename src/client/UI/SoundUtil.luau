@@ -18,6 +18,8 @@ local UIConfig = require(Shared:WaitForChild("UIConfig"))
 
 local sounds: { [string]: Sound } = {}
 local initialized = false
+local COIN_COLLECT_ECHO_WINDOW = 0.18
+local suppressCoinCollectUntil = 0
 
 local SoundUtil = {}
 
@@ -70,7 +72,16 @@ function SoundUtil.Hover()       play("Hover") end
 function SoundUtil.Click()       play("Click") end
 function SoundUtil.Open()        play("Open") end
 function SoundUtil.Close()       play("Close") end
-function SoundUtil.CoinCollect() play("CoinCollect") end
+function SoundUtil.CoinCollect()
+	if os.clock() < suppressCoinCollectUntil then
+		return
+	end
+	play("CoinCollect")
+end
+function SoundUtil.CoinCollectPrimary()
+	suppressCoinCollectUntil = os.clock() + COIN_COLLECT_ECHO_WINDOW
+	play("RoundCoinCollect")
+end
 function SoundUtil.Equip()       play("Equip") end
 
 return SoundUtil

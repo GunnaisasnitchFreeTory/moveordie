@@ -102,6 +102,8 @@ local function lookupCatalogEntry(data)
 			entry = IC.Crowns[data.itemId]
 		elseif (t == "iconimage" or t == "icon_image") and IC.IconImages then
 			entry = IC.IconImages[data.itemId]
+		elseif (t == "bundlereward" or t == "bundle_reward") and IC.BundleRewards then
+			entry = IC.BundleRewards[data.itemId]
 		elseif (t == "crate" or t == "crates") and IC.Crates then
 			entry = IC.Crates[data.itemId]
 		end
@@ -110,6 +112,7 @@ local function lookupCatalogEntry(data)
 		if IC.Pets and IC.Pets[data.itemId] then entry = IC.Pets[data.itemId]
 		elseif IC.Crowns and IC.Crowns[data.itemId] then entry = IC.Crowns[data.itemId]
 		elseif IC.IconImages and IC.IconImages[data.itemId] then entry = IC.IconImages[data.itemId]
+		elseif IC.BundleRewards and IC.BundleRewards[data.itemId] then entry = IC.BundleRewards[data.itemId]
 		elseif IC.Crates and IC.Crates[data.itemId] then entry = IC.Crates[data.itemId] end
 	end
 	return entry
@@ -125,7 +128,7 @@ local function resolveRarity(data)
 	local itemType = data.itemType or ""
 
 	-- Coins: no catalog rarity, use caller's value (which should be set intentionally)
-	if itemType == "Coins" or itemType == "FateCoins" then
+	if itemType == "Coins" or itemType == "FateCoins" or itemType == "Spin" or itemType == "Spins" then
 		print(string.format("[RewardPopup] type=Coins rarity=%s (coins use caller value)", callerRarity))
 		return callerRarity
 	end
@@ -155,8 +158,9 @@ end
 -- ═══════════════════════════════════════════
 -- BRAINROT PLACEHOLDER (used when no image asset set for brainrot items)
 -- ═══════════════════════════════════════════
-local BRAINROT_PLACEHOLDER_IMAGE = "rbxassetid://85473787445447"
-local CRATE_FALLBACK_IMAGE = "rbxassetid://108812530080296"
+local BRAINROT_PLACEHOLDER_IMAGE = "rbxassetid://99759801373492"
+local CRATE_FALLBACK_IMAGE = "rbxassetid://102125624504903"
+local GENERIC_SPIN_REWARD_IMAGE = "rbxassetid://134540256061817"
 
 -- ═══════════════════════════════════════════
 -- RESOLVE ICON (multi-level fallback + ThumbnailRenderer)
@@ -177,6 +181,10 @@ local function resolveIcon(data)
 
 	local t = string.lower(data.itemType or "")
 	local entry = lookupCatalogEntry(data)
+
+	if t == "spin" or t == "spins" then
+		return GENERIC_SPIN_REWARD_IMAGE, nil, nil, nil
+	end
 
 	-- For crown rewards, always resolve from the won crown id first.
 	-- This prevents stale/default wheel icon overrides from showing the wrong crown art.

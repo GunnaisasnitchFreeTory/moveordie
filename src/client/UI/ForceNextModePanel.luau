@@ -54,8 +54,8 @@ local BUTTON_BG_TRANSPARENCY = 0.08
 local BUTTON_OVERLAY_TRANSPARENCY = 0.5
 local CLOSE_BTN_TRANSPARENCY = 0.1
 
-local NORMAL_MODE_IMAGE = "rbxassetid://140656133488408"
-local BRAINROT_MODE_IMAGE = "rbxassetid://85473787445447"
+local NORMAL_MODE_IMAGE = "rbxassetid://90452980108887"
+local BRAINROT_MODE_IMAGE = "rbxassetid://134040200136136"
 
 local function log(...)
 	print("[ForceNextModeUI]", ...)
@@ -442,7 +442,7 @@ local function createGui()
 	studTex.Size = UDim2.fromScale(1, 1)
 	studTex.Position = UDim2.fromScale(0, 0)
 	studTex.BackgroundTransparency = 1
-	studTex.Image = "rbxassetid://70851348312450"
+	studTex.Image = "rbxassetid://84772207963553"
 	studTex.ScaleType = Enum.ScaleType.Tile
 	studTex.TileSize = UDim2.fromOffset(96, 96)
 	studTex.ImageTransparency = 0.88

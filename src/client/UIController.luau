@@ -830,6 +830,211 @@ function UIController.Init()
 	-- ═══════════════════════════════════════════════════════════════════
 	-- WALK-UP: Brainrot Bundle Display
 	-- ═══════════════════════════════════════════════════════════════════
+	local function findNamedDisplayModel(root: Instance, candidateNames: { string }): Model?
+		for _, name in ipairs(candidateNames) do
+			local direct = root:FindFirstChild(name)
+			if direct and direct:IsA("Model") then
+				return direct
+			end
+		end
+		for _, desc in ipairs(root:GetDescendants()) do
+			if desc:IsA("Model") then
+				local lowerName = string.lower(desc.Name)
+				for _, name in ipairs(candidateNames) do
+					if lowerName == string.lower(name) then
+						return desc
+					end
+				end
+			end
+		end
+		return nil
+	end
+
+	local function getBundleAnchorPosition(displayModel: Model): Vector3?
+		local ok, boxCFrame, boxSize = pcall(function()
+			return displayModel:GetBoundingBox()
+		end)
+		if ok and boxCFrame and boxSize then
+			-- Keep the prompt just above the visual top of the displayed model.
+			return boxCFrame.Position + Vector3.new(0, (boxSize.Y * 0.5) + 0.35, 0)
+		end
+
+		local bestPart = displayModel:FindFirstChildWhichIsA("BasePart", true)
+		if bestPart then
+			return bestPart.Position + Vector3.new(0, 2.4, 0)
+		end
+
+		return nil
+	end
+
+	local function getFixedTopCenterAnchorPosition(displayModel: Model, yOffset: number?): Vector3?
+		local ok, boxCFrame, boxSize = pcall(function()
+			return displayModel:GetBoundingBox()
+		end)
+		if ok and boxCFrame and boxSize then
+			return boxCFrame.Position + Vector3.new(0, (boxSize.Y * 0.5) + (yOffset or 0.35), 0)
+		end
+		return nil
+	end
+
+	local function getOrCreateBundlePromptAnchor(displayModel: Model, anchorName: string): (BasePart?, boolean)
+		local head = displayModel:FindFirstChild("Head", true)
+		if head and head:IsA("BasePart") then
+			return head, true
+		end
+
+		local humanoidRootPart = displayModel:FindFirstChild("HumanoidRootPart", true)
+		if humanoidRootPart and humanoidRootPart:IsA("BasePart") then
+			return humanoidRootPart, true
+		end
+
+		local primaryPart = displayModel.PrimaryPart
+		if primaryPart and primaryPart:IsA("BasePart") and primaryPart.Transparency < 1 then
+			return primaryPart, true
+		end
+
+		local promptAnchorName = "PromptAnchor"
+		local anchorPart = displayModel:FindFirstChild(promptAnchorName)
+		if not (anchorPart and anchorPart:IsA("BasePart")) then
+			local legacyAnchor = displayModel:FindFirstChild(anchorName)
+			if legacyAnchor and legacyAnchor:IsA("BasePart") then
+				legacyAnchor.Name = promptAnchorName
+				anchorPart = legacyAnchor
+			end
+		end
+
+		if not (anchorPart and anchorPart:IsA("BasePart")) then
+			anchorPart = Instance.new("Part")
+			anchorPart.Name = promptAnchorName
+			anchorPart.Size = Vector3.new(0.2, 0.2, 0.2)
+			anchorPart.Anchored = true
+			anchorPart.CanCollide = false
+			anchorPart.CanQuery = true
+			anchorPart.CanTouch = false
+			anchorPart.Transparency = 1
+			anchorPart.Parent = displayModel
+		end
+
+		local anchorPosition = getBundleAnchorPosition(displayModel)
+		if anchorPosition then
+			anchorPart.CFrame = CFrame.new(anchorPosition)
+		end
+
+		return anchorPart, false
+	end
+
+	local function findExistingBundlePrompt(bundleRoot: Instance, promptName: string): ProximityPrompt?
+		local namedPrompt = bundleRoot:FindFirstChild(promptName, true)
+		if namedPrompt and namedPrompt:IsA("ProximityPrompt") then
+			return namedPrompt
+		end
+		for _, desc in ipairs(bundleRoot:GetDescendants()) do
+			if desc:IsA("ProximityPrompt") then
+				return desc
+			end
+		end
+		return nil
+	end
+
+	local function removeDuplicateBundlePrompts(bundleRoot: Instance, keepPrompt: ProximityPrompt?)
+		for _, desc in ipairs(bundleRoot:GetDescendants()) do
+			if desc:IsA("ProximityPrompt") and desc ~= keepPrompt then
+				desc:Destroy()
+			end
+		end
+	end
+
+	local function configureBundlePrompt(
+		prompt: ProximityPrompt,
+		promptName: string,
+		objectText: string,
+		anchorPart: BasePart,
+		usesBodyPartAnchor: boolean,
+		maxDistance: number
+	)
+		prompt.Name = promptName
+		prompt.ActionText = "Buy"
+		prompt.ObjectText = objectText
+		prompt.KeyboardKeyCode = Enum.KeyCode.E
+		prompt.HoldDuration = 0
+		prompt.MaxActivationDistance = maxDistance
+		prompt.RequiresLineOfSight = false
+		prompt.UIOffset = usesBodyPartAnchor and Vector2.new(0, -48) or Vector2.new(0, 0)
+		if prompt.Parent ~= anchorPart then
+			prompt.Parent = anchorPart
+		end
+		prompt.Enabled = true
+	end
+
+	local function getOrCreateFixedBundleRootAnchor(
+		bundleRoot: Instance,
+		displayModel: Model,
+		anchorName: string
+	): BasePart?
+		local anchorPart = bundleRoot:FindFirstChild(anchorName)
+		if not (anchorPart and anchorPart:IsA("BasePart")) then
+			anchorPart = Instance.new("Part")
+			anchorPart.Name = anchorName
+			anchorPart.Size = Vector3.new(0.2, 0.2, 0.2)
+			anchorPart.Anchored = true
+			anchorPart.CanCollide = false
+			anchorPart.CanQuery = true
+			anchorPart.CanTouch = false
+			anchorPart.Transparency = 1
+			anchorPart.Parent = bundleRoot
+		end
+
+		local anchorPosition = getFixedTopCenterAnchorPosition(displayModel, 0.35)
+		if anchorPosition then
+			anchorPart.CFrame = CFrame.new(anchorPosition)
+		end
+
+		return anchorPart
+	end
+
+	local function removeFnafPromptArtifacts(
+		bundleRoot: Instance,
+		keepPrompt: ProximityPrompt?,
+		keepAnchor: BasePart?
+	): (number, number)
+		local removedPrompts = 0
+		for _, desc in ipairs(workspace:GetDescendants()) do
+			if desc:IsA("ProximityPrompt") and desc ~= keepPrompt then
+				local parentPath = desc.Parent and desc.Parent:GetFullName() or ""
+				local isFnafPrompt = desc.Name == "FNAFBundlePrompt"
+				local isFnafObjectText = desc.ObjectText == "Animatronic Pets"
+				if desc:IsDescendantOf(bundleRoot)
+					or isFnafPrompt
+					or (isFnafObjectText and (
+						string.find(parentPath, "FNAFGameBun", 1, true)
+						or string.find(parentPath, "FNAF Game Bun", 1, true)
+					))
+				then
+					desc:Destroy()
+					removedPrompts += 1
+				end
+			end
+		end
+
+		local removedAnchors = 0
+		local legacyAnchorNames = {
+			PromptAnchor = true,
+			PromptPart = true,
+			FNAFBundlePromptAnchor = true,
+		}
+		for _, desc in ipairs(bundleRoot:GetDescendants()) do
+			if desc:IsA("BasePart")
+				and desc ~= keepAnchor
+				and legacyAnchorNames[desc.Name]
+			then
+				desc:Destroy()
+				removedAnchors += 1
+			end
+		end
+
+		return removedPrompts, removedAnchors
+	end
+
 	task.spawn(function()
 		local BUNDLE_OPEN_DISTANCE = 15
 		local BUNDLE_CLOSE_DISTANCE = 30
@@ -850,57 +1055,43 @@ function UIController.Init()
 			return
 		end
 
-		local function findBrainrotAnchorPart(folder: Instance): BasePart?
-			-- Deterministic anchor rule: use one explicit stand/root only.
-			local standPart = folder:FindFirstChild("Part")
-			if standPart and standPart:IsA("BasePart") then
-				return standPart
-			end
-			return nil
+		local function findBrainrotDisplayModel(folder: Instance): Model?
+			return findNamedDisplayModel(folder, { "Dragon Cannelloni" })
 		end
 
+		local displayModel = nil
 		local posterPart = nil
+		local usesBodyPartAnchor = false
 		local delayedForAnchor = false
 		for attempt = 1, 300 do
-			posterPart = findBrainrotAnchorPart(brainrotFolder)
+			displayModel = findBrainrotDisplayModel(brainrotFolder)
+			if displayModel then
+				posterPart, usesBodyPartAnchor = getOrCreateBundlePromptAnchor(displayModel, "BrainrotBundlePromptAnchor")
+			end
 			if posterPart then break end
 			delayedForAnchor = true
 			task.wait(1)
 		end
 
 		if not posterPart then
-			log("[BrainrotBundle] No poster BasePart -- walk-up disabled")
+			log("[BrainrotBundle] No Dragon Cannelloni anchor -- walk-up disabled")
 			return
 		end
 		log(string.format(
-			"[BrainrotPrompt] anchorFound=%s initDelayedUntilAnchor=%s placementSource=BrainrotStandPart finalY=%.2f",
+			"[BrainrotPrompt] anchorFound=%s initDelayedUntilAnchor=%s placementSource=DragonCannelloni finalY=%.2f",
 			posterPart:GetFullName(),
 			tostring(delayedForAnchor),
 			posterPart.Position.Y
 		))
 
-		local prompt: ProximityPrompt? = nil
-		for _, desc in ipairs(brainrotFolder:GetDescendants()) do
-			if desc:IsA("ProximityPrompt") then
-				prompt = desc
-				break
-			end
-		end
+		local prompt = findExistingBundlePrompt(brainrotFolder, "BrainrotBundlePrompt")
 
 		if not prompt then
 			prompt = Instance.new("ProximityPrompt")
-			prompt.Name = "BrainrotBundlePrompt"
-			prompt.ActionText = "Buy"
-			prompt.ObjectText = "Brainrot Bundle"
-			prompt.KeyboardKeyCode = Enum.KeyCode.E
-			prompt.HoldDuration = 0
-			prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE
-			prompt.RequiresLineOfSight = false
-			prompt.Parent = posterPart
-
-			log("[BrainrotBundle] Prompt parented directly to poster at " .. tostring(posterPart.Position))
+			log("[BrainrotBundle] Prompt created for Dragon Cannelloni display anchor")
 		end
-		prompt.Enabled = true
+		configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", posterPart, usesBodyPartAnchor, BUNDLE_OPEN_DISTANCE)
+		removeDuplicateBundlePrompts(brainrotFolder, prompt)
 
 		prompt.Triggered:Connect(function(playerWhoTriggered)
 			if playerWhoTriggered ~= LocalPlayer then return end
@@ -917,20 +1108,16 @@ function UIController.Init()
 				if not brainrotFolder.Parent then
 					break
 				end
-				if not posterPart or not posterPart.Parent then
-					posterPart = findBrainrotAnchorPart(brainrotFolder)
+				if not displayModel or not displayModel.Parent then
+					displayModel = findBrainrotDisplayModel(brainrotFolder)
+				end
+				if displayModel and displayModel.Parent then
+					posterPart, usesBodyPartAnchor = getOrCreateBundlePromptAnchor(displayModel, "BrainrotBundlePromptAnchor")
 				end
 				if posterPart and posterPart.Parent then
 					if not prompt or not prompt.Parent then
 						prompt = Instance.new("ProximityPrompt")
-						prompt.Name = "BrainrotBundlePrompt"
-						prompt.ActionText = "Buy"
-						prompt.ObjectText = "Brainrot Bundle"
-						prompt.KeyboardKeyCode = Enum.KeyCode.E
-						prompt.HoldDuration = 0
-						prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE
-						prompt.RequiresLineOfSight = false
-						prompt.Parent = posterPart
+						configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", posterPart, usesBodyPartAnchor, BUNDLE_OPEN_DISTANCE)
 						prompt.Triggered:Connect(function(playerWhoTriggered)
 							if playerWhoTriggered ~= LocalPlayer then return end
 							bundleOpenTime = tick()
@@ -939,12 +1126,11 @@ function UIController.Init()
 								ShopPanel.ActivateBundleTab("brainrot_bundle")
 							end
 						end)
-						log("[BrainrotBundle] Prompt recreated on poster")
+						removeDuplicateBundlePrompts(brainrotFolder, prompt)
+						log("[BrainrotBundle] Prompt recreated on Dragon Cannelloni anchor")
 					else
-						if prompt.Parent ~= posterPart then
-							prompt.Parent = posterPart
-						end
-						prompt.Enabled = true
+						configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", posterPart, usesBodyPartAnchor, BUNDLE_OPEN_DISTANCE)
+						removeDuplicateBundlePrompts(brainrotFolder, prompt)
 					end
 				end
 				task.wait(6)
@@ -976,7 +1162,11 @@ function UIController.Init()
 	task.spawn(function()
 		local BUNDLE_OPEN_DISTANCE = 15
 		local BUNDLE_CLOSE_DISTANCE = 30
+		local FNAF_PROMPT_ANCHOR_NAME = "PromptAnchor_FNAFBuy"
 		local bundleOpenTime = 0
+		local lastPromptOpenAt = 0
+		local promptOpenCooldown = 0.75
+		local openedByFnafPrompt = false
 
 		local function findFnafFolder(): Instance?
 			local exact = workspace:FindFirstChild("FNAFGameBun") or workspace:FindFirstChild("FNAF Game Bun")
@@ -1002,70 +1192,113 @@ function UIController.Init()
 			return
 		end
 
-		local promptPart: BasePart? = nil
-		for attempt = 1, 6 do
-			local posterModel = fnafFolder:FindFirstChild("Poster")
-			if posterModel then
-				promptPart = posterModel:FindFirstChildWhichIsA("BasePart")
+		local function findFnafDisplayModel(folder: Instance): Model?
+			return findNamedDisplayModel(folder, {
+				"Freddy Fzber",
+				"Freddy Fazber",
+				"Freddy Fazbear",
+			})
+		end
+
+		local displayModel = nil
+		local promptPart = nil
+		local prompt: ProximityPrompt? = nil
+		local promptConn: RBXScriptConnection? = nil
+
+		local function bindFnafPrompt(targetPrompt: ProximityPrompt)
+			if promptConn then
+				promptConn:Disconnect()
+				promptConn = nil
+			end
+			promptConn = targetPrompt.Triggered:Connect(function(playerWhoTriggered)
+				if playerWhoTriggered ~= LocalPlayer then return end
+				local now = tick()
+				if (now - lastPromptOpenAt) < promptOpenCooldown then
+					return
+				end
+				lastPromptOpenAt = now
+				bundleOpenTime = tick()
+				openedByFnafPrompt = true
+				print("[ShopOpen] source=FNAFPrompt action=OPEN")
+				if currentPanel ~= "Shop" then
+					openPanel("Shop")
+				else
+					ShopPanel.Show()
+				end
+				if ShopPanel.ActivateBundleTab then
+					ShopPanel.ActivateBundleTab("fnaf_pets_bundle")
+				end
+			end)
+		end
+
+		for attempt = 1, 60 do
+			displayModel = findFnafDisplayModel(fnafFolder)
+			if displayModel then
+				promptPart = getOrCreateFixedBundleRootAnchor(fnafFolder, displayModel, FNAF_PROMPT_ANCHOR_NAME)
 			end
 			if promptPart then break end
-			task.wait(2)
-		end
-		if not promptPart then
-			promptPart = fnafFolder:FindFirstChildWhichIsA("BasePart", true)
+			task.wait(1)
 		end
 
 		if not promptPart then
-			log("[FNAFBundle] No poster BasePart -- walk-up disabled")
+			log("[FNAFBundle] No Freddy Fzber anchor -- walk-up disabled")
 			return
 		end
-		log("[FNAFBundle] Poster part found: " .. promptPart:GetFullName() .. " at " .. tostring(promptPart.Position))
 
-		local prompt: ProximityPrompt? = nil
-		for _, desc in ipairs(fnafFolder:GetDescendants()) do
-			if desc:IsA("ProximityPrompt") then
-				prompt = desc
-				break
-			end
-		end
+		prompt = findExistingBundlePrompt(fnafFolder, "FNAFBundlePrompt")
 
 		if not prompt then
 			prompt = Instance.new("ProximityPrompt")
-			prompt.Name = "FNAFBundlePrompt"
-			prompt.ActionText = "Buy"
-			prompt.KeyboardKeyCode = Enum.KeyCode.E
-			prompt.HoldDuration = 0
-			prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE
-			prompt.RequiresLineOfSight = false
-			prompt.Parent = promptPart
-			log("[FNAFBundle] Prompt parented directly to poster at " .. tostring(promptPart.Position))
+			log("[FNAFBundle] Prompt created for Freddy Fzber display anchor")
 		end
-		prompt.Name = "FNAFBundlePrompt"
-		prompt.ActionText = "Buy"
-		prompt.ObjectText = ""
-		prompt.KeyboardKeyCode = Enum.KeyCode.E
-		prompt.HoldDuration = 0
-		prompt.MaxActivationDistance = BUNDLE_OPEN_DISTANCE
-		prompt.RequiresLineOfSight = false
+		configureBundlePrompt(prompt, "FNAFBundlePrompt", "", promptPart, false, BUNDLE_OPEN_DISTANCE)
+		local removedPromptCount, removedAnchorCount = removeFnafPromptArtifacts(fnafFolder, prompt, promptPart)
+		log(string.format(
+			"[FNAFBundle] displayModel=%s anchor=%s anchorPos=%s removedPrompts=%d removedAnchors=%d",
+			displayModel:GetFullName(),
+			promptPart:GetFullName(),
+			tostring(promptPart.Position),
+			removedPromptCount,
+			removedAnchorCount
+		))
 		print(string.format("[BundleIndicator] bundle=fnaf visible=true part=%s", promptPart:GetFullName()))
+		bindFnafPrompt(prompt)
 
-		prompt.Triggered:Connect(function(playerWhoTriggered)
-			if playerWhoTriggered ~= LocalPlayer then return end
-			local now = tick()
-			if (now - lastPromptOpenAt) < promptOpenCooldown then
-				return
-			end
-			lastPromptOpenAt = now
-			bundleOpenTime = tick()
-			openedByFnafPrompt = true
-			print("[ShopOpen] source=FNAFPrompt action=OPEN")
-			if currentPanel ~= "Shop" then
-				openPanel("Shop")
-			else
-				ShopPanel.Show()
-			end
-			if ShopPanel.ActivateBundleTab then
-				ShopPanel.ActivateBundleTab("fnaf_pets_bundle")
+		task.spawn(function()
+			while true do
+				if not fnafFolder.Parent then
+					break
+				end
+
+				local nextDisplayModel = findFnafDisplayModel(fnafFolder)
+				if nextDisplayModel then
+					displayModel = nextDisplayModel
+				end
+				if displayModel and displayModel.Parent then
+					promptPart = getOrCreateFixedBundleRootAnchor(fnafFolder, displayModel, FNAF_PROMPT_ANCHOR_NAME)
+				end
+				if promptPart and promptPart.Parent then
+					if not prompt or not prompt.Parent then
+						prompt = Instance.new("ProximityPrompt")
+						configureBundlePrompt(prompt, "FNAFBundlePrompt", "", promptPart, false, BUNDLE_OPEN_DISTANCE)
+						bindFnafPrompt(prompt)
+						log("[FNAFBundle] Prompt recreated on fixed Freddy anchor")
+					else
+						configureBundlePrompt(prompt, "FNAFBundlePrompt", "", promptPart, false, BUNDLE_OPEN_DISTANCE)
+					end
+
+					local removedPromptCountLoop, removedAnchorCountLoop = removeFnafPromptArtifacts(fnafFolder, prompt, promptPart)
+					if removedPromptCountLoop > 0 or removedAnchorCountLoop > 0 then
+						log(string.format(
+							"[FNAFBundle] Reconciled anchor=%s anchorPos=%s removedPrompts=%d removedAnchors=%d",
+							promptPart:GetFullName(),
+							tostring(promptPart.Position),
+							removedPromptCountLoop,
+							removedAnchorCountLoop
+						))
+					end
+				end
+				task.wait(6)
 			end
 		end)
 
@@ -1108,13 +1341,13 @@ function UIController.Init()
 		local ContentProvider = game:GetService("ContentProvider")
 		local PRELOAD_ASSETS = {
 			UIConfig.StudTexture.AssetId,
-			"rbxassetid://71121412594159",
-			"rbxassetid://125632977173073",
-			"rbxassetid://74957106349993",
-			"rbxassetid://96348372111632",
-			"rbxassetid://140333135289717",
-			"rbxassetid://130563974863986",
-			"rbxassetid://70371140256856",
+			"rbxassetid://88626832961620",
+			"rbxassetid://73347243859743",
+			"rbxassetid://122828161526119",
+			"rbxassetid://127688852831524",
+			"rbxassetid://91925982333477",
+			"rbxassetid://91048723795171",
+			"rbxassetid://70943425376411",
 		}
 		local preloadInstances = {}
 		for _, assetId in ipairs(PRELOAD_ASSETS) do

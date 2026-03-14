@@ -72,8 +72,8 @@ local PetsPanel = {}
 
 -- Pet UI-only thumbnail overrides (bypass viewport renderer for specific pets).
 local PetThumbnailOverrides: { [string]: string } = {
-	GoldbearPlush = "rbxassetid://74636973353299",
-	FurryHugs = "rbxassetid://135200249029461",
+	GoldbearPlush = "rbxassetid://85974611929141",
+	FurryHugs = "rbxassetid://140636018152057",
 }
 
 local function getOwnedPetSet(): { [string]: boolean }
@@ -226,7 +226,7 @@ function PetsPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	do
 		local stud = canvas:FindFirstChild("StudTexture")
 		if stud then
-			stud.Image = "rbxassetid://70851348312450"
+			stud.Image = "rbxassetid://84772207963553"
 			stud.TileSize = UDim2.fromOffset(96, 96)
 			stud.ImageTransparency = 0.88
 			stud.ImageColor3 = Color3.fromRGB(255, 255, 255)

@@ -34,7 +34,7 @@ local _bundles = {
 	{
 		id           = "fnaf_pets_bundle",
 		displayName  = "Animatronic Pets",
-		coverImage   = "rbxassetid://73558749824817",
+		coverImage   = "rbxassetid://113086091854147",
 		isAvailable  = true,
 		isLimited    = false,
 		priceFateCoins = 150000,
@@ -60,7 +60,7 @@ local _bundles = {
 	{
 		id           = "brainrot_bundle",
 		displayName  = "Brainrot Bundle",
-		coverImage   = "rbxassetid://137027689618122",
+		coverImage   = "rbxassetid://99759801373492",
 		isAvailable  = true,
 		isLimited    = false,
 		priceFateCoins = 150000,
@@ -87,7 +87,7 @@ local _bundles = {
 	{
 		id           = "jjk_bundle",
 		displayName  = "JJK Bundle",
-		coverImage   = "rbxassetid://98977461567105",
+		coverImage   = "rbxassetid://83048842970610",
 		isAvailable  = false,
 		isLimited    = false,
 		priceRobux   = 1000,
@@ -99,8 +99,8 @@ local _bundles = {
 	{
 		id           = "bundle_vip",
 		displayName  = "VIP Bundle",
-		coverImage   = "",
-		isAvailable  = false,
+		coverImage   = "rbxassetid://108072096217289",
+		isAvailable  = true,
 		isLimited    = false,
 		priceRobux   = 500,
 		gamepassId   = 1745607323,

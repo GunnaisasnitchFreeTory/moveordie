@@ -91,6 +91,7 @@ function PetFollowController.Start(model: Model, owner: Player, petId: string, o
 		end
 	end)
 
+
 	local handle = {}
 	function handle:Destroy()
 		if conn then conn:Disconnect() end

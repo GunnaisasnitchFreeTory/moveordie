@@ -127,6 +127,14 @@ local function getItemDef(reward)
 	return nil
 end
 
+local function isFateCoinReward(reward): boolean
+	if type(reward) ~= "table" then
+		return false
+	end
+	local rewardType = string.upper(tostring(reward.type or ""))
+	return rewardType == "COINS" or rewardType == "FATECOINS" or rewardType == "FATE_COINS"
+end
+
 local function populateRewardCard(card, reward)
 	if not reward then return end
 
@@ -140,6 +148,10 @@ local function populateRewardCard(card, reward)
 		img.Image               = questRewardIcon
 		img.ScaleType           = Enum.ScaleType.Crop
 		img.ZIndex              = 9
+		if isFateCoinReward(reward) then
+			-- Fate Coin art includes empty padding, so crop a bit tighter in quest cards.
+			img.Size = UDim2.fromScale(1.3, 1.3)
+		end
 		img.Parent              = card
 	else
 		local itemDef   = getItemDef(reward)
@@ -658,7 +670,7 @@ local function buildPanel(parent)
 	studTex.Position          = UDim2.fromScale(0, 0)
 	studTex.Size              = UDim2.fromScale(1, 1)
 	studTex.BackgroundTransparency = 1
-	studTex.Image             = "rbxassetid://70851348312450"
+	studTex.Image             = "rbxassetid://84772207963553"
 	studTex.ImageTransparency = 0.93
 	studTex.ScaleType         = Enum.ScaleType.Tile
 	studTex.TileSize          = UDim2.fromOffset(64, 64)

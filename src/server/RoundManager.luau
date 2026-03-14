@@ -129,6 +129,17 @@ local function setMovementCountdownHudState(visible: boolean, durationSeconds: n
 	))
 end
 
+local function setReplicatedRoundPhase(phaseName: string?)
+	local matchStatus = ReplicatedStorage:FindFirstChild("MatchStatus")
+	if not matchStatus then
+		return
+	end
+	local roundPhaseValue = matchStatus:FindFirstChild("RoundPhase")
+	if roundPhaseValue and roundPhaseValue:IsA("StringValue") then
+		roundPhaseValue.Value = phaseName or ""
+	end
+end
+
 --[[
 	Get all players currently InMatch.
 ]]
@@ -675,6 +686,7 @@ local function runPhase(phaseName: string, duration: number): boolean
 	if not running then return false end
 	
 	currentPhase = phaseName
+	setReplicatedRoundPhase(phaseName)
 	log(string.format("Round %d: %s (%.2fs)", currentRound, phaseName, duration))
 	
 	return safeWait(duration)
@@ -986,6 +998,7 @@ function RoundManager.StartRoundLoop(mode: string?)
 	running = true
 	currentRound = 0
 	currentPhase = nil
+	setReplicatedRoundPhase(nil)
 	matchEndReason = nil
 	winner = nil
 	
@@ -1028,6 +1041,7 @@ function RoundManager.StartRoundLoop(mode: string?)
 		unfreezeAllPlayers(true)
 		HazardManager.Cleanup()
 		currentPhase = nil
+		setReplicatedRoundPhase(nil)
 		movementParticipationByPlayer = {}
 		setMovementCountdownHudState(false, 0, "RoundLoopEnded")
 		running = false
@@ -1042,6 +1056,8 @@ function RoundManager.StopRoundLoop()
 	
 	log("Stopping round loop...")
 	running = false
+	currentPhase = nil
+	setReplicatedRoundPhase(nil)
 	setMovementCountdownHudState(false, 0, "StopRoundLoop")
 	-- The loop will detect this and exit on next safeWait check
 end

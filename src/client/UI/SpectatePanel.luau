@@ -282,6 +282,10 @@ function SpectatePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	local content, closeBtn
 	canvas, uiScale, content, closeBtn = Components.CreatePanel(screenGui, "SPECTATE", C.HeaderSpectate, "Spectate")
 	contentFrame = content
+	local studTexture = canvas:FindFirstChild("StudTexture")
+	if studTexture then
+		studTexture:Destroy()
+	end
 
 	-- List layout for player entries
 	local list = Instance.new("UIListLayout")

@@ -56,8 +56,8 @@ local BTN_SELECTED_STROKE = Color3.fromRGB(255, 255, 255)
 local BTN_UNSELECTED_STROKE = Color3.fromRGB(60, 65, 85)
 local TEXT_COLOR = Color3.fromRGB(255, 255, 255)
 
-local NORMAL_MODE_IMAGE = "rbxassetid://140656133488408"
-local BRAINROT_MODE_IMAGE = "rbxassetid://85473787445447"
+local NORMAL_MODE_IMAGE = "rbxassetid://90452980108887"
+local BRAINROT_MODE_IMAGE = "rbxassetid://134040200136136"
 
 local updateSelection
 
@@ -148,7 +148,7 @@ local function createGui()
 	studTex.Size = UDim2.fromScale(1, 1)
 	studTex.Position = UDim2.fromScale(0, 0)
 	studTex.BackgroundTransparency = 1
-	studTex.Image = "rbxassetid://70851348312450"
+	studTex.Image = "rbxassetid://84772207963553"
 	studTex.ScaleType = Enum.ScaleType.Tile
 	studTex.TileSize = UDim2.fromOffset(96, 96)
 	studTex.ImageTransparency = 0.88

@@ -117,6 +117,20 @@ local previewRotConn: RBXScriptConnection? = nil
 local externalPreviewHost: Instance? = nil
 local panelOptions: {[string]: any}? = nil
 
+local function enlargeCardImage(card: Instance, scale: number)
+	local iconFrame = card:FindFirstChild("Icon")
+	if not iconFrame or not iconFrame:IsA("Frame") then
+		return
+	end
+	local itemImage = iconFrame:FindFirstChild("ItemImage")
+	if not itemImage or not itemImage:IsA("ImageLabel") then
+		return
+	end
+	itemImage.AnchorPoint = Vector2.new(0.5, 0.5)
+	itemImage.Position = UDim2.fromScale(0.5, 0.5)
+	itemImage.Size = UDim2.fromScale(scale, scale)
+end
+
 local function getOwnedSetFromAttribute(attributeName: string): { [string]: boolean }
 	local raw = LocalPlayer:GetAttribute(attributeName)
 	if type(raw) ~= "string" or raw == "" then
@@ -360,12 +374,6 @@ local function cloneForViewport(modelInstance: Instance): Instance
 			d:Destroy()
 		elseif d:IsA("Humanoid") or d:IsA("Animator") or d:IsA("AnimationController") then
 			d:Destroy()
-		elseif d:IsA("ParticleEmitter") then
-			d.Enabled = false
-		elseif d:IsA("Trail") then
-			d.Enabled = false
-		elseif d:IsA("Beam") then
-			d.Enabled = false
 		elseif d:IsA("BasePart") then
 			d.Anchored = true
 			d.CanCollide = false
@@ -376,6 +384,19 @@ local function cloneForViewport(modelInstance: Instance): Instance
 		clone.CanCollide = false
 	end
 	return clone
+end
+
+local function collectEffectEmitters(root: Instance)
+	local emitters = {}
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("ParticleEmitter") then
+			d.Enabled = true
+			table.insert(emitters, d)
+		elseif d:IsA("Trail") or d:IsA("Beam") or d:IsA("PointLight") or d:IsA("SpotLight") or d:IsA("SurfaceLight") then
+			d.Enabled = true
+		end
+	end
+	return emitters
 end
 
 local function getVisibleBounds(root: Instance): (Vector3, Vector3, number)
@@ -421,12 +442,12 @@ local function pivotToOrigin(root: Instance)
 	end
 end
 
-local function setupPreviewCamera(viewport: ViewportFrame, model: Instance)
+local function setupPreviewCamera(viewport: ViewportFrame, model: Instance, distanceMultiplier: number?)
 	local minB, maxB = getVisibleBounds(model)
 	local center = (minB + maxB) / 2
 	local extents = maxB - minB
 	local maxDim = math.max(extents.X, extents.Y, extents.Z, 0.1)
-	local distance = math.max(maxDim * 1.8, MIN_CAM_DIST)
+	local distance = math.max(maxDim * (distanceMultiplier or 1.8), MIN_CAM_DIST)
 	local camPos = center + Vector3.new(distance * 0.5, distance * 0.35, distance * 0.8)
 
 	local cam = Instance.new("Camera")
@@ -494,6 +515,7 @@ local function showItemPreview(itemData)
 	if not canPreviewItem(itemData) then
 		return
 	end
+
 	closeItemPreview()
 	local previewHost = bundleContainer or externalPreviewHost
 	if not previewHost then return end
@@ -501,18 +523,9 @@ local function showItemPreview(itemData)
 	local itemName = itemData.name or "unknown"
 	local modelPath = itemData.modelPath
 
-	warn(string.format("[BundlePanel:Preview] item='%s' modelPath=%s registry=%s",
-		itemName, tostring(modelPath), tostring(ItemModelRegistry ~= nil)))
-
 	local modelInstance = nil
 	if modelPath and ItemModelRegistry then
 		modelInstance = ItemModelRegistry.Get(modelPath)
-		if modelInstance then
-			warn(string.format("[BundlePanel:Preview] Resolved: class=%s name='%s' descendants=%d",
-				modelInstance.ClassName, modelInstance.Name, #modelInstance:GetDescendants()))
-		else
-			warn(string.format("[BundlePanel:Preview] Registry returned nil for '%s'", modelPath))
-		end
 	end
 
 	previewOverlay = Instance.new("Frame")
@@ -633,40 +646,49 @@ local function showItemPreview(itemData)
 				purchaseBtn.Text = "OWNED"
 				purchaseBtn.BackgroundColor3 = C.DisabledBtn
 				purchaseBtn.Active = false
+				purchaseBtn.AutoButtonColor = false
 			else
 				purchaseBtn.Text = string.format("BUY - %dK F", math.floor(panelOptions.itemCoinPrice / 1000))
 				purchaseBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 30)
 				purchaseBtn.Active = true
+				purchaseBtn.AutoButtonColor = true
 			end
 		end
-
 		refreshPurchaseState()
 		AnimUtil.WireButton(purchaseBtn, function()
-			if not purchaseBtn or not purchaseBtn.Active then return end
-			SoundUtil.Click()
+			if isOwned() then
+				refreshPurchaseState()
+				return
+			end
 			local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 			local buyRF = remotes and remotes:FindFirstChild("Shop_BuyWithCoins")
-			if not buyRF then return end
+			if not buyRF then
+				return
+			end
 			local okBuy, result = pcall(buyRF.InvokeServer, buyRF, itemData.itemId, itemData.itemType)
 			if okBuy and result and result.success then
 				refreshPurchaseState()
 				if panelOptions and panelOptions.onItemPurchased then
 					pcall(panelOptions.onItemPurchased, itemData.itemId)
 				end
+			elseif okBuy and result and result.reason == "INSUFFICIENT_COINS" then
+				local productId = tonumber(result.productId)
+				if productId and productId > 0 then
+					MarketplaceService:PromptProductPurchase(LocalPlayer, productId)
+				end
+			else
+				refreshPurchaseState()
 			end
 		end)
 	end
 
 	if not modelInstance then
-		warn("[BundlePanel:Preview] No model — showing fallback for", itemName)
 		showFallbackPreview(card, itemData)
 		return
 	end
 
 	local clone = cloneForViewport(modelInstance)
-
 	if clone:IsA("Accessory") then
-		warn("[BundlePanel:Preview] Unwrapping Accessory")
 		local wrapper = Instance.new("Model")
 		wrapper.Name = clone.Name
 		for _, child in ipairs(clone:GetChildren()) do
@@ -681,13 +703,8 @@ local function showItemPreview(itemData)
 	end
 
 	pivotToOrigin(clone)
-
 	local minB, maxB, partCount = getVisibleBounds(clone)
-	warn(string.format("[BundlePanel:Preview] Clone ready: %d visible BaseParts, bounds min=%s max=%s",
-		partCount, tostring(minB), tostring(maxB)))
-
 	if partCount == 0 then
-		warn("[BundlePanel:Preview] No visible BaseParts — showing fallback")
 		showFallbackPreview(card, itemData)
 		clone:Destroy()
 		return
@@ -701,6 +718,9 @@ local function showItemPreview(itemData)
 	vpFrame.BackgroundTransparency = 0
 	vpFrame.BorderSizePixel = 0
 	vpFrame.ZIndex = 53
+	vpFrame.Ambient = Color3.fromRGB(180, 180, 180)
+	vpFrame.LightColor = Color3.fromRGB(255, 255, 255)
+	vpFrame.LightDirection = Vector3.new(-1, -1, -1)
 	vpFrame.Parent = card
 
 	local vpCorner = Instance.new("UICorner")
@@ -709,9 +729,12 @@ local function showItemPreview(itemData)
 
 	local worldModel = Instance.new("WorldModel")
 	worldModel.Parent = vpFrame
-
 	clone.Parent = worldModel
-	setupPreviewCamera(vpFrame, clone)
+
+	local emitters = collectEffectEmitters(clone)
+	local hasEffects = #emitters > 0
+	local distanceMult = hasEffects and 2.2 or 1.8
+	setupPreviewCamera(vpFrame, clone, distanceMult)
 
 	task.spawn(function()
 		ContentProvider:PreloadAsync(clone:GetDescendants())
@@ -720,11 +743,23 @@ local function showItemPreview(itemData)
 	local center = (minB + maxB) / 2
 	local extents = maxB - minB
 	local maxDim = math.max(extents.X, extents.Y, extents.Z, 0.1)
-	local baseDist = math.max(maxDim * 1.8, MIN_CAM_DIST)
+	local baseDist = math.max(maxDim * distanceMult, MIN_CAM_DIST)
 	local angle = 0
+	local timeSinceEmit = 0
 
 	previewRotConn = RunService.RenderStepped:Connect(function(dt)
-		angle = angle + dt * 30
+		angle += dt * 30
+		if hasEffects then
+			timeSinceEmit += dt
+			if timeSinceEmit >= 0.25 then
+				timeSinceEmit = 0
+				for _, emitter in ipairs(emitters) do
+					pcall(function()
+						emitter:Emit(3)
+					end)
+				end
+			end
+		end
 		local rad = math.rad(angle)
 		local camPos = center + Vector3.new(
 			math.sin(rad) * baseDist * 0.8,
@@ -874,6 +909,9 @@ local function showDetailView()
 
 		local card = Components.CreateItemCard(gridFrame, cardData)
 		card.LayoutOrder = i
+		if bundle.id == "bundle_vip" and inc.category == "BundleRewards" and inc.itemId == "fate_coins_8000" then
+			enlargeCardImage(card, 1.22)
+		end
 
 		if canPreviewItem(cardData) then
 			-- Preview is always available regardless of ownership.

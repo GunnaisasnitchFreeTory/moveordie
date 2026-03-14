@@ -680,7 +680,6 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 	cStroke.Transparency = data.locked and 0.4 or 0.1
 	cStroke.Parent = card
 
-	addStudTexture(card, S.CardCorner)
 
 	local iconFrame = Instance.new("Frame")
 	iconFrame.Name = "Icon"
@@ -1008,7 +1007,7 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 	crateImg.Size = UDim2.new(0.78, 0, 0, 70)
 	crateImg.Position = UDim2.new(0.5, 0, 0, 12)
 	crateImg.BackgroundTransparency = 1
-	crateImg.Image = "rbxassetid://108812530080296"
+	crateImg.Image = "rbxassetid://102125624504903"
 	crateImg.ScaleType = Enum.ScaleType.Fit
 	crateImg.ImageTransparency = 0
 	crateImg.ZIndex = 2
@@ -1536,7 +1535,6 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 	cStroke.Transparency = data.locked and 0.4 or 0.1
 	cStroke.Parent = card
 
-	addStudTexture(card, S.CardCorner)
 
 	-- ── ViewportFrame for 3D model preview (no-image fallback only) ──
 	local vpFrame = Instance.new("ViewportFrame")

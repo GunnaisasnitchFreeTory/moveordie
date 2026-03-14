@@ -6,9 +6,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:FindFirstChild("Shared") or ReplicatedStorage:WaitForChild("Shared", 5)
 local ItemCatalog = if Shared then require(Shared:WaitForChild("ItemCatalog")) else nil
 
-local COIN_ICON = "rbxassetid://72345557707985"
-local CRATE_ICON = "rbxassetid://108812530080296"
-local SPIN_ICON = "rbxassetid://112640795485396"
+local COIN_ICON = "rbxassetid://81959864063463"
+local CRATE_ICON = "rbxassetid://102125624504903"
+local SPIN_ICON = "rbxassetid://134540256061817"
 
 function QuestRewardIconResolver.GetQuestRewardIcon(reward): string?
 	if type(reward) ~= "table" then

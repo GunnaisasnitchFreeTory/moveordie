@@ -274,10 +274,22 @@ local function syncReplicatedPresentationProfile()
 	local presentationProfile = Lighting:GetAttribute("BarrierPresentationProfile")
 	local revision = tonumber(Lighting:GetAttribute("BarrierPresentationRevision")) or -1
 	local stormStr = if type(stormProfile) == "string" then stormProfile else nil
-	local presentationStr = if type(presentationProfile) == "string" then presentationProfile else nil
+	local presentationStr = if type(presentationProfile) == "string" and presentationProfile ~= "" then presentationProfile else nil
 
-	if stormStr ~= lastAppliedStormProfileAttr
-		or presentationStr ~= lastAppliedPresentationProfileAttr
+	-- Keep sync comparisons aligned with applyReplicatedPresentationProfile() fallback behavior.
+	-- Without this, nil attributes can mismatch cached applied values every frame and spam logs.
+	local effectivePresentation = presentationStr or activeBarrierPresentationProfile
+	local effectiveStorm = stormStr
+	if not effectiveStorm or effectiveStorm == "" then
+		if effectivePresentation == "Brainrot" then
+			effectiveStorm = "Brainrot"
+		else
+			effectiveStorm = "Normal"
+		end
+	end
+
+	if effectiveStorm ~= lastAppliedStormProfileAttr
+		or effectivePresentation ~= lastAppliedPresentationProfileAttr
 		or revision ~= lastAppliedPresentationRevision
 	then
 		applyReplicatedPresentationProfile("RenderSync")

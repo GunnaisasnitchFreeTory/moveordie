@@ -124,6 +124,7 @@ local LOCKED_TAG_BG     = Color3.fromRGB(88, 38, 24)
 local REWARD_LABEL_TEXT = Color3.fromRGB(238, 218, 190)
 local FALLBACK_ICON_TEXT = Color3.fromRGB(255, 195, 95)
 local CLAIM_CHECK_COLOR = Color3.fromRGB(98, 255, 165)
+local FATE_COIN_IMAGE   = "rbxassetid://81959864063463"
 
 -- Per-day accent colours (orange/gold spectrum)
 local DAY_COLORS = {
@@ -428,6 +429,9 @@ local function buildDayCard(parent, dayNum)
 
 	-- Icon
 	if reward then
+		local rewardType = string.upper(tostring(reward.type or ""))
+		local isFateCoinReward = (rewardType == "COINS" or rewardType == "FATECOINS" or rewardType == "FATE_COINS")
+			and tostring(reward.icon or "") == FATE_COIN_IMAGE
 		local iconLbl
 		if reward.icon and reward.icon ~= "" then
 			iconLbl = Instance.new("ImageLabel")
@@ -455,6 +459,10 @@ local function buildDayCard(parent, dayNum)
 			-- Slightly larger icon box keeps spins artwork legible without changing card layout.
 			iconLbl.Position = UDim2.new(0.5, 0, 0.47, 0)
 			iconLbl.Size = UDim2.new(0.72, 0, 0.52, 0)
+		elseif isFateCoinReward then
+			-- Fate Coin art has extra transparent padding, so give it a larger box here.
+			iconLbl.Position = UDim2.new(0.5, 0, 0.47, 0)
+			iconLbl.Size = UDim2.new(0.82, 0, 0.58, 0)
 		end
 		iconLbl.ZIndex = 7
 		iconLbl.Parent = card
@@ -571,7 +579,7 @@ function DailyRewardsPanel.Init(screenGui, onClose)
 	do
 		local stud = canvas:FindFirstChild("StudTexture")
 		if stud then
-			stud.Image = "rbxassetid://70851348312450"
+			stud.Image = "rbxassetid://84772207963553"
 			stud.TileSize = UDim2.fromOffset(96, 96)
 			stud.ImageTransparency = 0.88
 			stud.ImageColor3 = Color3.fromRGB(255, 255, 255)
@@ -592,7 +600,7 @@ function DailyRewardsPanel.Init(screenGui, onClose)
 	bgImage.Size = UDim2.fromScale(1, 1)
 	bgImage.Position = UDim2.fromScale(0, 0)
 	bgImage.BackgroundTransparency = 1
-	bgImage.Image = "rbxassetid://140656133488408"
+	bgImage.Image = "rbxassetid://90452980108887"
 	bgImage.ImageTransparency = 0.82
 	bgImage.ScaleType = Enum.ScaleType.Crop
 	bgImage.ZIndex = 4

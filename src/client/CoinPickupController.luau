@@ -12,19 +12,24 @@
 		Init()
 ]]
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace  = game:GetService("Workspace")
+
+local SoundUtil = require(script.Parent:WaitForChild("UI"):WaitForChild("SoundUtil"))
 
 local CoinPickupController = {}
 
 local initialized = false
 
 local FOLDER_NAME     = "RoundCoins"
+local COLLECT_REMOTE_NAME = "RoundCoinCollected"
 local BOB_AMPLITUDE   = 0.4
 local BOB_SPEED       = 2.5
 local ROTATION_SPEED  = 25
 
 local activeAnimations = {}
+local collectRemoteConnected = false
 
 local function startAnimation(model)
 	if activeAnimations[model] then return end
@@ -111,11 +116,38 @@ local function watchFolder(folder)
 	folder.ChildRemoved:Connect(onModelRemoved)
 end
 
+local function connectCollectRemote()
+	if collectRemoteConnected then
+		return
+	end
+
+	local remotes = ReplicatedStorage:WaitForChild("Remotes", 15)
+	if not remotes then
+		warn("[CoinPickupController] Remotes folder not found for pickup audio")
+		return
+	end
+
+	local remote = remotes:WaitForChild(COLLECT_REMOTE_NAME, 15)
+	if not remote or not remote:IsA("RemoteEvent") then
+		warn("[CoinPickupController] Round coin collect remote missing")
+		return
+	end
+
+	collectRemoteConnected = true
+	remote.OnClientEvent:Connect(function()
+		SoundUtil.CoinCollectPrimary()
+	end)
+	print("[CoinPickupController] Connected pickup audio remote")
+end
+
 function CoinPickupController.Init()
 	if initialized then return end
 	initialized = true
+	SoundUtil.Init()
 
 	task.spawn(function()
+		connectCollectRemote()
+
 		local folder = Workspace:FindFirstChild(FOLDER_NAME)
 		if folder then
 			watchFolder(folder)

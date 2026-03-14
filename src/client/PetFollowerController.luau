@@ -611,6 +611,7 @@ local function destroyPetFor(player: Player, reason: string?)
 	end
 
 	if entry.conn then entry.conn:Disconnect() end
+	if entry.emoteThread then task.cancel(entry.emoteThread) end
 	if entry.mover and entry.mover.Destroy then
 		pcall(function() entry.mover:Destroy() end)
 	end
@@ -1044,12 +1045,29 @@ local function spawnPetFor(player: Player, petId: string)
 		end
 	end)
 
+	local emoteThread
+	if petId == "pet_tungtungsahur" then
+		emoteThread = task.spawn(function()
+			local humanoid = clone:FindFirstChildOfClass("Humanoid")
+			if not humanoid then return end
+			
+			local emotes = { "Dance", "Wave", "Cheer", "Laugh" }
+			while clone.Parent do
+				task.wait(math.random(20, 40))
+				if not clone.Parent then break end
+				local emote = emotes[math.random(1, #emotes)]
+				pcall(function() humanoid:PlayEmote(emote) end)
+			end
+		end)
+	end
+
 	_activePets[player] = {
 		pet = clone,
 		conn = followConn,
 		pos = currentPos,
 		t0 = t0,
 		mover = nil,
+		emoteThread = emoteThread,
 	}
 
 	log("spawn_done", "Pet spawned for", player.Name .. ":", petId)

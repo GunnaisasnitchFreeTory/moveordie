@@ -175,7 +175,7 @@ local function pickRandomFindableCrown(player: Player): (string, string, string,
 	local pool = getFindableCrownPool()
 	if #pool == 0 then
 		warn("[SpinWheel] Crown pool empty — using fallback crown_sparkle")
-		return "crown_sparkle", "Sparkle Crown", "Common", false, "rbxassetid://132865723131777"
+		return "crown_sparkle", "Sparkle Crown", "Common", false, "rbxassetid://137567080814300"
 	end
 
 	local IS = getInventoryService()
