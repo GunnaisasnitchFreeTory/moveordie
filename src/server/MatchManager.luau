@@ -35,6 +35,7 @@ local TungTungSahurService   = require(Server:WaitForChild("TungTungSahurService
 local ModeLightingService    = require(Server:WaitForChild("ModeLightingService"))
 local FreezePlayerProductService = require(Server:WaitForChild("FreezePlayerProductService"))
 local ForceNextModeProductService = require(Server:WaitForChild("ForceNextModeProductService"))
+local PerkMatchEffectService = require(Server:WaitForChild("PerkMatchEffectService"))
 
 local _DQS = nil
 local function getDQS()
@@ -74,6 +75,7 @@ local replicatedVoteEndTime: NumberValue = nil
 local replicatedVoteLocked: BoolValue = nil
 local replicatedVoteLockedMode: StringValue = nil
 local matchResultsEvent: RemoteEvent = nil
+local abilityActivationWarningRemote: RemoteEvent = nil
 
 -- Vote state
 local voteRemote: RemoteEvent = nil
@@ -497,6 +499,21 @@ local function teleportPlayersToLobby(players: { Player })
 	log(string.format("Returned %d players to Lobby spawn", teleported))
 end
 
+local function fireAbilityActivationWarnings(players: { Player })
+	if not abilityActivationWarningRemote then
+		return
+	end
+
+	for _, player in ipairs(players) do
+		if player and player.Parent then
+			local message = PerkMatchEffectService.GetPendingAbilityActivationMessage(player)
+			if message then
+				abilityActivationWarningRemote:FireClient(player, message)
+			end
+		end
+	end
+end
+
 function MatchManager.GetEligiblePlayers(): { Player }
 	local eligible = {}
 	
@@ -522,7 +539,7 @@ local function setEligibleToWaiting()
 	end
 end
 
-local function setWaitingToInMatch()
+local function setWaitingToInMatch(): { Player }
 	local waitingPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
 	local playersToTeleport = {}
 	
@@ -536,7 +553,7 @@ local function setWaitingToInMatch()
 	log(string.format("Moved %d players to InMatch", #playersToTeleport))
 	teleportPlayersToArena(playersToTeleport)
 	
-	return #playersToTeleport
+	return playersToTeleport
 end
 
 local function setMatchPlayersToLobby()
@@ -587,6 +604,7 @@ local function runIntermission()
 	end
 	local lastActiveCount = 0
 	local voteStarted = false
+	local abilityWarningSent = false
 
 	while tick() < phaseEndTime do
 		setEligibleToWaiting()
@@ -616,6 +634,7 @@ local function runIntermission()
 			phaseEndTime = tick() + Config.MinIntermissionFloor
 			replicatePhaseEnd(Config.MinIntermissionFloor)
 			extended = true
+			abilityWarningSent = false
 		end
 
 		if activeCount ~= lastActiveCount or extended then
@@ -628,6 +647,10 @@ local function runIntermission()
 		lastActiveCount = activeCount
 
 		local timeLeft = phaseEndTime - tick()
+		if not abilityWarningSent and timeLeft <= 5 then
+			abilityWarningSent = true
+			fireAbilityActivationWarnings(MatchManager.GetEligiblePlayers())
+		end
 		if not voteStarted and timeLeft <= Config.VoteShowAtRemaining then
 			voteStarted = true
 			startVote()
@@ -694,12 +717,13 @@ local function runPlaying()
 		applyEnvironmentForMode(currentMode)
 
 		MapManager.OnMatchStart()
-		setWaitingToInMatch()
+		local matchPlayers = setWaitingToInMatch()
+		local matchId = EliminationTracker.GetMatchId()
+		PerkMatchEffectService.ActivatePendingAbilities(matchPlayers, matchId)
 		do
 			local dqs = getDQS()
 			if dqs and dqs.OnMatchStart then
-				local participants = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
-				pcall(dqs.OnMatchStart, participants)
+				pcall(dqs.OnMatchStart, matchPlayers)
 			end
 		end
 
@@ -707,7 +731,6 @@ local function runPlaying()
 			BrainrotModeService.OnMatchStart()
 		end
 
-		local matchPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
 		EliminationTracker.Reset(matchPlayers)
 		EconomyService.ResetMatchCoins()
 
@@ -730,6 +753,7 @@ local function runPlaying()
 			BrainrotModeService.OnMatchEnd()
 		end
 
+		PerkMatchEffectService.OnMatchEnd()
 		SwordSpawnService.OnMatchEnd()
 		TungTungSahurService.OnMatchEnd()
 		MapManager.OnMatchEnd()
@@ -749,6 +773,7 @@ local function runPlaying()
 				BrainrotModeService.OnMatchEnd()
 			end
 		end)
+		pcall(function() PerkMatchEffectService.OnMatchEnd() end)
 		pcall(function() SwordSpawnService.OnMatchEnd() end)
 		pcall(function() TungTungSahurService.OnMatchEnd() end)
 		pcall(function() MapManager.OnMatchEnd() end)
@@ -779,18 +804,24 @@ local function resolveRankingsAndReward()
 	end
 	
 	local crownGrants: { [number]: string } = {}
+	local placementAwards: { [number]: number } = {}
 	
 	for _, group in ipairs(rankings) do
 		for _, entry in ipairs(group.players) do
 			if entry.player and entry.player.Parent then
+				local awardedCoins = 0
 				if group.coins > 0 then
-					EconomyService.AwardCoins(
+					local awardOk, finalAward = EconomyService.AwardCoins(
 						entry.player,
 						group.coins,
 						string.format("Match#%d Place#%d", matchId, group.placement)
 					)
-					totalAwarded = totalAwarded + group.coins
+					if awardOk then
+						awardedCoins = finalAward or 0
+						totalAwarded = totalAwarded + awardedCoins
+					end
 				end
+				placementAwards[entry.playerId] = awardedCoins
 				
 				if group.placement == 1 and PDS then
 					local lifetimeWins = (PDS.GetField(entry.player, "LifetimeWins") or 0) + 1
@@ -828,7 +859,7 @@ local function resolveRankingsAndReward()
 				table.insert(flatRankings, {
 					placement = group.placement,
 					playerName = entry.playerName,
-					coins = group.coins,
+					coins = placementAwards[entry.playerId] or 0,
 					matchCoinsCollected = entry.player and EconomyService.GetMatchCoins(entry.player) or 0,
 				})
 			end
@@ -845,7 +876,7 @@ local function resolveRankingsAndReward()
 					
 					local payload = {
 						yourPlacement = group.placement,
-						yourCoins = group.coins,
+						yourCoins = placementAwards[entry.playerId] or 0,
 						yourXP = 0,
 						matchCoinsCollected = EconomyService.GetMatchCoins(entry.player),
 						rankings = flatRankings,
@@ -996,6 +1027,16 @@ function MatchManager.Init()
 		matchResultsEvent = existing
 	end
 	log("MatchResultsEvent remote created")
+
+	local existingAbilityWarning = remotesFolder:FindFirstChild("AbilityActivationWarning")
+	if not existingAbilityWarning then
+		abilityActivationWarningRemote = Instance.new("RemoteEvent")
+		abilityActivationWarningRemote.Name = "AbilityActivationWarning"
+		abilityActivationWarningRemote.Parent = remotesFolder
+	else
+		abilityActivationWarningRemote = existingAbilityWarning
+	end
+	log("AbilityActivationWarning remote created")
 
 	local existingFW = remotesFolder:FindFirstChild("PlayFireworks")
 	if not existingFW then

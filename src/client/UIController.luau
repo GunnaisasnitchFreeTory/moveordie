@@ -122,6 +122,7 @@ local CustomSwordComingSoonPanel = safeRequire("CustomSwordComingSoonPanel")
 local NpcDialoguePanel = safeRequire("NpcDialoguePanel")
 local ToolboxDialoguePanel = safeRequire("ToolboxDialoguePanel")
 local EmoteShopPanel = safeRequire("EmoteShopPanel")
+local AbilityShopPanel = safeRequire("PerkShopPanel")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -140,6 +141,8 @@ local MATCH_LOCKED_PANELS = {
 	NpcDialogue = true,
 	ToolboxDialogue = true,
 	EmoteShop = true,
+	PerkShop = true, -- legacy alias
+	AbilityShop = true,
 }
 
 local UIController = {}
@@ -187,6 +190,8 @@ local function closeCurrentPanel()
 		ToolboxDialoguePanel.Hide()
 	elseif currentPanel == "EmoteShop" and EmoteShopPanel.IsVisible() then
 		EmoteShopPanel.Hide()
+	elseif (currentPanel == "PerkShop" or currentPanel == "AbilityShop") and AbilityShopPanel.IsVisible() then
+		AbilityShopPanel.Hide()
 	end
 	currentPanel = nil
 
@@ -242,6 +247,8 @@ local function openPanel(name: string, payload: any?)
 		ToolboxDialoguePanel.Show(payload)
 	elseif name == "EmoteShop" then
 		EmoteShopPanel.Show()
+	elseif name == "PerkShop" or name == "AbilityShop" then
+		AbilityShopPanel.Show()
 	end
 
 	HUDPanel.SetBannerOverrideHidden(true)
@@ -349,6 +356,7 @@ function UIController.Init()
 	safeInit("NpcDialoguePanel", NpcDialoguePanel.Init, panelGui, onPanelClosed)
 	safeInit("ToolboxDialoguePanel", ToolboxDialoguePanel.Init, panelGui, onPanelClosed)
 	safeInit("EmoteShopPanel", EmoteShopPanel.Init, panelGui, onPanelClosed)
+	safeInit("PerkShopPanel", AbilityShopPanel.Init, panelGui, onPanelClosed)
 	safeInit("ForceNextModePanel", ForceNextModePanel.Init, onPanelClosed)
 
 	if NpcDialoguePanel.SetResponseHandlers then
@@ -451,7 +459,8 @@ function UIController.Init()
 		end
 
 		remote.OnClientEvent:Connect(function(npcId: string, dialoguePayload)
-			if currentPanel == "EmoteShop" or EmoteShopPanel.IsVisible() then
+			if currentPanel == "EmoteShop" or EmoteShopPanel.IsVisible()
+				or currentPanel == "PerkShop" or currentPanel == "AbilityShop" or AbilityShopPanel.IsVisible() then
 				return
 			end
 
@@ -936,12 +945,34 @@ function UIController.Init()
 		return nil
 	end
 
-	local function removeDuplicateBundlePrompts(bundleRoot: Instance, keepPrompt: ProximityPrompt?)
+	local function removeDuplicateBundlePrompts(
+		bundleRoot: Instance,
+		keepPrompt: ProximityPrompt?,
+		keepAnchor: BasePart?,
+		legacyAnchorNames: { [string]: boolean }?
+	): (number, number)
+		local removedPrompts = 0
 		for _, desc in ipairs(bundleRoot:GetDescendants()) do
 			if desc:IsA("ProximityPrompt") and desc ~= keepPrompt then
 				desc:Destroy()
+				removedPrompts += 1
 			end
 		end
+
+		local removedAnchors = 0
+		if legacyAnchorNames then
+			for _, desc in ipairs(bundleRoot:GetDescendants()) do
+				if desc:IsA("BasePart")
+					and desc ~= keepAnchor
+					and legacyAnchorNames[desc.Name]
+				then
+					desc:Destroy()
+					removedAnchors += 1
+				end
+			end
+		end
+
+		return removedPrompts, removedAnchors
 	end
 
 	local function configureBundlePrompt(
@@ -1038,10 +1069,8 @@ function UIController.Init()
 	task.spawn(function()
 		local BUNDLE_OPEN_DISTANCE = 15
 		local BUNDLE_CLOSE_DISTANCE = 30
+		local BRAINROT_PROMPT_ANCHOR_NAME = "PromptAnchor_BrainrotBuy"
 		local bundleOpenTime = 0
-		local lastPromptOpenAt = 0
-		local promptOpenCooldown = 0.75
-		local openedByFnafPrompt = false
 
 		local brainrotFolder = nil
 		for attempt = 1, 300 do
@@ -1060,38 +1089,50 @@ function UIController.Init()
 		end
 
 		local displayModel = nil
-		local posterPart = nil
-		local usesBodyPartAnchor = false
+		local promptPart = nil
 		local delayedForAnchor = false
 		for attempt = 1, 300 do
 			displayModel = findBrainrotDisplayModel(brainrotFolder)
 			if displayModel then
-				posterPart, usesBodyPartAnchor = getOrCreateBundlePromptAnchor(displayModel, "BrainrotBundlePromptAnchor")
+				promptPart = getOrCreateFixedBundleRootAnchor(brainrotFolder, displayModel, BRAINROT_PROMPT_ANCHOR_NAME)
 			end
-			if posterPart then break end
+			if promptPart then break end
 			delayedForAnchor = true
 			task.wait(1)
 		end
 
-		if not posterPart then
+		if not promptPart then
 			log("[BrainrotBundle] No Dragon Cannelloni anchor -- walk-up disabled")
 			return
 		end
 		log(string.format(
-			"[BrainrotPrompt] anchorFound=%s initDelayedUntilAnchor=%s placementSource=DragonCannelloni finalY=%.2f",
-			posterPart:GetFullName(),
+			"[BrainrotPrompt] anchorFound=%s initDelayedUntilAnchor=%s placementSource=FixedTopCenter finalY=%.2f",
+			promptPart:GetFullName(),
 			tostring(delayedForAnchor),
-			posterPart.Position.Y
+			promptPart.Position.Y
 		))
 
 		local prompt = findExistingBundlePrompt(brainrotFolder, "BrainrotBundlePrompt")
 
 		if not prompt then
 			prompt = Instance.new("ProximityPrompt")
-			log("[BrainrotBundle] Prompt created for Dragon Cannelloni display anchor")
+			log("[BrainrotBundle] Prompt created for fixed Dragon Cannelloni display anchor")
 		end
-		configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", posterPart, usesBodyPartAnchor, BUNDLE_OPEN_DISTANCE)
-		removeDuplicateBundlePrompts(brainrotFolder, prompt)
+		configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", promptPart, false, BUNDLE_OPEN_DISTANCE)
+		local removedPromptCount, removedAnchorCount = removeDuplicateBundlePrompts(brainrotFolder, prompt, promptPart, {
+			PromptAnchor = true,
+			BrainrotBundlePromptAnchor = true,
+			[BRAINROT_PROMPT_ANCHOR_NAME] = true,
+		})
+		if removedPromptCount > 0 or removedAnchorCount > 0 then
+			log(string.format(
+				"[BrainrotBundle] Reconciled anchor=%s anchorPos=%s removedPrompts=%d removedAnchors=%d",
+				promptPart:GetFullName(),
+				tostring(promptPart.Position),
+				removedPromptCount,
+				removedAnchorCount
+			))
+		end
 
 		prompt.Triggered:Connect(function(playerWhoTriggered)
 			if playerWhoTriggered ~= LocalPlayer then return end
@@ -1112,12 +1153,12 @@ function UIController.Init()
 					displayModel = findBrainrotDisplayModel(brainrotFolder)
 				end
 				if displayModel and displayModel.Parent then
-					posterPart, usesBodyPartAnchor = getOrCreateBundlePromptAnchor(displayModel, "BrainrotBundlePromptAnchor")
+					promptPart = getOrCreateFixedBundleRootAnchor(brainrotFolder, displayModel, BRAINROT_PROMPT_ANCHOR_NAME)
 				end
-				if posterPart and posterPart.Parent then
+				if promptPart and promptPart.Parent then
 					if not prompt or not prompt.Parent then
 						prompt = Instance.new("ProximityPrompt")
-						configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", posterPart, usesBodyPartAnchor, BUNDLE_OPEN_DISTANCE)
+						configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", promptPart, false, BUNDLE_OPEN_DISTANCE)
 						prompt.Triggered:Connect(function(playerWhoTriggered)
 							if playerWhoTriggered ~= LocalPlayer then return end
 							bundleOpenTime = tick()
@@ -1126,11 +1167,37 @@ function UIController.Init()
 								ShopPanel.ActivateBundleTab("brainrot_bundle")
 							end
 						end)
-						removeDuplicateBundlePrompts(brainrotFolder, prompt)
-						log("[BrainrotBundle] Prompt recreated on Dragon Cannelloni anchor")
+						local removedPromptCountLoop, removedAnchorCountLoop = removeDuplicateBundlePrompts(brainrotFolder, prompt, promptPart, {
+							PromptAnchor = true,
+							BrainrotBundlePromptAnchor = true,
+							[BRAINROT_PROMPT_ANCHOR_NAME] = true,
+						})
+						if removedPromptCountLoop > 0 or removedAnchorCountLoop > 0 then
+							log(string.format(
+								"[BrainrotBundle] Reconciled anchor=%s anchorPos=%s removedPrompts=%d removedAnchors=%d",
+								promptPart:GetFullName(),
+								tostring(promptPart.Position),
+								removedPromptCountLoop,
+								removedAnchorCountLoop
+							))
+						end
+						log("[BrainrotBundle] Prompt recreated on fixed Dragon Cannelloni anchor")
 					else
-						configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", posterPart, usesBodyPartAnchor, BUNDLE_OPEN_DISTANCE)
-						removeDuplicateBundlePrompts(brainrotFolder, prompt)
+						configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", promptPart, false, BUNDLE_OPEN_DISTANCE)
+						local removedPromptCountLoop, removedAnchorCountLoop = removeDuplicateBundlePrompts(brainrotFolder, prompt, promptPart, {
+							PromptAnchor = true,
+							BrainrotBundlePromptAnchor = true,
+							[BRAINROT_PROMPT_ANCHOR_NAME] = true,
+						})
+						if removedPromptCountLoop > 0 or removedAnchorCountLoop > 0 then
+							log(string.format(
+								"[BrainrotBundle] Reconciled anchor=%s anchorPos=%s removedPrompts=%d removedAnchors=%d",
+								promptPart:GetFullName(),
+								tostring(promptPart.Position),
+								removedPromptCountLoop,
+								removedAnchorCountLoop
+							))
+						end
 					end
 				end
 				task.wait(6)
@@ -1148,7 +1215,7 @@ function UIController.Init()
 			local root = char:FindFirstChild("HumanoidRootPart")
 			if not root then return end
 
-			local dist = (root.Position - posterPart.Position).Magnitude
+			local dist = (root.Position - promptPart.Position).Magnitude
 			if dist > BUNDLE_CLOSE_DISTANCE then
 				bundleOpenTime = 0
 				closeCurrentPanel()

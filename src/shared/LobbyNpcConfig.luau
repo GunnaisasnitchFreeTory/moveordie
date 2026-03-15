@@ -27,6 +27,31 @@ local LobbyNpcConfig = {
 			priority = Enum.AnimationPriority.Action,
 		},
 	},
+	AbilitySeller = {
+		npcId = "AbilitySeller",
+		modelName = "AbilitySeller",
+		legacyModelNames = { "PerksSeller" },
+		promptName = "AbilitySellerTalkPrompt",
+		dialoguePanel = "ToolboxDialogue",
+		prompt = {
+			actionText = "Talk",
+			objectText = "",
+			keyCode = Enum.KeyCode.E,
+			holdDuration = 0,
+			maxActivationDistance = 14,
+			requiresLineOfSight = false,
+		},
+		dialogue = {
+			title = "ABILITY SELLER",
+			speaker = "Ability Seller",
+			speakerModelName = "AbilitySeller",
+			legacySpeakerModelNames = { "PerksSeller" },
+			message = "Do you want some abilities? They are hard to come by.",
+			acceptText = "Yes",
+			declineText = "No",
+			nextPanel = "AbilityShop",
+		},
+	},
 }
 
 return LobbyNpcConfig

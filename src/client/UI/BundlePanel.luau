@@ -83,6 +83,11 @@ local COIN_BUNDLE_REQUEST_IDS: { [string]: string } = {
 }
 local FNAF_BUNDLE_ID = "fnaf_pets_bundle"
 local BRAINROT_BUNDLE_ID = "brainrot_bundle"
+local VIP_BUNDLE_PREVIEW_DISABLED_ITEM_IDS: { [string]: boolean } = {
+	pet_all_knowing_eye = true,
+	crown_vip = true,
+	crown_whiteeyed = true,
+}
 local FNAF_ITEM_PRICE = 70000
 local BRAINROT_ITEM_PRICE = 75000
 local COIN_BUNDLE_BASE_COST = 150000
@@ -191,6 +196,49 @@ local function getCoinBundleState(bundle): { totalCount: number, ownedCount: num
 	}
 end
 
+local function isVipBundleOwnedForUI(context: string?): boolean
+	local persistedVip = LocalPlayer:GetAttribute("VIPBundleOwned") == true
+	local runtimeVip = LocalPlayer:GetAttribute("OwnsVIP") == true
+	local owned = _bundleOwnedLocal.bundle_vip == true or persistedVip or runtimeVip
+	print(string.format(
+		"[VIPPersistence] player=%s vipBundleUIOwned=%s context=%s persisted=%s runtime=%s",
+		LocalPlayer.Name,
+		tostring(owned),
+		tostring(context or "unknown"),
+		tostring(persistedVip),
+		tostring(runtimeVip)
+	))
+	return owned
+end
+
+local function isBundleOwned(bundle, context: string?): boolean
+	if not bundle then
+		return false
+	end
+
+	local isCoinBundle = COIN_BUNDLE_REQUEST_IDS[bundle.id] ~= nil
+	if isCoinBundle then
+		return getCoinBundleState(bundle).missingCount <= 0
+	end
+
+	if bundle.id == "bundle_vip" then
+		return isVipBundleOwnedForUI(context)
+	end
+
+	if _bundleOwnedLocal[bundle.id] == true then
+		return true
+	end
+
+	if bundle.gamepassId then
+		local okOwned, ownsPass = pcall(function()
+			return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, bundle.gamepassId)
+		end)
+		return okOwned and ownsPass == true
+	end
+
+	return false
+end
+
 local function getBundlesForPanel()
 	local bundles = BundleCatalog.GetAll()
 	if not panelOptions or not panelOptions.bundleIds then
@@ -296,13 +344,7 @@ local function selectBundle(bundleId: string)
 
 	if buyBtn then
 		local isCoinBundle = COIN_BUNDLE_REQUEST_IDS[bundle.id] ~= nil
-		local isOwned = _bundleOwnedLocal[bundle.id] == true
-		if bundle.gamepassId and not isCoinBundle then
-			local okChk, ownsChk = pcall(function()
-				return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, bundle.gamepassId)
-			end)
-			isOwned = okChk and ownsChk == true
-		end
+		local isOwned = isBundleOwned(bundle, "selectBundle")
 
 		if isOwned then
 			buyBtn.Text = "OWNED"
@@ -896,7 +938,9 @@ local function showDetailView()
 			iconText = itemData.iconText,
 			image = ItemCatalog.GetImage and ItemCatalog.GetImage(itemData) or itemData.image or "",
 			modelPath = itemData.modelPath,
-			previewMode = itemData.previewMode,
+			previewMode = (bundle.id == "bundle_vip" and VIP_BUNDLE_PREVIEW_DISABLED_ITEM_IDS[inc.itemId] == true)
+				and "none"
+				or itemData.previewMode,
 			locked = nil,
 			owned = hasPerItemCoinBuy and isOwned or nil,
 			actionText = actionText,
@@ -1123,6 +1167,15 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 		local bundle = BundleCatalog.Get(selectedBundleId)
 		if not bundle then return end
 		if not bundle.isAvailable then return end
+		if isBundleOwned(bundle, "buyClick") then
+			if bundle.id == "bundle_vip" then
+				_bundleOwnedLocal.bundle_vip = true
+			else
+				_bundleOwnedLocal[bundle.id] = true
+			end
+			selectBundle(selectedBundleId)
+			return
+		end
 		local coinRequestId = COIN_BUNDLE_REQUEST_IDS[bundle.id]
 		if coinRequestId then
 			local stateBefore = getCoinBundleState(bundle)
@@ -1153,6 +1206,25 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 				selectBundle(selectedBundleId)
 			end
 		elseif bundle.gamepassId then
+			local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+			local canPurchaseRF = remotes and remotes:FindFirstChild("CanPurchaseGamepassReward")
+			if canPurchaseRF then
+				local okCheck, gateResult = pcall(canPurchaseRF.InvokeServer, canPurchaseRF, bundle.gamepassId)
+				if okCheck and type(gateResult) == "table" and gateResult.allowed == false then
+					if bundle.id == "bundle_vip" and gateResult.alreadyOwned == true then
+						_bundleOwnedLocal.bundle_vip = true
+					end
+					warn(string.format(
+						"[VIPPurchaseGateClient] player=%s bundle=%s allowed=false reason=%s alreadyOwned=%s",
+						LocalPlayer.Name,
+						tostring(bundle.id),
+						tostring(gateResult.reason or "UNKNOWN"),
+						tostring(gateResult.alreadyOwned == true)
+					))
+					selectBundle(selectedBundleId)
+					return
+				end
+			end
 			MarketplaceService:PromptGamePassPurchase(LocalPlayer, bundle.gamepassId)
 		elseif bundle.productId then
 			MarketplaceService:PromptProductPurchase(LocalPlayer, bundle.productId)
@@ -1372,10 +1444,7 @@ function BundlePanel.PopulateInto(parent: ScrollingFrame, options)
 			local state = getCoinBundleState(bundle)
 			selectorOwned = state.missingCount <= 0
 		elseif bundle.gamepassId then
-			local okS, ownsS = pcall(function()
-				return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, bundle.gamepassId)
-			end)
-			selectorOwned = okS and ownsS == true
+			selectorOwned = isBundleOwned(bundle, "selectorEntry")
 		end
 		if selectorOwned then
 			priceLabel.Text = "OWNED"
@@ -1473,9 +1542,28 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(a, b, c)
 				return verifyRF:InvokeServer(gamepassId)
 			end)
 			if okVerify and verifyResult and verifyResult.success then
+				if selectedBundleId == "bundle_vip" then
+					_bundleOwnedLocal.bundle_vip = true
+				end
 				selectBundle(selectedBundleId)
 			end
 		end
+	end
+end)
+
+LocalPlayer:GetAttributeChangedSignal("VIPBundleOwned"):Connect(function()
+	print(string.format("[VIPPersistence] player=%s vipBundleUIOwned=%s context=attr:VIPBundleOwned",
+		LocalPlayer.Name, tostring(isVipBundleOwnedForUI("attr:VIPBundleOwned"))))
+	if bundleContainer and selectedBundleId == "bundle_vip" then
+		selectBundle(selectedBundleId)
+	end
+end)
+
+LocalPlayer:GetAttributeChangedSignal("OwnsVIP"):Connect(function()
+	print(string.format("[VIPPersistence] player=%s vipBundleUIOwned=%s context=attr:OwnsVIP",
+		LocalPlayer.Name, tostring(isVipBundleOwnedForUI("attr:OwnsVIP"))))
+	if bundleContainer and selectedBundleId == "bundle_vip" then
+		selectBundle(selectedBundleId)
 	end
 end)
 

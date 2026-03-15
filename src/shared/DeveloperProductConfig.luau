@@ -22,4 +22,18 @@ DeveloperProductConfig.ForceNextMode = {
 	productId = 3554497295,
 }
 
+DeveloperProductConfig.PerkSpeed = {
+	id = "perk_speed",
+	name = "Speed Ability",
+	robux = 5,
+	productId = 3556716610,
+}
+
+DeveloperProductConfig.PerkJump = {
+	id = "perk_jump",
+	name = "Jump Ability",
+	robux = 5,
+	productId = 3556733510,
+}
+
 return DeveloperProductConfig

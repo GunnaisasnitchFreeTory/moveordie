@@ -1,5 +1,6 @@
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
@@ -26,11 +27,23 @@ local C = UIConfig.Colors
 
 local ToolboxDialoguePanel = {}
 
-local overlay: TextButton? = nil
-local canvas: CanvasGroup? = nil
-local uiScale: UIScale? = nil
+local dialogueGui: ScreenGui? = nil
+local clickBlocker: TextButton? = nil
+local dialogueRoot: Frame? = nil
+local dialogueBackdrop: Frame? = nil
+local avatarFrame: ViewportFrame? = nil
+local nameLabel: TextLabel? = nil
+local messageLabel: TextLabel? = nil
+local yesButton: TextButton? = nil
+local noButton: TextButton? = nil
+
 local visible = false
 local closeCallback: (() -> ())? = nil
+local responseLocked = false
+local typewriterToken = 0
+local holdLogTokens: {[string]: number} = {}
+local propertyLogConnections: {RBXScriptConnection} = {}
+
 local responseHandlers = {
 	onYes = nil :: ((any) -> ())?,
 	onNo = nil :: ((any) -> ())?,
@@ -46,22 +59,67 @@ local activeDialogue = {
 	nextPanel = "EmoteShop",
 }
 
-local typewriterToken = 0
-local responseLocked = false
+local ROOT_POSITION = UDim2.new(0.5, 0, 0.76, 0)
+local ROOT_SIZE = UDim2.fromOffset(760, 184)
 
-local gradientFrame: Frame? = nil
-local avatarFrame: ViewportFrame? = nil
-local nameLabel: TextLabel? = nil
-local messageLabel: TextLabel? = nil
-local choicesFrame: Frame? = nil
-local yesButton: TextButton? = nil
-local noButton: TextButton? = nil
+local function destroyConnections()
+	for _, connection in ipairs(propertyLogConnections) do
+		connection:Disconnect()
+	end
+	table.clear(propertyLogConnections)
+end
 
-local finalGradientPos = UDim2.new(0, 0, 0.42, 0)
-local finalAvatarPos = UDim2.new(0.04, 0, 0.49, 0)
-local finalNamePos = UDim2.new(0.31, 0, 0.69, 0)
-local finalMessagePos = UDim2.new(0.31, 0, 0.76, 0)
-local finalChoicesPos = UDim2.new(0.77, 0, 0.7, 0)
+local function logRootState(eventName: string)
+	if not dialogueRoot then
+		return
+	end
+
+	local absPos = dialogueRoot.AbsolutePosition
+	local absSize = dialogueRoot.AbsoluteSize
+	print(string.format(
+		"[ToolboxDialogueRoot] event=%s position=%s size=%s absPos=(%.1f,%.1f) absSize=(%.1f,%.1f)",
+		eventName,
+		tostring(dialogueRoot.Position),
+		tostring(dialogueRoot.Size),
+		absPos.X,
+		absPos.Y,
+		absSize.X,
+		absSize.Y
+	))
+end
+
+local function connectPropertyLog(instance: GuiObject, propertyName: string, eventName: string)
+	local ok, signal = pcall(function()
+		return instance:GetPropertyChangedSignal(propertyName)
+	end)
+	if ok and signal then
+		table.insert(propertyLogConnections, signal:Connect(function()
+			logRootState(eventName)
+		end))
+	end
+end
+
+local function freezeGuiObject(guiObject: GuiObject)
+	guiObject.AutomaticSize = Enum.AutomaticSize.None
+	pcall(function()
+		guiObject.Active = false
+	end)
+	pcall(function()
+		guiObject.Selectable = false
+	end)
+	pcall(function()
+		guiObject.Draggable = false
+	end)
+end
+
+local function configureChoiceButton(button: TextButton)
+	button.AutoButtonColor = false
+	button.Modal = false
+	button.Selectable = false
+	pcall(function()
+		button.Draggable = false
+	end)
+end
 
 local function clearViewport()
 	if not avatarFrame then
@@ -140,8 +198,10 @@ local function populateViewport(modelName: string?)
 
 	local _, size = clone:GetBoundingBox()
 	local distance = math.max(size.X, size.Y, size.Z) * 1.35
+	-- Dialogue portraits use an identity-pivoted rig, so standard Roblox characters face -Z here.
+	-- Put the camera on the front side of the rig instead of +Z, which shows the back.
 	camera.CFrame = CFrame.new(
-		focusPoint + Vector3.new(distance * 0.35, size.Y * 0.08, distance),
+		focusPoint + Vector3.new(-distance * 0.12, size.Y * 0.06, -distance),
 		focusPoint
 	)
 	avatarFrame.CurrentCamera = camera
@@ -167,20 +227,207 @@ local function startTypewriter(text: string)
 	end)
 end
 
+local function setChoiceText(button: TextButton?, text: string)
+	if not button then
+		return
+	end
+
+	local visual = button:FindFirstChild("ButtonVisual")
+	local label = visual and visual:FindFirstChild("Label")
+	if label and label:IsA("TextLabel") then
+		label.Text = text
+	end
+end
+
+local function isPointerInside(button: GuiButton): boolean
+	local pointer = UserInputService:GetMouseLocation()
+	local minX = button.AbsolutePosition.X
+	local minY = button.AbsolutePosition.Y
+	local maxX = minX + button.AbsoluteSize.X
+	local maxY = minY + button.AbsoluteSize.Y
+	return pointer.X >= minX and pointer.X <= maxX and pointer.Y >= minY and pointer.Y <= maxY
+end
+
+local function stopHoldLogging(buttonName: string)
+	holdLogTokens[buttonName] = (holdLogTokens[buttonName] or 0) + 1
+end
+
+local function startHoldLogging(buttonName: string)
+	local token = (holdLogTokens[buttonName] or 0) + 1
+	holdLogTokens[buttonName] = token
+	task.spawn(function()
+		while visible and holdLogTokens[buttonName] == token do
+			logRootState(buttonName .. "_hold")
+			task.wait(0.12)
+		end
+	end)
+end
+
+local function setChoiceVisualState(button: TextButton, isHovered: boolean, isPressed: boolean?)
+	local visual = button:FindFirstChild("ButtonVisual")
+	if not visual or not visual:IsA("Frame") then
+		return
+	end
+
+	local label = visual:FindFirstChild("Label")
+	local line = visual:FindFirstChild("Line")
+	local stroke = visual:FindFirstChildOfClass("UIStroke")
+	local scale = visual:FindFirstChildOfClass("UIScale")
+
+	local targetScale = if isPressed then 0.985 elseif isHovered then 1.01 else 1
+	local targetFillTransparency = if isPressed then 0.1 elseif isHovered then 0.16 else 0.22
+	local targetStrokeTransparency = if isPressed then 0.18 elseif isHovered then 0.28 else 0.42
+	local targetTextTransparency = if isPressed or isHovered then 0 else 0.03
+	local targetLineTransparency = if isPressed or isHovered then 0.12 else 0.42
+
+	if scale then
+		AnimUtil.Tween(scale, { Scale = targetScale }, 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	end
+	AnimUtil.Tween(visual, { BackgroundTransparency = targetFillTransparency }, 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	if stroke then
+		AnimUtil.Tween(stroke, { Transparency = targetStrokeTransparency }, 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	end
+	if label and label:IsA("TextLabel") then
+		AnimUtil.Tween(label, { TextTransparency = targetTextTransparency }, 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	end
+	if line and line:IsA("Frame") then
+		AnimUtil.Tween(line, { BackgroundTransparency = targetLineTransparency }, 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	end
+end
+
+local function createChoiceSlot(parent: Instance, name: string, position: UDim2): Frame
+	local slot = Instance.new("Frame")
+	slot.Name = name
+	slot.AnchorPoint = Vector2.new(1, 0)
+	slot.Position = position
+	slot.Size = UDim2.fromOffset(136, 48)
+	slot.BackgroundTransparency = 1
+	slot.BorderSizePixel = 0
+	freezeGuiObject(slot)
+	slot.Parent = parent
+	return slot
+end
+
+local function createChoiceButton(parent: Frame, name: string, text: string): TextButton
+	local button = Instance.new("TextButton")
+	button.Name = name
+	button.Size = UDim2.fromScale(1, 1)
+	button.BackgroundTransparency = 1
+	button.BorderSizePixel = 0
+	button.Text = ""
+	button.ZIndex = 45
+	configureChoiceButton(button)
+	button.Parent = parent
+
+	local visual = Instance.new("Frame")
+	visual.Name = "ButtonVisual"
+	visual.AnchorPoint = Vector2.new(0.5, 0.5)
+	visual.Position = UDim2.fromScale(0.5, 0.5)
+	visual.Size = UDim2.new(1, -4, 1, -2)
+	visual.BackgroundColor3 = Color3.fromRGB(28, 31, 42)
+	visual.BackgroundTransparency = 0.22
+	visual.BorderSizePixel = 0
+	visual.ZIndex = 45
+	freezeGuiObject(visual)
+	visual.Parent = button
+	Instance.new("UICorner", visual).CornerRadius = UDim.new(0, 12)
+
+	local visualStroke = Instance.new("UIStroke")
+	visualStroke.Color = Color3.fromRGB(148, 156, 182)
+	visualStroke.Thickness = 1
+	visualStroke.Transparency = 0.42
+	visualStroke.Parent = visual
+
+	local visualScale = Instance.new("UIScale")
+	visualScale.Scale = 1
+	visualScale.Parent = visual
+
+	local label = Instance.new("TextLabel")
+	label.Name = "Label"
+	label.BackgroundTransparency = 1
+	label.BorderSizePixel = 0
+	label.Position = UDim2.new(0.1, 0, 0, 0)
+	label.Size = UDim2.new(0.8, 0, 1, 0)
+	label.Text = text
+	label.TextColor3 = C.TextWhite
+	label.TextTransparency = 0.03
+	label.TextSize = 28
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.FontFace = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+	label.ZIndex = 46
+	freezeGuiObject(label)
+	label.Parent = visual
+
+	local line = Instance.new("Frame")
+	line.Name = "Line"
+	line.AnchorPoint = Vector2.new(0, 1)
+	line.Position = UDim2.new(0.1, 0, 1, -7)
+	line.Size = UDim2.new(0.66, 0, 0, 2)
+	line.BackgroundColor3 = Color3.fromRGB(214, 220, 238)
+	line.BackgroundTransparency = 0.42
+	line.BorderSizePixel = 0
+	line.ZIndex = 46
+	freezeGuiObject(line)
+	line.Parent = visual
+
+	-- Fixed-slot anti-shift structure:
+	-- DialogueRoot never moves, the button slot never moves, and only ButtonVisual animates.
+	setChoiceVisualState(button, false, false)
+
+	button.MouseEnter:Connect(function()
+		logRootState(name .. "_hover")
+		setChoiceVisualState(button, true, false)
+		SoundUtil.Hover()
+	end)
+
+	button.MouseLeave:Connect(function()
+		stopHoldLogging(name)
+		logRootState(name .. "_leave")
+		setChoiceVisualState(button, false, false)
+	end)
+
+	button.MouseButton1Down:Connect(function()
+		logRootState(name .. "_down")
+		startHoldLogging(name)
+		setChoiceVisualState(button, true, true)
+	end)
+
+	button.MouseButton1Up:Connect(function()
+		stopHoldLogging(name)
+		logRootState(name .. "_up")
+		if not button:IsDescendantOf(game) then
+			return
+		end
+		setChoiceVisualState(button, isPointerInside(button), false)
+	end)
+
+	return button
+end
+
 local function applyDialogue(dialogueData, animateMessage: boolean?)
 	activeDialogue = dialogueData or activeDialogue
 
 	if nameLabel then
 		nameLabel.Text = tostring(activeDialogue.speaker or "Some Guy")
 	end
-	if yesButton then
-		yesButton.Text = tostring(activeDialogue.acceptText or "Yes")
-	end
-	if noButton then
-		noButton.Text = tostring(activeDialogue.declineText or "No")
-	end
+	setChoiceText(yesButton, tostring(activeDialogue.acceptText or "Yes"))
+	setChoiceText(noButton, tostring(activeDialogue.declineText or "No"))
 
-	populateViewport(activeDialogue.speakerModelName or activeDialogue.modelName or activeDialogue.speaker)
+	local speakerModelName = activeDialogue.speakerModelName or activeDialogue.modelName or activeDialogue.speaker
+	populateViewport(speakerModelName)
+	if avatarFrame and not avatarFrame.Visible then
+		local legacyNames = activeDialogue.legacySpeakerModelNames or activeDialogue.legacyModelNames
+		if type(legacyNames) == "table" then
+			for _, legacyName in ipairs(legacyNames) do
+				if type(legacyName) == "string" and legacyName ~= "" then
+					populateViewport(legacyName)
+					if avatarFrame.Visible then
+						break
+					end
+				end
+			end
+		end
+	end
 
 	local text = tostring(activeDialogue.message or "Do you want to buy emotes?")
 	if animateMessage and visible then
@@ -189,52 +436,6 @@ local function applyDialogue(dialogueData, animateMessage: boolean?)
 		typewriterToken += 1
 		messageLabel.Text = text
 	end
-end
-
-local function setChoiceActive(button: TextButton, isActive: boolean)
-	local line = button:FindFirstChild("Line")
-	if line and line:IsA("Frame") then
-		line.Visible = isActive
-	end
-	button.TextTransparency = if isActive then 0 else 0.08
-end
-
-local function createChoiceButton(parent: Instance, name: string, text: string): TextButton
-	local button = Instance.new("TextButton")
-	button.Name = name
-	button.BackgroundTransparency = 1
-	button.BorderSizePixel = 0
-	button.AutoButtonColor = false
-	button.Size = UDim2.new(1, 0, 0, 42)
-	button.Text = text
-	button.TextColor3 = C.TextWhite
-	button.TextSize = 28
-	button.FontFace = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-	button.TextXAlignment = Enum.TextXAlignment.Left
-	button.Parent = parent
-
-	local line = Instance.new("Frame")
-	line.Name = "Line"
-	line.AnchorPoint = Vector2.new(0, 1)
-	line.Position = UDim2.new(0, 0, 1, -2)
-	line.Size = UDim2.new(0.72, 0, 0, 2)
-	line.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	line.BorderSizePixel = 0
-	line.Visible = false
-	line.Parent = button
-
-	button.MouseEnter:Connect(function()
-		setChoiceActive(button, true)
-		AnimUtil.Tween(button, { TextSize = 30 }, 0.12, Enum.EasingStyle.Quad)
-		SoundUtil.Hover()
-	end)
-
-	button.MouseLeave:Connect(function()
-		setChoiceActive(button, false)
-		AnimUtil.Tween(button, { TextSize = 28 }, 0.12, Enum.EasingStyle.Quad)
-	end)
-
-	return button
 end
 
 local function handleResponse(kind: "Yes" | "No")
@@ -271,85 +472,139 @@ end
 function ToolboxDialoguePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	closeCallback = onClose
 
-	overlay = Instance.new("TextButton")
-	overlay.Name = "ToolboxDialogueOverlay"
-	overlay.Size = UDim2.fromScale(1, 1)
-	overlay.BackgroundTransparency = 1
-	overlay.Text = ""
-	overlay.AutoButtonColor = false
-	overlay.Visible = false
-	overlay.ZIndex = 40
-	overlay.Parent = screenGui
+	destroyConnections()
+	if dialogueGui then
+		dialogueGui:Destroy()
+		dialogueGui = nil
+	end
 
-	canvas = Instance.new("CanvasGroup")
-	canvas.Name = "ToolboxDialogueCanvas"
-	canvas.Size = UDim2.fromScale(1, 1)
-	canvas.BackgroundTransparency = 1
-	canvas.GroupTransparency = 1
-	canvas.Visible = false
-	canvas.Parent = overlay
+	local parent = screenGui.Parent
+	if not parent then
+		parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+	end
 
-	uiScale = Instance.new("UIScale")
-	uiScale.Scale = 1
-	uiScale.Parent = canvas
+	dialogueGui = Instance.new("ScreenGui")
+	dialogueGui.Name = "ToolboxDialogueGui"
+	dialogueGui.ResetOnSpawn = false
+	dialogueGui.IgnoreGuiInset = true
+	dialogueGui.DisplayOrder = 120
+	dialogueGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	dialogueGui.Enabled = false
+	dialogueGui.Parent = parent
 
-	gradientFrame = Instance.new("Frame")
-	gradientFrame.Name = "GradientFrame"
-	gradientFrame.AnchorPoint = Vector2.new(0, 0)
-	gradientFrame.Position = finalGradientPos
-	gradientFrame.Size = UDim2.new(1, 0, 0.58, 0)
-	gradientFrame.BackgroundColor3 = Color3.fromRGB(5, 8, 18)
-	gradientFrame.BackgroundTransparency = 0.04
-	gradientFrame.BorderSizePixel = 0
-	gradientFrame.ZIndex = 41
-	gradientFrame.Parent = canvas
+	clickBlocker = Instance.new("TextButton")
+	clickBlocker.Name = "ToolboxDialogueClickBlocker"
+	clickBlocker.Size = UDim2.fromScale(1, 1)
+	clickBlocker.Position = UDim2.fromScale(0, 0)
+	clickBlocker.BackgroundTransparency = 1
+	clickBlocker.BorderSizePixel = 0
+	clickBlocker.Text = ""
+	clickBlocker.AutoButtonColor = false
+	clickBlocker.Modal = false
+	clickBlocker.Selectable = false
+	clickBlocker.ZIndex = 39
+	clickBlocker.Parent = dialogueGui
 
-	local gradient = Instance.new("UIGradient")
-	gradient.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
-		ColorSequenceKeypoint.new(0.22, Color3.fromRGB(18, 24, 54)),
-		ColorSequenceKeypoint.new(0.65, Color3.fromRGB(10, 14, 30)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(4, 6, 12)),
+	dialogueRoot = Instance.new("Frame")
+	dialogueRoot.Name = "DialogueRoot"
+	dialogueRoot.AnchorPoint = Vector2.new(0.5, 0.5)
+	dialogueRoot.Position = ROOT_POSITION
+	dialogueRoot.Size = ROOT_SIZE
+	dialogueRoot.BackgroundTransparency = 1
+	dialogueRoot.BorderSizePixel = 0
+	dialogueRoot.ZIndex = 42
+	dialogueRoot.Visible = false
+	freezeGuiObject(dialogueRoot)
+	dialogueRoot.Parent = dialogueGui
+
+	local rootConstraint = Instance.new("UISizeConstraint")
+	rootConstraint.MinSize = Vector2.new(ROOT_SIZE.X.Offset, ROOT_SIZE.Y.Offset)
+	rootConstraint.MaxSize = Vector2.new(ROOT_SIZE.X.Offset, ROOT_SIZE.Y.Offset)
+	rootConstraint.Parent = dialogueRoot
+
+	dialogueBackdrop = Instance.new("Frame")
+	dialogueBackdrop.Name = "DialogueBackdrop"
+	dialogueBackdrop.Size = UDim2.fromScale(1, 1)
+	dialogueBackdrop.Position = UDim2.fromScale(0, 0)
+	dialogueBackdrop.BackgroundColor3 = Color3.fromRGB(11, 12, 18)
+	dialogueBackdrop.BackgroundTransparency = 0.28
+	dialogueBackdrop.BorderSizePixel = 0
+	dialogueBackdrop.ZIndex = 42
+	freezeGuiObject(dialogueBackdrop)
+	dialogueBackdrop.Parent = dialogueRoot
+	Instance.new("UICorner", dialogueBackdrop).CornerRadius = UDim.new(0, 22)
+
+	local backdropStroke = Instance.new("UIStroke")
+	backdropStroke.Color = Color3.fromRGB(104, 110, 132)
+	backdropStroke.Thickness = 1.2
+	backdropStroke.Transparency = 0.38
+	backdropStroke.Parent = dialogueBackdrop
+
+	local backdropGradient = Instance.new("UIGradient")
+	backdropGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 22, 30)),
+		ColorSequenceKeypoint.new(0.58, Color3.fromRGB(11, 12, 18)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 7, 11)),
 	})
-	gradient.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(0.08, 0.45),
-		NumberSequenceKeypoint.new(0.28, 0.02),
-		NumberSequenceKeypoint.new(1, 0.02),
-	})
-	gradient.Rotation = 90
-	gradient.Parent = gradientFrame
+	backdropGradient.Rotation = 90
+	backdropGradient.Parent = dialogueBackdrop
+
+	local portraitSlot = Instance.new("Frame")
+	portraitSlot.Name = "PortraitSlot"
+	portraitSlot.AnchorPoint = Vector2.new(0, 0.5)
+	portraitSlot.Position = UDim2.new(0, 24, 0.5, 0)
+	portraitSlot.Size = UDim2.fromOffset(116, 136)
+	portraitSlot.BackgroundColor3 = Color3.fromRGB(20, 22, 30)
+	portraitSlot.BackgroundTransparency = 0.24
+	portraitSlot.BorderSizePixel = 0
+	portraitSlot.ZIndex = 43
+	freezeGuiObject(portraitSlot)
+	portraitSlot.Parent = dialogueRoot
+	Instance.new("UICorner", portraitSlot).CornerRadius = UDim.new(0, 18)
+
+	local portraitStroke = Instance.new("UIStroke")
+	portraitStroke.Color = Color3.fromRGB(90, 96, 118)
+	portraitStroke.Thickness = 1
+	portraitStroke.Transparency = 0.46
+	portraitStroke.Parent = portraitSlot
 
 	avatarFrame = Instance.new("ViewportFrame")
 	avatarFrame.Name = "Avatar"
-	avatarFrame.AnchorPoint = Vector2.new(0, 0)
-	avatarFrame.Position = finalAvatarPos
-	avatarFrame.Size = UDim2.new(0.25, 0, 0.43, 0)
+	avatarFrame.Size = UDim2.fromScale(1, 1)
+	avatarFrame.Position = UDim2.fromScale(0, 0)
 	avatarFrame.BackgroundTransparency = 1
 	avatarFrame.BorderSizePixel = 0
 	avatarFrame.ZIndex = 44
-	avatarFrame.Parent = canvas
+	freezeGuiObject(avatarFrame)
+	avatarFrame.Parent = portraitSlot
 
 	nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "NameLabel"
+	nameLabel.Position = UDim2.fromOffset(156, 28)
+	nameLabel.Size = UDim2.new(1, -340, 0, 34)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.BorderSizePixel = 0
-	nameLabel.Position = finalNamePos
-	nameLabel.Size = UDim2.new(0.4, 0, 0.08, 0)
 	nameLabel.Text = ""
 	nameLabel.TextColor3 = C.TextWhite
 	nameLabel.TextSize = 34
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
 	nameLabel.FontFace = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold, Enum.FontStyle.Normal)
 	nameLabel.ZIndex = 44
-	nameLabel.Parent = canvas
+	freezeGuiObject(nameLabel)
+	nameLabel.Parent = dialogueRoot
+
+	local nameStroke = Instance.new("UIStroke")
+	nameStroke.Color = Color3.fromRGB(0, 0, 0)
+	nameStroke.Thickness = 1
+	nameStroke.Transparency = 0.52
+	nameStroke.Parent = nameLabel
 
 	messageLabel = Instance.new("TextLabel")
 	messageLabel.Name = "MessageLabel"
+	messageLabel.Position = UDim2.fromOffset(156, 70)
+	messageLabel.Size = UDim2.new(1, -340, 0, 82)
 	messageLabel.BackgroundTransparency = 1
 	messageLabel.BorderSizePixel = 0
-	messageLabel.Position = finalMessagePos
-	messageLabel.Size = UDim2.new(0.44, 0, 0.19, 0)
 	messageLabel.Text = ""
 	messageLabel.TextColor3 = Color3.fromRGB(244, 246, 255)
 	messageLabel.TextSize = 24
@@ -358,42 +613,41 @@ function ToolboxDialoguePanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	messageLabel.TextYAlignment = Enum.TextYAlignment.Top
 	messageLabel.FontFace = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
 	messageLabel.ZIndex = 44
-	messageLabel.Parent = canvas
+	freezeGuiObject(messageLabel)
+	messageLabel.Parent = dialogueRoot
 
-	choicesFrame = Instance.new("Frame")
-	choicesFrame.Name = "Choices"
-	choicesFrame.BackgroundTransparency = 1
-	choicesFrame.BorderSizePixel = 0
-	choicesFrame.Position = finalChoicesPos
-	choicesFrame.Size = UDim2.new(0.2, 0, 0.18, 0)
-	choicesFrame.ZIndex = 44
-	choicesFrame.Parent = canvas
+	local messageStroke = Instance.new("UIStroke")
+	messageStroke.Color = Color3.fromRGB(0, 0, 0)
+	messageStroke.Thickness = 1
+	messageStroke.Transparency = 0.68
+	messageStroke.Parent = messageLabel
 
-	local choiceLayout = Instance.new("UIListLayout")
-	choiceLayout.FillDirection = Enum.FillDirection.Vertical
-	choiceLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-	choiceLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-	choiceLayout.Padding = UDim.new(0, 8)
-	choiceLayout.Parent = choicesFrame
+	local noSlot = createChoiceSlot(dialogueRoot, "NoButtonSlot", UDim2.new(1, -24, 0, 40))
+	local yesSlot = createChoiceSlot(dialogueRoot, "YesButtonSlot", UDim2.new(1, -24, 0, 96))
 
-	yesButton = createChoiceButton(choicesFrame, "YesButton", "Yes")
-	noButton = createChoiceButton(choicesFrame, "NoButton", "No")
+	noButton = createChoiceButton(noSlot, "NoButton", "No")
+	yesButton = createChoiceButton(yesSlot, "YesButton", "Yes")
 
-	yesButton.LayoutOrder = 1
-	noButton.LayoutOrder = 2
-
-	AnimUtil.WireButton(yesButton, function()
-		handleResponse("Yes")
-	end)
-	AnimUtil.WireButton(noButton, function()
+	noButton.MouseButton1Click:Connect(function()
+		SoundUtil.Click()
 		handleResponse("No")
 	end)
+
+	yesButton.MouseButton1Click:Connect(function()
+		SoundUtil.Click()
+		handleResponse("Yes")
+	end)
+
+	connectPropertyLog(dialogueRoot, "Position", "root_position_changed")
+	connectPropertyLog(dialogueRoot, "Size", "root_size_changed")
+	connectPropertyLog(dialogueRoot, "AbsolutePosition", "root_absolute_position_changed")
+	connectPropertyLog(dialogueRoot, "AbsoluteSize", "root_absolute_size_changed")
 
 	applyDialogue(activeDialogue, false)
 end
 
 function ToolboxDialoguePanel.Show(dialogueData)
-	if not overlay or not canvas or not uiScale or not gradientFrame or not avatarFrame or not nameLabel or not messageLabel or not choicesFrame then
+	if not dialogueGui or not dialogueRoot or not avatarFrame or not nameLabel or not messageLabel or not yesButton or not noButton then
 		return
 	end
 	if visible then
@@ -410,56 +664,28 @@ function ToolboxDialoguePanel.Show(dialogueData)
 	responseLocked = false
 	typewriterToken += 1
 	visible = true
-	overlay.Visible = true
-	canvas.Visible = true
-	canvas.GroupTransparency = 1
-	uiScale.Scale = 1.02
+	dialogueGui.Enabled = true
+	dialogueRoot.Visible = true
 
-	gradientFrame.Position = finalGradientPos + UDim2.new(0, 0, 0.08, 0)
-	avatarFrame.Position = finalAvatarPos + UDim2.new(0, 0, 0.08, 0)
-	nameLabel.Position = finalNamePos + UDim2.new(0, 0, 0.04, 0)
-	messageLabel.Position = finalMessagePos + UDim2.new(0, 0, 0.04, 0)
-	choicesFrame.Position = finalChoicesPos + UDim2.new(0.05, 0, 0, 0)
-
+	logRootState("show")
 	SoundUtil.Open()
-	AnimUtil.Tween(canvas, { GroupTransparency = 0 }, 0.22, Enum.EasingStyle.Quad)
-	AnimUtil.Tween(uiScale, { Scale = 1 }, 0.22, Enum.EasingStyle.Quad)
-	AnimUtil.Tween(gradientFrame, { Position = finalGradientPos }, 0.32, Enum.EasingStyle.Quint)
-	AnimUtil.Tween(avatarFrame, { Position = finalAvatarPos }, 0.32, Enum.EasingStyle.Quint)
-	AnimUtil.Tween(nameLabel, { Position = finalNamePos }, 0.28, Enum.EasingStyle.Quad)
-	AnimUtil.Tween(messageLabel, { Position = finalMessagePos }, 0.32, Enum.EasingStyle.Quad)
-	AnimUtil.Tween(choicesFrame, { Position = finalChoicesPos }, 0.28, Enum.EasingStyle.Quint)
-
 	startTypewriter(tostring(activeDialogue.message or "Do you want to buy emotes?"))
 end
 
 function ToolboxDialoguePanel.Hide()
-	if not overlay or not canvas or not uiScale or not gradientFrame or not avatarFrame or not nameLabel or not messageLabel or not choicesFrame or not visible then
+	if not dialogueGui or not dialogueRoot or not visible then
 		return
 	end
 
 	visible = false
 	responseLocked = false
 	typewriterToken += 1
+	stopHoldLogging("NoButton")
+	stopHoldLogging("YesButton")
+	logRootState("hide")
 
-	AnimUtil.Tween(gradientFrame, { Position = finalGradientPos + UDim2.new(0, 0, 0.08, 0) }, 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-	AnimUtil.Tween(avatarFrame, { Position = finalAvatarPos + UDim2.new(0, 0, 0.08, 0) }, 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-	AnimUtil.Tween(nameLabel, { Position = finalNamePos + UDim2.new(0, 0, 0.04, 0) }, 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-	AnimUtil.Tween(messageLabel, { Position = finalMessagePos + UDim2.new(0, 0, 0.04, 0) }, 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-	AnimUtil.Tween(choicesFrame, { Position = finalChoicesPos + UDim2.new(0.05, 0, 0, 0) }, 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-
-	local tween = AnimUtil.Tween(canvas, { GroupTransparency = 1 }, 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-	AnimUtil.Tween(uiScale, { Scale = 1.02 }, 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-
-	task.spawn(function()
-		tween.Completed:Wait()
-		if canvas then
-			canvas.Visible = false
-		end
-		if overlay then
-			overlay.Visible = false
-		end
-	end)
+	dialogueRoot.Visible = false
+	dialogueGui.Enabled = false
 
 	if closeCallback then
 		closeCallback()

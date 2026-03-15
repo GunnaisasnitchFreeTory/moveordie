@@ -296,13 +296,13 @@ local function spawnBrainrot(petId: string)
 			local coinsAwarded = 0
 
 			if alreadyOwned then
-				coinsAwarded = COINS_DUPLICATE
-				EconomyService.AwardCoins(player, COINS_DUPLICATE, "BrainrotDuplicate:" .. petId)
+				local _, finalAmount = EconomyService.AwardCoins(player, COINS_DUPLICATE, "BrainrotDuplicate:" .. petId)
+				coinsAwarded = finalAmount or COINS_DUPLICATE
 				log(string.format("%s collected DUPLICATE %s → +%d coins", player.Name, petDef.name, COINS_DUPLICATE))
 			else
 				InventoryService.GrantItem(player, "Pets", petId)
-				coinsAwarded = COINS_NEW_PET
-				EconomyService.AwardCoins(player, COINS_NEW_PET, "BrainrotNew:" .. petId)
+				local _, finalAmount = EconomyService.AwardCoins(player, COINS_NEW_PET, "BrainrotNew:" .. petId)
+				coinsAwarded = finalAmount or COINS_NEW_PET
 				log(string.format("%s collected NEW %s → pet + %d coins", player.Name, petDef.name, COINS_NEW_PET))
 			end
 

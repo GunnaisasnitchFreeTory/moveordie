@@ -282,6 +282,53 @@ UIConfig.MockPremiumItems = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════
+-- EMOTE SHOP DATA
+-- ═══════════════════════════════════════════════════════════════════
+
+UIConfig.MockEmotes = {
+	{
+		id = "emote_ohokay",
+		name = "OhOkay",
+		icon = "rbxassetid://82446752657666",
+		animationId = "rbxassetid://95002623174326",
+		robux = 99,
+		gamepassId = 0,
+		rarity = "Epic",
+		tag = "NEW",
+	},
+	{
+		id = "emote_thriller",
+		name = "Thriller",
+		icon = "rbxassetid://132109014028048",
+		animationId = "rbxassetid://97851453678589",
+		robux = 99,
+		gamepassId = 0,
+		rarity = "Epic",
+		tag = "NEW",
+	},
+	{
+		id = "emote_snooop",
+		name = "Snooop",
+		icon = "rbxassetid://138990505658998",
+		animationId = "rbxassetid://95938841150793",
+		robux = 99,
+		gamepassId = 0,
+		rarity = "Epic",
+		tag = "NEW",
+	},
+	{
+		id = "emote_wiggle_maneuver",
+		name = "Wiggle Maneuver",
+		icon = "rbxassetid://107097321791950",
+		animationId = "rbxassetid://81876049203957",
+		robux = 99,
+		gamepassId = 0,
+		rarity = "Epic",
+		tag = "NEW",
+	},
+}
+
+-- ═══════════════════════════════════════════════════════════════════
 -- MOCK DATA — CRATES  (actual items from Workspace folders)
 -- ═══════════════════════════════════════════════════════════════════
 

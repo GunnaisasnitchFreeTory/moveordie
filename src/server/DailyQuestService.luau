@@ -587,8 +587,11 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 	if reward.type == "Coins" then
 		local eco = getEconomy()
 		if eco then
-			local ok = eco.AwardCoins(player, reward.amount, "DailyQuest_" .. questId, true)
+			local ok, actualAmount = eco.AwardRewardCoins(player, reward.amount, "DailyQuest_" .. questId)
 			granted = ok == true
+			if granted then
+				extra.actualAmount = actualAmount or reward.amount
+			end
 			if not granted then
 				failReason = "COIN_GRANT_FAILED"
 			end
@@ -737,6 +740,12 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 	log(string.format("%s claimed %s (reward: %s)",
 		player.Name, questId, DailyQuestConfig.GetRewardLabel(reward)))
 	log(string.format("[DailyQuestGrant] player=%s result=SUCCESS", player.Name))
+
+	if reward.type == "Coins" and type(extra.actualAmount) == "number" then
+		local rewardPayload = table.clone(reward)
+		rewardPayload.amount = extra.actualAmount
+		reward = rewardPayload
+	end
 
 	return { success = true, reward = reward, extra = extra }
 end

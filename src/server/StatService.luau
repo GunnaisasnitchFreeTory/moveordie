@@ -16,6 +16,8 @@
 		GetCoinMultiplier(player)  → number
 		SetWalkSpeedOverride(player, key, value)
 		ClearWalkSpeedOverride(player, key)
+		SetTemporaryMovementBonus(player, key, bonus)
+		ClearTemporaryMovementBonus(player, key)
 		OnPlayerRemoving(player)
 ]]
 
@@ -63,9 +65,12 @@ local BASE_STATS = {
 	JumpPower      = 50,
 	CoinMultiplier = 1.0,
 }
+local VIP_COIN_MULTIPLIER = 1.5
 
 local coinMultiplierCache: { [number]: number } = {}
 local walkSpeedOverridesByUserId: { [number]: { [string]: number } } = {}
+local temporaryMovementBonusesByUserId: { [number]: { [string]: { WalkSpeed: number?, JumpPower: number? } } } = {}
+local vipOwnershipChecksInFlight: { [number]: boolean } = {}
 
 local function getItemStats(catalogCategory: string, itemId: string?): { [string]: number }?
 	if not itemId or itemId == "" then return nil end
@@ -94,6 +99,24 @@ local function getEffectiveWalkSpeed(baseWalkSpeed: number, userId: number): num
 		end
 	end
 	return hasAny and best or baseWalkSpeed
+end
+
+local function getTemporaryMovementBonusTotals(userId: number): (number, number)
+	local bonuses = temporaryMovementBonusesByUserId[userId]
+	if not bonuses then
+		return 0, 0
+	end
+
+	local walkSpeedBonus = 0
+	local jumpPowerBonus = 0
+	for _, bonus in pairs(bonuses) do
+		if type(bonus) == "table" then
+			walkSpeedBonus += tonumber(bonus.WalkSpeed) or 0
+			jumpPowerBonus += tonumber(bonus.JumpPower) or 0
+		end
+	end
+
+	return walkSpeedBonus, jumpPowerBonus
 end
 
 local function isMovementTemporarilyLocked(player: Player, humanoid: Humanoid): boolean
@@ -125,26 +148,95 @@ local function getVipBundleGamepassId(): number?
 end
 
 local function checkVipOwnership(player: Player)
-	local gamepassId = getVipBundleGamepassId()
-	if not player or not player.Parent or not gamepassId or gamepassId <= 0 then
+	StatService.RefreshVipOwnership(player, "PlayerAdded")
+end
+
+local function getPersistedVipBundleOwned(player: Player, data: { [string]: any }?): boolean
+	if player:GetAttribute("VIPBundleOwned") == true then
+		return true
+	end
+
+	local resolvedData = data or PlayerDataService.GetData(player)
+	return resolvedData ~= nil and resolvedData.VIPBundleOwned == true
+end
+
+local function getEffectiveVipOwned(player: Player, data: { [string]: any }?): boolean
+	return (player:GetAttribute("OwnsVIP") == true) or getPersistedVipBundleOwned(player, data)
+end
+
+function StatService.HasVipEntitlement(player: Player, data: { [string]: any }?): boolean
+	if not player then
+		return false
+	end
+
+	return getEffectiveVipOwned(player, data)
+end
+
+function StatService.SetVipOwnership(player: Player, ownsVip: boolean, source: string?)
+	if not player or not player.Parent then
 		return
 	end
 
+	local normalizedOwnsVip = ownsVip == true
+	local data = PlayerDataService.GetData(player)
+	local persistedBefore = getPersistedVipBundleOwned(player, data)
+
+	if normalizedOwnsVip then
+		player:SetAttribute("VIPBundleOwned", true)
+		if PlayerDataService.IsLoaded(player) and data and data.VIPBundleOwned ~= true then
+			PlayerDataService.SetField(player, "VIPBundleOwned", true)
+		end
+	end
+
+	local effectiveVipOwned = normalizedOwnsVip or getPersistedVipBundleOwned(player, data)
+	player:SetAttribute("OwnsVIP", effectiveVipOwned)
+	log(string.format(
+		"VIP entitlement sync player=%s source=%s marketVip=%s persistedBefore=%s persistedAfter=%s effectiveVip=%s dataLoaded=%s",
+		player.Name,
+		tostring(source or "unknown"),
+		tostring(normalizedOwnsVip),
+		tostring(persistedBefore),
+		tostring(getPersistedVipBundleOwned(player, data)),
+		tostring(effectiveVipOwned),
+		tostring(PlayerDataService.IsLoaded(player))
+	))
+
+	if PlayerDataService.IsLoaded(player) then
+		StatService.RecalculateStats(player)
+	end
+end
+
+function StatService.RefreshVipOwnership(player: Player, source: string?): boolean
+	local gamepassId = getVipBundleGamepassId()
+	if not player or not player.Parent or not gamepassId or gamepassId <= 0 then
+		return false
+	end
+
+	if vipOwnershipChecksInFlight[player.UserId] then
+		return false
+	end
+
+	vipOwnershipChecksInFlight[player.UserId] = true
 	task.spawn(function()
 		local success, hasPass = pcall(function()
 			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
 		end)
+		vipOwnershipChecksInFlight[player.UserId] = nil
+
+		if not player or not player.Parent then
+			return
+		end
 
 		if success then
-			player:SetAttribute("OwnsVIP", hasPass == true)
-			if hasPass then
-				StatService.RecalculateStats(player)
-				log(string.format("VIP verified for %s", player.Name))
-			end
+			StatService.SetVipOwnership(player, hasPass == true, source or "RefreshVipOwnership")
+			log(string.format("VIP verification player=%s source=%s vip=%s",
+				player.Name, tostring(source or "RefreshVipOwnership"), tostring(hasPass == true)))
 		else
 			warn(string.format("[StatService] VIP check failed for %s: %s", player.Name, tostring(hasPass)))
 		end
 	end)
+
+	return true
 end
 
 function StatService.Init()
@@ -184,12 +276,22 @@ function StatService.RecalculateStats(player: Player)
 		coinMult  *= (crownStats.CoinMultiplier or 1)
 	end
 
-	local vipOwned = player:GetAttribute("OwnsVIP")
+	local vipPersisted = getPersistedVipBundleOwned(player, data)
+	local vipOwned = getEffectiveVipOwned(player, data)
+	if vipOwned and data.VIPBundleOwned ~= true then
+		PlayerDataService.SetField(player, "VIPBundleOwned", true)
+		vipPersisted = true
+	end
+	player:SetAttribute("VIPBundleOwned", vipPersisted)
+	player:SetAttribute("OwnsVIP", vipOwned)
 	if vipOwned then
-		coinMult = coinMult * 1.5
+		coinMult = coinMult * VIP_COIN_MULTIPLIER
 	end
 
 	walkSpeed = getEffectiveWalkSpeed(walkSpeed, player.UserId)
+	local walkSpeedBonus, jumpPowerBonus = getTemporaryMovementBonusTotals(player.UserId)
+	walkSpeed += walkSpeedBonus
+	jumpPower += jumpPowerBonus
 
 	coinMultiplierCache[player.UserId] = coinMult
 	player:SetAttribute("CoinMultiplier", coinMult)
@@ -207,8 +309,12 @@ function StatService.RecalculateStats(player: Player)
 		end
 	end
 
-	log(string.format("%s stats: WalkSpeed=%.1f JumpPower=%.1f CoinMult=%.2fx (VIP=%s)",
-		player.Name, walkSpeed, jumpPower, coinMult, tostring(vipOwned)))
+	log(string.format("%s stats: WalkSpeed=%.1f JumpPower=%.1f CoinMult=%.2fx (VIP=%s persistedVIP=%s)",
+		player.Name, walkSpeed, jumpPower, coinMult, tostring(vipOwned), tostring(vipPersisted)))
+	if vipPersisted or vipOwned then
+		warn(string.format("[VIPPersistence] player=%s vipBundleOwned=%s loaded=%s multiplier=%.2f",
+			player.Name, tostring(vipPersisted), tostring(PlayerDataService.IsLoaded(player)), coinMult))
+	end
 end
 
 function StatService.SetWalkSpeedOverride(player: Player, key: string, value: number)
@@ -243,13 +349,70 @@ function StatService.ClearWalkSpeedOverride(player: Player, key: string)
 	StatService.RecalculateStats(player)
 end
 
+function StatService.SetTemporaryMovementBonus(player: Player, key: string, bonus: { WalkSpeed: number?, JumpPower: number? })
+	if type(key) ~= "string" or key == "" or type(bonus) ~= "table" then
+		return
+	end
+
+	local walkSpeed = tonumber(bonus.WalkSpeed)
+	local jumpPower = tonumber(bonus.JumpPower)
+	if walkSpeed == nil and jumpPower == nil then
+		return
+	end
+
+	local userId = player.UserId
+	local bonuses = temporaryMovementBonusesByUserId[userId]
+	if not bonuses then
+		bonuses = {}
+		temporaryMovementBonusesByUserId[userId] = bonuses
+	end
+
+	bonuses[key] = {
+		WalkSpeed = walkSpeed,
+		JumpPower = jumpPower,
+	}
+
+	log(string.format(
+		"%s temporary movement bonus set key=%s walk=%.1f jump=%.1f",
+		player.Name,
+		key,
+		walkSpeed or 0,
+		jumpPower or 0
+	))
+	StatService.RecalculateStats(player)
+end
+
+function StatService.ClearTemporaryMovementBonus(player: Player, key: string)
+	if type(key) ~= "string" or key == "" then
+		return
+	end
+
+	local userId = player.UserId
+	local bonuses = temporaryMovementBonusesByUserId[userId]
+	if not bonuses then
+		return
+	end
+
+	bonuses[key] = nil
+	if next(bonuses) == nil then
+		temporaryMovementBonusesByUserId[userId] = nil
+	end
+
+	log(string.format("%s temporary movement bonus cleared key=%s", player.Name, key))
+	StatService.RecalculateStats(player)
+end
+
 function StatService.GetCoinMultiplier(player: Player): number
-	return coinMultiplierCache[player.UserId] or BASE_STATS.CoinMultiplier
+	return coinMultiplierCache[player.UserId]
+		or tonumber(player:GetAttribute("CoinMultiplier"))
+		or BASE_STATS.CoinMultiplier
 end
 
 function StatService.OnPlayerRemoving(player: Player)
 	coinMultiplierCache[player.UserId] = nil
 	walkSpeedOverridesByUserId[player.UserId] = nil
+	temporaryMovementBonusesByUserId[player.UserId] = nil
+	vipOwnershipChecksInFlight[player.UserId] = nil
 end
 
 return StatService

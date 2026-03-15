@@ -10,8 +10,8 @@
 	Uses PlayerDataService for persistence, EconomyService for coins,
 	InventoryService for crown grants, CrateService for crate openings.
 
-	Coin rewards use skipMultiplier=true so players receive the exact
-	configured amount (no pet/crown multiplier applied).
+	Coin rewards are granted through EconomyService so VIP and other
+	server-authoritative Fate Coin multipliers apply consistently.
 ]]
 
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -153,12 +153,13 @@ function DailyRewardService.Claim(player)
 	if rewardDef.type == "Coins" then
 		local eco = getEconomy()
 		if eco then
-			local ok, actualAmount = eco.AwardCoins(player, rewardDef.amount, "DailyReward_Day" .. streak, true)
+			local ok, actualAmount = eco.AwardRewardCoins(player, rewardDef.amount, "DailyReward_Day" .. streak)
 			if not ok then
 				_claimLock[userId] = nil
 				return { success = false, reason = "Coin grant failed" }
 			end
 			grantResult.amount = actualAmount or rewardDef.amount
+			grantResult.label = string.format("%d Coins", grantResult.amount)
 		else
 			_claimLock[userId] = nil
 			return { success = false, reason = "Economy unavailable" }

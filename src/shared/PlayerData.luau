@@ -8,11 +8,12 @@
 	  1 -- Initial: Coins, Owned/Equipped pets/crowns/icons, LifetimeWins
 	  2 -- Added: LifetimeCoinsAchieved, WeeklyWins, WeeklyCoinsAchieved, WeeklyResetId
 	  3 -- Added: LifetimeDeaths, TimePlayedSeconds
+	  6 -- Added: VIPBundleOwned persistent ability flag
 ]]
 
 local PlayerData = {}
 
-PlayerData.VERSION = 5
+PlayerData.VERSION = 6
 
 -- DataStore key — Studio uses a separate namespace to prevent leaking test data into production
 local RunService = game:GetService("RunService")
@@ -31,6 +32,7 @@ PlayerData.Attributes = {
 	OwnedIconImages       = "OwnedIconImages",
 	EquippedIconImage     = "EquippedIconImage",
 	OwnedCrates           = "OwnedCrates",
+	VIPBundleOwned        = "VIPBundleOwned",
 	LifetimeWins          = "LifetimeWins",
 	CoinMultiplier        = "CoinMultiplier",
 	LifetimeCoinsAchieved = "LifetimeCoinsAchieved",
@@ -62,6 +64,7 @@ function PlayerData.GetDefaults(): { [string]: any }
 		OwnedIconImages       = {},
 		EquippedIconImage     = nil,
 		OwnedCrates           = {},
+		VIPBundleOwned        = false,
 		LifetimeWins          = 0,
 		LifetimeCoinsAchieved = 0,
 		WeeklyWins            = 0,
@@ -95,6 +98,7 @@ function PlayerData.Validate(data: { [string]: any }): { [string]: any }
 	if type(data.OwnedIcons) ~= "table" then data.OwnedIcons = defaults.OwnedIcons end
 	if type(data.OwnedIconImages) ~= "table" then data.OwnedIconImages = defaults.OwnedIconImages end
 	if type(data.OwnedCrates) ~= "table" then data.OwnedCrates = defaults.OwnedCrates end
+	if type(data.VIPBundleOwned) ~= "boolean" then data.VIPBundleOwned = false end
 	if type(data.LifetimeWins) ~= "number" then data.LifetimeWins = 0 end
 	if type(data.LifetimeCoinsAchieved) ~= "number" then data.LifetimeCoinsAchieved = 0 end
 	if type(data.WeeklyWins) ~= "number" then data.WeeklyWins = 0 end

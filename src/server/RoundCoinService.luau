@@ -248,8 +248,10 @@ local function spawnCoin(coinName: string)
 			clone:SetAttribute("Collected", true)
 
 			local coinValue = clone:GetAttribute("CoinValue") or def.value
-			local awardOk = EconomyService.AwardCoins(player, coinValue, "RoundCoin:" .. coinName)
-			EconomyService.TrackMatchCoins(player, coinValue)
+			local awardOk, awardedAmount = EconomyService.AwardCoins(player, coinValue, "RoundCoin:" .. coinName)
+			EconomyService.TrackMatchCoins(player, awardedAmount or 0)
+			log(string.format("%s collected %s -> base=%d final=%d coins",
+				player.Name, coinName, coinValue, awardedAmount or 0))
 			log(string.format("%s collected %s → +%d coins", player.Name, coinName, coinValue))
 
 			if awardOk then
@@ -257,7 +259,8 @@ local function spawnCoin(coinName: string)
 				if remote then
 					remote:FireClient(player, {
 						coinType = coinName,
-						coinValue = coinValue,
+						baseCoinValue = coinValue,
+						coinValue = awardedAmount or coinValue,
 					})
 				end
 			end

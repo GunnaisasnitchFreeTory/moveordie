@@ -215,8 +215,8 @@ local function buildPanel(parent: Instance)
 
 	local subtitle = Instance.new("TextLabel")
 	subtitle.AnchorPoint = Vector2.new(0.5, 0)
-	subtitle.Position = UDim2.new(0.5, 0, 0, 70)
-	subtitle.Size = UDim2.new(1, -40, 0, 20)
+	subtitle.Position = UDim2.new(0.5, 0, 0, 56)
+	subtitle.Size = UDim2.new(1, -40, 0, 18)
 	subtitle.BackgroundTransparency = 1
 	subtitle.Font = Enum.Font.GothamSemibold
 	subtitle.Text = "Sword customization will be available here soon."

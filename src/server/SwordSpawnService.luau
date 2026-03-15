@@ -74,6 +74,20 @@ local function getDQS()
 	return _DQS
 end
 
+local _PerkMatchEffectService = nil
+local function getPerkMatchEffectService()
+	if _PerkMatchEffectService ~= nil then
+		return _PerkMatchEffectService
+	end
+	local ok, mod = pcall(require, Server:FindFirstChild("PerkMatchEffectService"))
+	if ok and mod then
+		_PerkMatchEffectService = mod
+	else
+		_PerkMatchEffectService = false
+	end
+	return _PerkMatchEffectService
+end
+
 local SwordSpawnService = {}
 
 local initialized = false
@@ -258,6 +272,10 @@ local function removeSwordFromPlayer(player: Player)
 
 	swordHolders[player] = nil
 	StatService.ClearWalkSpeedOverride(player, SWORD_WALKSPEED_OVERRIDE_KEY)
+	local perkService = getPerkMatchEffectService()
+	if perkService and type(perkService.OnSwordStateChanged) == "function" then
+		pcall(perkService.OnSwordStateChanged, player, false, "SwordRemoved")
+	end
 	scheduleWalkSpeedRestore(player, "SwordRemoved")
 	log(string.format(
 		"[SwordMoveGuard] player=%s swordRemoved=true walkSpeedOverrideCleared=true",
@@ -296,8 +314,10 @@ end
 
 local function onSwordKill(killer: Player, victim: Player)
 	log(string.format("%s killed %s with sword! +%d coins", killer.Name, victim.Name, KILL_BONUS))
-	EconomyService.AwardCoins(killer, KILL_BONUS, "SwordKill", true)
-	EconomyService.TrackMatchCoins(killer, KILL_BONUS)
+	local awardOk, awardedAmount = EconomyService.AwardRewardCoins(killer, KILL_BONUS, "SwordKill")
+	if awardOk then
+		EconomyService.TrackMatchCoins(killer, awardedAmount or 0)
+	end
 	removeSwordFromPlayer(killer)
 	local dqs = getDQS()
 	if dqs and dqs.OnSwordKill then pcall(dqs.OnSwordKill, killer) end
@@ -360,6 +380,10 @@ local function giveSwordToPlayer(player: Player, spawnRound: number)
 		unequippedConn = unequippedConn,
 	}
 	StatService.SetWalkSpeedOverride(player, SWORD_WALKSPEED_OVERRIDE_KEY, SWORD_WALKSPEED)
+	local perkService = getPerkMatchEffectService()
+	if perkService and type(perkService.OnSwordStateChanged) == "function" then
+		pcall(perkService.OnSwordStateChanged, player, true, "SwordAcquired")
+	end
 	log(string.format(
 		"[SwordMoveGuard] player=%s swordAcquired=true walkSpeedOverride=%.1f",
 		player.Name,
@@ -734,6 +758,10 @@ function SwordSpawnService.OnMatchEnd()
 	disconnectTouched()
 	activePickups = {}
 	log("Match ended — all swords cleaned up")
+end
+
+function SwordSpawnService.PlayerHasSword(player: Player): boolean
+	return playerHasSword(player)
 end
 
 return SwordSpawnService

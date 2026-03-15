@@ -5,8 +5,8 @@
 	Coins are persisted via PlayerDataService (DataStore).
 	Falls back to player attributes if PlayerDataService is unavailable.
 
-	CoinMultiplier from StatService is automatically applied to AwardCoins
-	UNLESS skipMultiplier is true (used by fixed-reward systems like DailyReward, SpinWheel).
+	CoinMultiplier from StatService is automatically applied to Fate Coin rewards.
+	Exact grants like refunds and purchased currency top-ups can still opt out with skipMultiplier=true.
 
 	Tracks LifetimeCoinsAchieved and WeeklyCoinsAchieved for leaderboards.
 
@@ -173,15 +173,30 @@ function EconomyService.GetCoins(player: Player): number
 	return player:GetAttribute(ATTRIBUTE_NAME) or 0
 end
 
-function EconomyService.GetMultipliedAmount(player: Player, baseAmount: number): number
+local function resolveCoinMultiplier(player: Player): number
 	local SS = getStatService()
-	local multiplier = 1
 	if SS and type(SS.GetCoinMultiplier) == "function" then
-		multiplier = SS.GetCoinMultiplier(player)
-	else
-		multiplier = player:GetAttribute("CoinMultiplier") or 1
+		return SS.GetCoinMultiplier(player)
 	end
-	return math.floor(baseAmount * multiplier)
+
+	return tonumber(player:GetAttribute("CoinMultiplier")) or 1
+end
+
+local function resolveVipOwned(player: Player): boolean
+	local SS = getStatService()
+	if SS and type(SS.HasVipEntitlement) == "function" then
+		return SS.HasVipEntitlement(player) == true
+	end
+
+	return player:GetAttribute("OwnsVIP") == true or player:GetAttribute("VIPBundleOwned") == true
+end
+
+function EconomyService.GetMultipliedAmount(player: Player, baseAmount: number): number
+	return math.floor(baseAmount * resolveCoinMultiplier(player))
+end
+
+function EconomyService.AwardRewardCoins(player: Player, amount: number, source: string?): (boolean, number)
+	return EconomyService.AwardCoins(player, amount, source, false)
 end
 
 function EconomyService.AwardCoins(player: Player, amount: number, reason: string?, skipMultiplier: boolean?): (boolean, number)
@@ -195,14 +210,20 @@ function EconomyService.AwardCoins(player: Player, amount: number, reason: strin
 
 	local multiplier = 1
 	if not skipMultiplier then
-		local SS = getStatService()
-		if SS and type(SS.GetCoinMultiplier) == "function" then
-			multiplier = SS.GetCoinMultiplier(player)
-		else
-			multiplier = player:GetAttribute("CoinMultiplier") or 1
-		end
+		multiplier = resolveCoinMultiplier(player)
 	end
 	local finalAmount = math.floor(amount * multiplier)
+	local vipOwned = resolveVipOwned(player)
+	warn(string.format(
+		"[CoinRewardDebug] player=%s source=%s base=%d multiplier=%.2f final=%d vip=%s skip=%s",
+		player.Name,
+		tostring(reason or "unknown"),
+		amount,
+		multiplier,
+		finalAmount,
+		tostring(vipOwned),
+		tostring(skipMultiplier or false)
+	))
 	if finalAmount <= 0 then return true, 0 end
 
 	local PDS = getPDS()

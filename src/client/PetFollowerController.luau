@@ -46,6 +46,7 @@ local _unequipRemote = _remotes:WaitForChild("UnequipWalkerPet")
 
 local TAG = "[PetFollower]"
 local PET_INSTANCE_NAME = "_EquippedPet"
+local TUNGTUNG_PET_ID = "pet_tungtungsahur"
 
 local PetFollowerController = {}
 
@@ -223,6 +224,52 @@ local TARGET_MAX_DIM = 3.0   -- max bounding-box dimension (studs); player is ~5
 local SCALE_FLOOR    = 0.02  -- never scale below this (prevents invisible pets)
 local SCALE_CEIL     = 1.0   -- never scale above original size
 
+local TUNGTUNG_EMOTE_INTERVAL_MIN = 10
+local TUNGTUNG_EMOTE_INTERVAL_MAX = 18
+local TUNGTUNG_EMOTE_PRIORITY = Enum.AnimationPriority.Action4
+local TUNGTUNG_DEBUG_TAG = "[TungTungPetEmote]"
+local TUNGTUNG_TRACK_READY_TIMEOUT = 1.0
+local TUNGTUNG_EMOTE_FADE_IN = 0.28
+local TUNGTUNG_EMOTE_FADE_OUT = 0.24
+local TUNGTUNG_EMOTE_PRE_BLEND_WAIT = 0.08
+local TUNGTUNG_EMOTE_POST_BLEND_HOLD = 0.16
+local TUNGTUNG_EMOTE_ROOT_LERP_ALPHA = 0.32
+local TUNGTUNG_EMOTE_SPECS = {
+	{
+		label = "Dance1",
+		aliases = { "dance1", "dance" },
+		fallbackIds = {
+			"rbxassetid://507771019",
+			"rbxassetid://507771955",
+			"rbxassetid://507772104",
+		},
+		looped = true,
+		duration = 4.8,
+	},
+	{
+		label = "Dance2",
+		aliases = { "dance2" },
+		fallbackIds = {
+			"rbxassetid://507776043",
+			"rbxassetid://507776720",
+			"rbxassetid://507776879",
+		},
+		looped = true,
+		duration = 4.8,
+	},
+	{
+		label = "Dance3",
+		aliases = { "dance3" },
+		fallbackIds = {
+			"rbxassetid://507777268",
+			"rbxassetid://507777451",
+			"rbxassetid://507777623",
+		},
+		looped = true,
+		duration = 4.8,
+	},
+}
+
 -- =====================================================================
 -- STATE (per-player pet tracking)
 -- =====================================================================
@@ -233,6 +280,10 @@ local _activePets: { [Player]: {
 	pos: Vector3,
 	t0: number,
 	mover: any?,
+	emoteThread: thread?,
+	emoteActive: boolean?,
+	emoteTrack: AnimationTrack?,
+	emoteRoot: BasePart?,
 	_isWalker: boolean?,
 	_walkerPetId: string?,
 	_isServerMotor: boolean?,
@@ -402,6 +453,345 @@ local function findHumanoidInModel(model: Model): Humanoid?
 		return nested
 	end
 	return nil
+end
+
+local function findAnimationControllerInModel(model: Model): AnimationController?
+	local direct = model:FindFirstChildOfClass("AnimationController")
+	if direct then
+		return direct
+	end
+	local nested = model:FindFirstChild("AnimationController", true)
+	if nested and nested:IsA("AnimationController") then
+		return nested
+	end
+	return nil
+end
+
+local function findTungTungDriveRoot(model: Model, humanoid: Humanoid?): BasePart?
+	local hrp = model:FindFirstChild("HumanoidRootPart", true)
+	if hrp and hrp:IsA("BasePart") then
+		return hrp
+	end
+	if humanoid and humanoid.RootPart then
+		return humanoid.RootPart
+	end
+	if model.PrimaryPart then
+		return model.PrimaryPart
+	end
+	return model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function ensureAnimatorForPet(model: Model): (Humanoid?, Animator?, string)
+	local humanoid = findHumanoidInModel(model)
+	if humanoid then
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if not animator then
+			animator = Instance.new("Animator")
+			animator.Parent = humanoid
+		end
+		return humanoid, animator, "Humanoid"
+	end
+
+	local controller = findAnimationControllerInModel(model)
+	if not controller then
+		controller = Instance.new("AnimationController")
+		controller.Name = "PetAnimationController"
+		controller.Parent = model
+	end
+
+	local animator = controller:FindFirstChildOfClass("Animator")
+	if not animator then
+		animator = Instance.new("Animator")
+		animator.Parent = controller
+	end
+	return nil, animator, "AnimationController"
+end
+
+local function collectAnimationIdsByAliases(model: Model, aliases: { string }): { string }
+	local found: { string } = {}
+	local seen: { [string]: boolean } = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("Animation") and type(d.AnimationId) == "string" and d.AnimationId ~= "" then
+			local lowerName = string.lower(d.Name)
+			local lowerParent = d.Parent and string.lower(d.Parent.Name) or ""
+			for _, alias in ipairs(aliases) do
+				local lowerAlias = string.lower(alias)
+				if string.find(lowerName, lowerAlias, 1, true) or string.find(lowerParent, lowerAlias, 1, true) then
+					if not seen[d.AnimationId] then
+						seen[d.AnimationId] = true
+						table.insert(found, d.AnimationId)
+					end
+					break
+				end
+			end
+		end
+	end
+	return found
+end
+
+local function loadPetAnimationTrack(
+	animator: Animator,
+	animationIds: { string },
+	looped: boolean
+): (AnimationTrack?, string?)
+	for _, animationId in ipairs(animationIds) do
+		if type(animationId) == "string" and animationId ~= "" then
+			local anim = Instance.new("Animation")
+			anim.AnimationId = animationId
+			local ok, track = pcall(function()
+				return animator:LoadAnimation(anim)
+			end)
+			anim:Destroy()
+			if ok and track then
+				track.Looped = looped
+				track.Priority = TUNGTUNG_EMOTE_PRIORITY
+				return track, animationId
+			end
+		end
+	end
+	return nil, nil
+end
+
+local function waitForTrackReady(track: AnimationTrack, timeoutSeconds: number): number
+	local startedAt = tick()
+	local length = track.Length
+	while length <= 0 and (tick() - startedAt) < timeoutSeconds do
+		task.wait(0.05)
+		length = track.Length
+	end
+	return length
+end
+
+local function isTrackPlaying(animator: Animator, track: AnimationTrack): (boolean, number)
+	local playing = animator:GetPlayingAnimationTracks()
+	for _, activeTrack in ipairs(playing) do
+		if activeTrack == track then
+			return true, #playing
+		end
+	end
+	return false, #playing
+end
+
+local function setTungTungDriveRoot(root: BasePart, targetCF: CFrame)
+	root.CFrame = root.CFrame:Lerp(targetCF, TUNGTUNG_EMOTE_ROOT_LERP_ALPHA)
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+end
+
+local function setTungTungEmoteState(player: Player, clone: Model, isActive: boolean, track: AnimationTrack?, root: BasePart?)
+	local entry = _activePets[player]
+	if entry and entry.pet == clone then
+		entry.emoteActive = isActive
+		entry.emoteTrack = if isActive then track else nil
+		entry.emoteRoot = root
+	end
+end
+
+local function buildTungTungEmoteTracks(model: Model, animator: Animator, player: Player)
+	local loaded = {}
+	for _, spec in ipairs(TUNGTUNG_EMOTE_SPECS) do
+		local animationIds = collectAnimationIdsByAliases(model, spec.aliases)
+		local source = "model"
+		if #animationIds == 0 then
+			animationIds = spec.fallbackIds
+			source = "fallback"
+		end
+		local track, animationId = loadPetAnimationTrack(animator, animationIds, spec.looped)
+		local trackLength = 0
+		if track then
+			trackLength = waitForTrackReady(track, TUNGTUNG_TRACK_READY_TIMEOUT)
+		end
+		print(string.format(
+			"%s owner=%s event=track_loaded pet=%s emote=%s animationId=%s source=%s loadSucceeded=%s trackLength=%.3f",
+			TUNGTUNG_DEBUG_TAG,
+			player.Name,
+			TUNGTUNG_PET_ID,
+			spec.label,
+			tostring(animationId or "nil"),
+			source,
+			tostring(track ~= nil),
+			trackLength
+		))
+		if track then
+			table.insert(loaded, {
+				label = spec.label,
+				track = track,
+				duration = spec.duration,
+				animationId = animationId,
+				source = source,
+				trackLength = trackLength,
+			})
+		end
+	end
+	return loaded
+end
+
+local function stopTungTungEmoteTracks(loadedTracks)
+	for _, entry in ipairs(loadedTracks) do
+		if entry.track then
+			pcall(function()
+				entry.track:Stop(TUNGTUNG_EMOTE_FADE_OUT)
+			end)
+		end
+	end
+end
+
+local function startTungTungPetEmoteLoop(clone: Model, player: Player): thread?
+	local humanoid = findHumanoidInModel(clone)
+	local _, animator, animationDriver = ensureAnimatorForPet(clone)
+	local driveRoot = findTungTungDriveRoot(clone, humanoid)
+	local hasAnimator = animator ~= nil
+
+	print(string.format(
+		"%s owner=%s event=spawn pet=%s humanoid=%s animator=%s driver=%s clone=%s root=%s",
+		TUNGTUNG_DEBUG_TAG,
+		player.Name,
+		TUNGTUNG_PET_ID,
+		tostring(humanoid ~= nil),
+		tostring(hasAnimator),
+		tostring(animationDriver),
+		clone:GetFullName(),
+		tostring(driveRoot and driveRoot:GetFullName() or "nil")
+	))
+
+	if not animator then
+		warn(string.format(
+			"%s owner=%s event=loop_not_started reason=missing_animator",
+			TUNGTUNG_DEBUG_TAG,
+			player.Name
+		))
+		return nil
+	end
+
+	local loadedTracks = buildTungTungEmoteTracks(clone, animator, player)
+	if #loadedTracks == 0 then
+		warn(string.format(
+			"%s owner=%s event=loop_not_started reason=no_tracks_loaded humanoid=%s animator=%s driver=%s",
+			TUNGTUNG_DEBUG_TAG,
+			player.Name,
+			tostring(humanoid ~= nil),
+			tostring(hasAnimator),
+			tostring(animationDriver)
+		))
+		return nil
+	end
+
+	if humanoid then
+		humanoid.AutoRotate = false
+		humanoid.PlatformStand = false
+	end
+
+	print(string.format(
+		"%s owner=%s event=loop_started humanoid=%s animator=%s driver=%s clone=%s root=%s tracks=%d builtinEmoteUsed=false",
+		TUNGTUNG_DEBUG_TAG,
+		player.Name,
+		tostring(humanoid ~= nil),
+		tostring(hasAnimator),
+		tostring(animationDriver),
+		clone:GetFullName(),
+		tostring(driveRoot and driveRoot:GetFullName() or "nil"),
+		#loadedTracks
+	))
+
+	return task.spawn(function()
+		local rng = Random.new()
+		while clone.Parent do
+			local interval = rng:NextInteger(TUNGTUNG_EMOTE_INTERVAL_MIN, TUNGTUNG_EMOTE_INTERVAL_MAX)
+			task.wait(interval)
+			if not clone.Parent then
+				break
+			end
+
+			local order = {}
+			for index = 1, #loadedTracks do
+				order[index] = index
+			end
+			for index = #order, 2, -1 do
+				local swapIndex = rng:NextInteger(1, index)
+				order[index], order[swapIndex] = order[swapIndex], order[index]
+			end
+
+			local playedTrack = nil
+			for _, index in ipairs(order) do
+				local chosen = loadedTracks[index]
+				stopTungTungEmoteTracks(loadedTracks)
+				setTungTungEmoteState(player, clone, true, chosen.track, driveRoot)
+				task.wait(TUNGTUNG_EMOTE_PRE_BLEND_WAIT)
+
+				local okPlayTrack, errPlayTrack = pcall(function()
+					chosen.track.TimePosition = 0
+					chosen.track:Play(TUNGTUNG_EMOTE_FADE_IN, 1, 1)
+				end)
+				local trackLength = waitForTrackReady(chosen.track, TUNGTUNG_TRACK_READY_TIMEOUT)
+				task.wait(math.max(0.18, TUNGTUNG_EMOTE_FADE_IN * 0.8))
+				local trackStillPlaying, playingTrackCount = isTrackPlaying(animator, chosen.track)
+				local trackActuallyPlayed = okPlayTrack and chosen.track.IsPlaying and trackLength > 0
+				local replacedImmediately = okPlayTrack and not trackStillPlaying
+
+				print(string.format(
+					"%s owner=%s event=play_emote pet=%s baseWait=%d emote=%s animationId=%s source=%s loadSucceeded=%s trackLength=%.3f trackPlayed=%s replacedImmediately=%s followerDrivenByRoot=%s clone=%s",
+					TUNGTUNG_DEBUG_TAG,
+					player.Name,
+					TUNGTUNG_PET_ID,
+					interval,
+					tostring(chosen.label),
+					tostring(chosen.animationId or "nil"),
+					tostring(chosen.source or "unknown"),
+					tostring(okPlayTrack),
+					trackLength,
+					tostring(trackActuallyPlayed),
+					tostring(replacedImmediately and playingTrackCount > 0),
+					tostring(driveRoot ~= nil),
+					clone:GetFullName()
+				))
+
+				if not okPlayTrack then
+					warn(string.format(
+						"%s owner=%s event=play_track_failed emote=%s animationId=%s error=%s",
+						TUNGTUNG_DEBUG_TAG,
+						player.Name,
+						tostring(chosen.label),
+						tostring(chosen.animationId or "nil"),
+						tostring(errPlayTrack)
+					))
+					setTungTungEmoteState(player, clone, false, nil, driveRoot)
+				elseif trackActuallyPlayed then
+					playedTrack = chosen
+					break
+				else
+					pcall(function()
+						chosen.track:Stop(TUNGTUNG_EMOTE_FADE_OUT)
+					end)
+					task.wait(TUNGTUNG_EMOTE_POST_BLEND_HOLD)
+					setTungTungEmoteState(player, clone, false, nil, driveRoot)
+				end
+			end
+
+			if playedTrack then
+				task.wait(playedTrack.duration)
+				pcall(function()
+					playedTrack.track:Stop(TUNGTUNG_EMOTE_FADE_OUT)
+				end)
+				task.wait(TUNGTUNG_EMOTE_POST_BLEND_HOLD)
+				setTungTungEmoteState(player, clone, false, nil, driveRoot)
+			else
+				warn(string.format(
+					"%s owner=%s event=no_visible_emote reason=no_track_played clone=%s",
+					TUNGTUNG_DEBUG_TAG,
+					player.Name,
+					clone:GetFullName()
+				))
+			end
+		end
+
+		setTungTungEmoteState(player, clone, false, nil, driveRoot)
+		stopTungTungEmoteTracks(loadedTracks)
+		print(string.format(
+			"%s owner=%s event=loop_stopped reason=pet_removed",
+			TUNGTUNG_DEBUG_TAG,
+			player.Name
+		))
+	end)
 end
 
 local function findHrpInModel(model: Model): BasePart?
@@ -611,7 +1001,22 @@ local function destroyPetFor(player: Player, reason: string?)
 	end
 
 	if entry.conn then entry.conn:Disconnect() end
-	if entry.emoteThread then task.cancel(entry.emoteThread) end
+	if entry.emoteTrack then
+		pcall(function()
+			entry.emoteTrack:Stop(TUNGTUNG_EMOTE_FADE_OUT)
+		end)
+	end
+	if entry.emoteThread then
+		if entry.pet and entry.pet:GetAttribute("_petId") == TUNGTUNG_PET_ID then
+			print(string.format(
+				"%s owner=%s event=loop_stop_requested reason=%s",
+				TUNGTUNG_DEBUG_TAG,
+				player.Name,
+				tostring(reason or "unspecified")
+			))
+		end
+		task.cancel(entry.emoteThread)
+	end
 	if entry.mover and entry.mover.Destroy then
 		pcall(function() entry.mover:Destroy() end)
 	end
@@ -779,7 +1184,7 @@ local function spawnPetFor(player: Player, petId: string)
 		spawnPrimaryPartName = (clone:IsA("Model") and clone.PrimaryPart and clone.PrimaryPart.Name) or "nil"
 	end
 
-	local useUnanchoredFloat = FNAF_REVERTED_FLOAT_IDS[petId] == true
+	local useUnanchoredFloat = FNAF_REVERTED_FLOAT_IDS[petId] == true or petId == TUNGTUNG_PET_ID
 
 	-- Hover pets: default anchored; reverted FNAF floats are unanchored.
 	local function prepPart(part: BasePart)
@@ -994,6 +1399,7 @@ local function spawnPetFor(player: Player, petId: string)
 	-- every frame from the player's LookVector so pitch/roll are ALWAYS 0.
 	local currentPos = startPos
 	local t0 = tick()
+	local tungtungDriveRoot = if petId == TUNGTUNG_PET_ID and clone:IsA("Model") then findTungTungDriveRoot(clone, findHumanoidInModel(clone)) else nil
 
 	local followConn = RunService.Heartbeat:Connect(function()
 		if not clone or not clone.Parent then
@@ -1030,8 +1436,13 @@ local function spawnPetFor(player: Player, petId: string)
 			finalCF = finalCF * (PET_DETERMINISTIC_ROTATION_OVERRIDES[petId] or CFrame.new())
 		end
 
+		local activeEntry = _activePets[player]
+
 		-- 5) Apply
-		if deterministicTarget and clone:IsA("Model") then
+		if petId == TUNGTUNG_PET_ID and tungtungDriveRoot and activeEntry and activeEntry.pet == clone and activeEntry.emoteActive then
+			setTungTungDriveRoot(tungtungDriveRoot, finalCF)
+			currentPos = tungtungDriveRoot.Position
+		elseif deterministicTarget and clone:IsA("Model") then
 			local root = clone.PrimaryPart or pickDeterministicVisualRoot(clone) or ensureDeterministicPrimaryPart(clone)
 			if not root then
 				clone:PivotTo(finalCF)
@@ -1046,19 +1457,15 @@ local function spawnPetFor(player: Player, petId: string)
 	end)
 
 	local emoteThread
-	if petId == "pet_tungtungsahur" then
-		emoteThread = task.spawn(function()
-			local humanoid = clone:FindFirstChildOfClass("Humanoid")
-			if not humanoid then return end
-			
-			local emotes = { "Dance", "Wave", "Cheer", "Laugh" }
-			while clone.Parent do
-				task.wait(math.random(20, 40))
-				if not clone.Parent then break end
-				local emote = emotes[math.random(1, #emotes)]
-				pcall(function() humanoid:PlayEmote(emote) end)
-			end
-		end)
+	if petId == TUNGTUNG_PET_ID and clone:IsA("Model") then
+		print(string.format(
+			"%s owner=%s event=equip pet=%s clone=%s",
+			TUNGTUNG_DEBUG_TAG,
+			player.Name,
+			petId,
+			clone:GetFullName()
+		))
+		emoteThread = startTungTungPetEmoteLoop(clone, player)
 	end
 
 	_activePets[player] = {
@@ -1068,6 +1475,9 @@ local function spawnPetFor(player: Player, petId: string)
 		t0 = t0,
 		mover = nil,
 		emoteThread = emoteThread,
+		emoteActive = false,
+		emoteTrack = nil,
+		emoteRoot = tungtungDriveRoot,
 	}
 
 	log("spawn_done", "Pet spawned for", player.Name .. ":", petId)

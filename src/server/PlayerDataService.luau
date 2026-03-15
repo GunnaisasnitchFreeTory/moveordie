@@ -113,6 +113,7 @@ local function replicateToClient(player: Player, data: { [string]: any })
 	player:SetAttribute(A.Coins,         data.Coins or 0)
 	player:SetAttribute(A.LifetimeWins,  data.LifetimeWins or 0)
 	player:SetAttribute(A.CoinMultiplier, 1)
+	player:SetAttribute(A.VIPBundleOwned, data.VIPBundleOwned == true)
 
 	player:SetAttribute(A.LifetimeCoinsAchieved, data.LifetimeCoinsAchieved or 0)
 	player:SetAttribute(A.WeeklyWins,             data.WeeklyWins or 0)
@@ -141,6 +142,8 @@ local function replicateField(player: Player, key: string, value: any)
 		player:SetAttribute(A.Coins, value or 0)
 	elseif key == "LifetimeWins" then
 		player:SetAttribute(A.LifetimeWins, value or 0)
+	elseif key == "VIPBundleOwned" then
+		player:SetAttribute(A.VIPBundleOwned, value == true)
 	elseif key == "LifetimeCoinsAchieved" then
 		player:SetAttribute(A.LifetimeCoinsAchieved, value or 0)
 	elseif key == "WeeklyWins" then
@@ -269,6 +272,8 @@ function PlayerDataService.LoadPlayer(player: Player): { [string]: any }
 	loadedPlayers[userId] = true
 
 	replicateToClient(player, data)
+	warn(string.format("[VIPPersistence] player=%s vipBundleOwned=%s loaded=true",
+		player.Name, tostring(data.VIPBundleOwned == true)))
 	return data
 end
 
@@ -280,7 +285,11 @@ function PlayerDataService.SavePlayer(player: Player): boolean
 		return false
 	end
 	local success = saveToStore(userId, data)
-	if success then log(player.Name, "saved") end
+	if success then
+		log(player.Name, "saved")
+		warn(string.format("[VIPPersistence] player=%s vipBundleOwned=%s saved=true",
+			player.Name, tostring(data.VIPBundleOwned == true)))
+	end
 	return success
 end
 
@@ -305,6 +314,10 @@ function PlayerDataService.SetField(player: Player, key: string, value: any): bo
 		return false
 	end
 	data[key] = value
+	if key == "VIPBundleOwned" then
+		warn(string.format("[VIPPersistence] player=%s vipBundleOwned=%s saved=true",
+			player.Name, tostring(value == true)))
+	end
 	local corrected = sanitizeEquippedCosmeticOwnership(data, player.Name, "SetField_" .. key)
 	replicateField(player, key, data[key])
 	if corrected then

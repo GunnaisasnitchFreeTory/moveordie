@@ -54,6 +54,7 @@ end
 local getDataRF    = ensureRemoteFunc("SpinWheel_GetData")
 local requestSpinRF = ensureRemoteFunc("SpinWheel_RequestSpin")
 local buySpinsRF    = ensureRemoteFunc("SpinWheel_BuySpins")
+local canPurchaseGamepassRF = ensureRemoteFunc("CanPurchaseGamepassReward")
 
 -- Load service + config
 local Server = ServerScriptService:WaitForChild("Server")
@@ -63,12 +64,15 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local SpinWheelConfig = require(Shared:WaitForChild("SpinWheelConfig"))
 local UIConfig = require(Shared:WaitForChild("UIConfig"))
 local DeveloperProductConfig = require(Shared:WaitForChild("DeveloperProductConfig"))
+local PerkCatalog = require(Shared:WaitForChild("PerkCatalog"))
 local FreezePlayerProductService = require(Server:WaitForChild("FreezePlayerProductService"))
 local ForceNextModeProductService = require(Server:WaitForChild("ForceNextModeProductService"))
+local PerkProductService = require(Server:WaitForChild("PerkProductService"))
 
 SpinWheelService.Init()
 FreezePlayerProductService.Init()
 ForceNextModeProductService.Init()
+PerkProductService.Init()
 
 -- Wire RemoteFunctions
 getDataRF.OnServerInvoke = function(player)
@@ -114,7 +118,8 @@ end)
 -- SHARED SERVICE REFERENCES (lazy-loaded)
 -- ═══════════════════════════════════════════════════════════════════
 
-local _InventoryService, _EconomyService, _CrateService, _ItemCatalog, _PlayerDataService, _GrantService
+local _InventoryService, _EconomyService, _CrateService, _ItemCatalog, _PlayerDataService, _GrantService, _StatService
+local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } }
 local _BundleCatalog
 
 local function getInventoryService()
@@ -152,6 +157,13 @@ local function getGrantService()
 	return _GrantService
 end
 
+local function getStatService()
+	if not _StatService then
+		_StatService = require(Server:WaitForChild("StatService", 5))
+	end
+	return _StatService
+end
+
 local function getItemCatalog()
 	if not _ItemCatalog then
 		local SharedMod = ReplicatedStorage:FindFirstChild("Shared")
@@ -180,6 +192,78 @@ local function notifyClient(player: Player, reason: string, data: any?)
 	if invUpdate then
 		invUpdate:FireClient(player, reason, data)
 	end
+end
+
+local function syncVipBundleEntitlement(player: Player, reward: { [string]: any }, source: string)
+	if type(reward) ~= "table" or tostring(reward.bundleId or "") ~= "bundle_vip" then
+		return
+	end
+
+	local stat = getStatService()
+	if stat and type(stat.SetVipOwnership) == "function" then
+		stat.SetVipOwnership(player, true, source)
+	else
+		player:SetAttribute("OwnsVIP", true)
+	end
+
+	print(string.format("[VIPSync] player=%s bundle=%s source=%s vip=true",
+		player.Name, tostring(reward.bundleId), tostring(source)))
+	warn(string.format("[VIPPersistence] player=%s vipBundleOwned=%s purchase=true",
+		player.Name, tostring(player:GetAttribute("VIPBundleOwned") == true)))
+end
+
+local function isVipBundleReward(reward: { [string]: any }?): boolean
+	return type(reward) == "table" and tostring(reward.bundleId or "") == "bundle_vip"
+end
+
+local function hasVipBundleEntitlement(player: Player): boolean
+	local stat = getStatService()
+	if stat and type(stat.HasVipEntitlement) == "function" then
+		return stat.HasVipEntitlement(player) == true
+	end
+
+	return player:GetAttribute("VIPBundleOwned") == true or player:GetAttribute("OwnsVIP") == true
+end
+
+local function getGamepassPurchaseGate(player: Player, gamepassId: number): { allowed: boolean, alreadyOwned: boolean, vipOwned: boolean, marketplaceOwned: boolean, reason: string? }
+	local reward = GAMEPASS_REWARD_MAP[gamepassId]
+	if not reward then
+		return {
+			allowed = false,
+			alreadyOwned = false,
+			vipOwned = false,
+			marketplaceOwned = false,
+			reason = "UNKNOWN_GAMEPASS",
+		}
+	end
+
+	local vipOwned = isVipBundleReward(reward) and hasVipBundleEntitlement(player)
+	local marketplaceOwned = false
+	local okOwns, owns = pcall(function()
+		return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
+	end)
+	if okOwns then
+		marketplaceOwned = owns == true
+	end
+
+	local alreadyOwned = vipOwned or marketplaceOwned
+	local reason = alreadyOwned and "ALREADY_OWNED" or nil
+	warn(string.format(
+		"[VIPPurchaseGate] player=%s gamepassId=%d vipOwned=%s marketplaceOwned=%s purchaseBlocked=%s",
+		player.Name,
+		gamepassId,
+		tostring(vipOwned),
+		tostring(marketplaceOwned),
+		tostring(alreadyOwned)
+	))
+
+	return {
+		allowed = not alreadyOwned,
+		alreadyOwned = alreadyOwned,
+		vipOwned = vipOwned,
+		marketplaceOwned = marketplaceOwned,
+		reason = reason,
+	}
 end
 
 local function toRewardTypeFromCategory(category: string): string
@@ -251,6 +335,23 @@ else
 	warn("[PurchaseSystem] ForceNextMode productId is not configured (>0 required)")
 end
 
+local function registerAbilityProduct(configKey: string, abilityId: string)
+	local config = DeveloperProductConfig[configKey]
+	local productId = config and tonumber(config.productId) or 0
+	if productId > 0 then
+		PRODUCT_REWARD_MAP[productId] = {
+			type = "Ability",
+			abilityId = abilityId,
+			label = tostring(config.name or abilityId),
+		}
+	else
+		warn(string.format("[PurchaseSystem] %s productId is not configured (>0 required)", configKey))
+	end
+end
+
+registerAbilityProduct("PerkSpeed", PerkCatalog.Speed.id)
+registerAbilityProduct("PerkJump", PerkCatalog.Jump.id)
+
 -- Auto-populate Fate Coin developer products from UIConfig (single source for shop UI + receipts)
 for _, item in ipairs(UIConfig.MockPremiumItems or {}) do
 	if item.type == "Currency" and type(item.productId) == "number" and item.productId > 0 then
@@ -319,7 +420,7 @@ validateConfiguredRobuxProducts()
 -- Bundles map to a list of items to grant.
 -- ═══════════════════════════════════════════════════════════════════
 
-local GAMEPASS_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
+GAMEPASS_REWARD_MAP = {
 	-- Exclusive Pets
 	[1716313058] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_falcon",        label = "Dark Goblem" },
 	[1717772785] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_winged_dragon",  label = "Music Winged Dragon" },
@@ -404,6 +505,8 @@ local function grantGamepassReward(player: Player, gamepassId: number, emitPurch
 	end
 
 	if reward.type == "Bundle" then
+		syncVipBundleEntitlement(player, reward, "GamePassGrant:" .. tostring(gamepassId))
+
 		local grantedItems = {}
 		for _, item in ipairs(reward.items) do
 			local grantType = nil
@@ -518,11 +621,31 @@ if not gamepassVerifyRF then
 	gamepassVerifyRF.Parent = remotesFolder
 end
 
+canPurchaseGamepassRF.OnServerInvoke = function(player: Player, gamepassId: number)
+	if type(gamepassId) ~= "number" then
+		return { allowed = false, reason = "INVALID_GAMEPASS" }
+	end
+
+	return getGamepassPurchaseGate(player, gamepassId)
+end
+
 gamepassVerifyRF.OnServerInvoke = function(player: Player, gamepassId: number)
 	if type(gamepassId) ~= "number" then return { success = false } end
 
 	local reward = GAMEPASS_REWARD_MAP[gamepassId]
 	if not reward then return { success = false, reason = "Unknown gamepass" } end
+
+	local gate = getGamepassPurchaseGate(player, gamepassId)
+	if isVipBundleReward(reward) and gate.vipOwned == true then
+		warn(string.format(
+			"[VIPPurchaseGate] player=%s gamepassId=%d vipOwned=%s purchaseBlocked=%s verifyShortCircuit=true",
+			player.Name,
+			gamepassId,
+			tostring(gate.vipOwned),
+			tostring(gate.alreadyOwned)
+		))
+		return { success = true, alreadyOwned = true, reason = "Already owned" }
+	end
 
 	local ok, owns = pcall(function()
 		return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
@@ -666,6 +789,21 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 				"[ForceNextModeReceipt] purchaser=%s productId=%d result=%s reason=%s",
 				player.Name,
 				productId,
+				tostring(granted),
+				tostring(consumeReason)
+			))
+		elseif reward.type == "Ability" then
+			local consumeOk, consumeReason = PerkProductService.ConsumePendingReceipt(
+				player,
+				receiptKey,
+				tostring(reward.abilityId or "")
+			)
+			granted = consumeOk
+			print(string.format(
+				"[AbilityProductReceipt] purchaser=%s productId=%d ability=%s result=%s reason=%s",
+				player.Name,
+				productId,
+				tostring(reward.abilityId),
 				tostring(granted),
 				tostring(consumeReason)
 			))

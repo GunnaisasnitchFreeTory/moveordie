@@ -74,6 +74,26 @@ local function waitForNpcModel(modelName: string): Model?
 	return nil
 end
 
+local function waitForAnyNpcModel(primaryName: string, legacyNames: { string }?): Model?
+	local model = waitForNpcModel(primaryName)
+	if model then
+		return model
+	end
+
+	if type(legacyNames) == "table" then
+		for _, legacyName in ipairs(legacyNames) do
+			if type(legacyName) == "string" and legacyName ~= "" then
+				model = waitForNpcModel(legacyName)
+				if model then
+					return model
+				end
+			end
+		end
+	end
+
+	return nil
+end
+
 local function ensureHumanoid(model: Model): Humanoid
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	if humanoid then
@@ -201,15 +221,23 @@ local function playAmbientAnimation(model: Model, animator: Animator, npcId: str
 end
 
 local function setupNpc(npcId: string, npcConfig, remote: RemoteEvent)
-	local model = waitForNpcModel(npcConfig.modelName)
+	local model = waitForAnyNpcModel(npcConfig.modelName, npcConfig.legacyModelNames)
 	if not model then
 		warn(string.format("[LobbyNpcInteractionBootstrap] NPC model '%s' not found", tostring(npcConfig.modelName)))
 		return
 	end
 
+	-- Normalize live model naming to the new config name so overhead labels/moderation-safe names match.
+	if type(npcConfig.modelName) == "string" and npcConfig.modelName ~= "" and model.Name ~= npcConfig.modelName then
+		model.Name = npcConfig.modelName
+	end
+
 	model:SetAttribute("LobbyNpcId", npcId)
 
 	local humanoid = ensureHumanoid(model)
+	if humanoid.DisplayName ~= model.Name then
+		humanoid.DisplayName = model.Name
+	end
 	local animator = ensureAnimator(humanoid)
 	local rootPart = ensureRootPart(model)
 	if not rootPart then

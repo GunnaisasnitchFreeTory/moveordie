@@ -213,6 +213,7 @@ function GrantService.GrantItem(player: Player, itemType: string, itemIdOrAmount
 	local success = false
 	local alreadyOwned = false
 	local reason = nil
+	local grantedAmount = nil
 
 	if itemType == "Pet" or itemType == "Crown" or itemType == "IconImage" then
 		local category = toCatalogCategory(itemType)
@@ -260,8 +261,16 @@ function GrantService.GrantItem(player: Player, itemType: string, itemIdOrAmount
 			if not econ then
 				reason = "ECONOMY_UNAVAILABLE"
 			else
-				local awarded = econ.AwardCoins(player, amount, "GrantService:" .. tostring(source), true)
-				success = awarded == true
+				local applyVipMultiplier = meta.applyVipMultiplier == true
+				local rewardSource = tostring(meta.rewardSource or ("GrantService:" .. tostring(source)))
+				local awardOk, finalAmount
+				if applyVipMultiplier and type(econ.AwardRewardCoins) == "function" then
+					awardOk, finalAmount = econ.AwardRewardCoins(player, amount, rewardSource)
+				else
+					awardOk, finalAmount = econ.AwardCoins(player, amount, rewardSource, true)
+				end
+				success = awardOk == true
+				grantedAmount = finalAmount or amount
 				if not success then
 					reason = "CURRENCY_GRANT_FAILED"
 				end
@@ -288,7 +297,10 @@ function GrantService.GrantItem(player: Player, itemType: string, itemIdOrAmount
 		PDS.SetField(player, "ProcessedGrants", processed)
 	end
 
-	local payload = meta.payload or makeDefaultPayload(itemType, itemIdOrAmount, source)
+	local payload = meta.payload or makeDefaultPayload(itemType, grantedAmount or itemIdOrAmount, source)
+	if itemType == "Currency" and type(payload) == "table" then
+		payload.amount = grantedAmount or tonumber(payload.amount) or 0
+	end
 	if meta.fireReward ~= false and not alreadyOwned then
 		GrantService.EmitRewardGranted(player, payload)
 	end
@@ -296,7 +308,7 @@ function GrantService.GrantItem(player: Player, itemType: string, itemIdOrAmount
 		_inventoryUpdatedRE:FireClient(player, "GrantConfirmed", payload)
 	end
 
-	local amount = getGrantAmount(itemType, itemIdOrAmount)
+	local amount = grantedAmount or getGrantAmount(itemType, itemIdOrAmount)
 	print(string.format("[Grant] player=%s type=%s id=%s source=%s result=SUCCESS", player.Name, tostring(itemType), itemIdText, tostring(source)))
 	print(string.format("[Grant] SUCCESS type=%s id=%s amount=%d source=%s", tostring(itemType), itemIdText, amount, tostring(source)))
 	return { success = true, alreadyOwned = alreadyOwned, payload = payload }

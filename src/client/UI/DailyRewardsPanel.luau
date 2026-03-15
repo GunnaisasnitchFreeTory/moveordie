@@ -460,9 +460,9 @@ local function buildDayCard(parent, dayNum)
 			iconLbl.Position = UDim2.new(0.5, 0, 0.47, 0)
 			iconLbl.Size = UDim2.new(0.72, 0, 0.52, 0)
 		elseif isFateCoinReward then
-			-- Fate Coin art has extra transparent padding, so give it a larger box here.
+			-- Fate Coin art has heavy transparent padding, so intentionally overscale it.
 			iconLbl.Position = UDim2.new(0.5, 0, 0.47, 0)
-			iconLbl.Size = UDim2.new(0.82, 0, 0.58, 0)
+			iconLbl.Size = UDim2.new(1.35, 0, 0.98, 0)
 		end
 		iconLbl.ZIndex = 7
 		iconLbl.Parent = card

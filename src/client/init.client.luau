@@ -424,6 +424,28 @@ else
 	warn("[Client] RewardGrantListener FAILED:", rewardGrantErr)
 end
 
+-- 14. VIPChestPromptController (walk-up VIP chest purchase prompt)
+local vipChestOk, vipChestErr = pcall(function()
+	local VIPChestPromptController = require(Client:WaitForChild("VIPChestPromptController"))
+	VIPChestPromptController.Init()
+end)
+if vipChestOk then
+	print("[Client] VIPChestPromptController loaded OK")
+else
+	warn("[Client] VIPChestPromptController FAILED:", vipChestErr)
+end
+
+-- 15. AbilityActivationWarningController (queued ability warning)
+local abilityWarningOk, abilityWarningErr = pcall(function()
+	local AbilityActivationWarningController = require(Client:WaitForChild("AbilityActivationWarningController"))
+	AbilityActivationWarningController.Init()
+end)
+if abilityWarningOk then
+	print("[Client] AbilityActivationWarningController loaded OK")
+else
+	warn("[Client] AbilityActivationWarningController FAILED:", abilityWarningErr)
+end
+
 -- BUILD_ID label (bottom-left corner, subtle version stamp)
 pcall(function()
 	local buildVal = ReplicatedStorage:WaitForChild("BUILD_ID", 10)

@@ -534,7 +534,10 @@ function SpinWheelService.RequestSpin(player: Player)
 				if pending.isDuplicate then
 					local GS = getGrantService()
 					if GS and GS ~= false and type(GS.GrantItem) == "function" then
-						local g = GS.GrantItem(livePlayer, "Currency", rCoins, "SpinWheel")
+						local g = GS.GrantItem(livePlayer, "Currency", rCoins, "SpinWheel", {
+							applyVipMultiplier = true,
+							rewardSource = "SpinWheelDuplicateCrown:" .. tostring(rCatalog or "unknown"),
+						})
 						if not g.success then
 							error("SpinWheel duplicate crown coin grant failed: " .. tostring(g.reason))
 						end
@@ -558,7 +561,10 @@ function SpinWheelService.RequestSpin(player: Player)
 			else
 				local GS = getGrantService()
 				if GS and GS ~= false and type(GS.GrantItem) == "function" then
-					local g = GS.GrantItem(livePlayer, "Currency", rCoins, "SpinWheel")
+					local g = GS.GrantItem(livePlayer, "Currency", rCoins, "SpinWheel", {
+						applyVipMultiplier = true,
+						rewardSource = "SpinWheel:" .. tostring(rName),
+					})
 					if not g.success then
 						error("SpinWheel coin grant failed: " .. tostring(g.reason))
 					end
