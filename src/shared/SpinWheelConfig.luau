@@ -156,9 +156,9 @@ SpinWheelConfig.Segments = {
 -- ═══════════════════════════════════════════
 
 SpinWheelConfig.SpinPrices = {
-	{ spins = 1,  coins = 100,  robux = 10,  productId = 3539703395, label = "1 Spin"   },
-	{ spins = 3,  coins = 250,  robux = 30,  productId = 3539705825, label = "3 Spins"  },
-	{ spins = 10, coins = 750,  robux = 90,  productId = 3539706154, label = "10 Spins" },
+	{ spins = 1,  coins = 250,  robux = 10,  productId = 3539703395, label = "1 SPIN"   },
+	{ spins = 3,  coins = 450,  robux = 30,  productId = 3539705825, label = "3 SPINS"  },
+	{ spins = 10, coins = 850,  robux = 90,  productId = 3539706154, label = "10 SPINS" },
 }
 
 -- ═══════════════════════════════════════════

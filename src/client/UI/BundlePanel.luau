@@ -92,6 +92,7 @@ local FNAF_ITEM_PRICE = 70000
 local BRAINROT_ITEM_PRICE = 75000
 local COIN_BUNDLE_BASE_COST = 150000
 local COIN_BUNDLE_PER_OWNED_DISCOUNT = 0.10
+local ROBUX_ICON_IMAGE = "rbxassetid://138917867019056"
 
 local ACCENT_COLOR   = Color3.fromRGB(245, 48, 72)
 local SELECTED_GLOW  = Color3.fromRGB(255, 210, 50)
@@ -345,17 +346,27 @@ local function selectBundle(bundleId: string)
 	if buyBtn then
 		local isCoinBundle = COIN_BUNDLE_REQUEST_IDS[bundle.id] ~= nil
 		local isOwned = isBundleOwned(bundle, "selectBundle")
+		local existingBuyGroup = buyBtn:FindFirstChild("RobuxBuyGroup")
 
 		if isOwned then
+			if existingBuyGroup then
+				existingBuyGroup:Destroy()
+			end
 			buyBtn.Text = "OWNED"
 			buyBtn.BackgroundColor3 = C.DisabledBtn
 			buyBtn.Active = false
 		elseif not bundle.isAvailable then
+			if existingBuyGroup then
+				existingBuyGroup:Destroy()
+			end
 			buyBtn.Text = "COMING SOON"
 			buyBtn.BackgroundColor3 = C.DisabledBtn
 			buyBtn.Active = false
 		else
 			if isCoinBundle then
+				if existingBuyGroup then
+					existingBuyGroup:Destroy()
+				end
 				local state = getCoinBundleState(bundle)
 				if state.missingCount <= 0 then
 					buyBtn.Text = "OWNED"
@@ -371,9 +382,10 @@ local function selectBundle(bundleId: string)
 					buyBtn.Active = true
 				end
 			else
-				buyBtn.Text = string.format("BUY - %d ROBUX", bundle.priceRobux)
+				buyBtn.Text = string.format("%d ROBUX", bundle.priceRobux)
 				buyBtn.BackgroundColor3 = C.BuyButton
 				buyBtn.Active = true
+				Components.ApplyRobuxBuyStyle(buyBtn, tostring(bundle.priceRobux), ROBUX_ICON_IMAGE)
 			end
 		end
 	end

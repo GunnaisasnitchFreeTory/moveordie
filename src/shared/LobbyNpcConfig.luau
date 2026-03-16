@@ -52,6 +52,28 @@ local LobbyNpcConfig = {
 			nextPanel = "AbilityShop",
 		},
 	},
+	ProAbilitySeller = {
+		npcId = "ProAbilitySeller",
+		modelName = "ProAbilitySeller",
+		promptName = "ProAbilitySellerTalkPrompt",
+		dialoguePanel = "ToolboxDialogue",
+		prompt = {
+			actionText = "Talk",
+			objectText = "",
+			keyCode = Enum.KeyCode.E,
+			holdDuration = 0,
+			maxActivationDistance = 14,
+			requiresLineOfSight = false,
+		},
+		dialogue = {
+			title = "PRO ABILITY SELLER",
+			speaker = "Pro Ability Seller",
+			speakerModelName = "ProAbilitySeller",
+			message = "Im lying low for a little bit. Come back later.",
+			acceptText = "Okay",
+			declineText = "Close",
+		},
+	},
 }
 
 return LobbyNpcConfig

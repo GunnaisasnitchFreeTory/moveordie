@@ -43,6 +43,7 @@ local matchCoinsEarned: { [number]: number } = {}
 local _PlayerDataService = nil
 local _StatService = nil
 local _GLBS = nil
+local VIP_COIN_MULTIPLIER_FALLBACK = 1.5
 
 local ACHIEVED_DEBUG = true
 
@@ -191,12 +192,49 @@ local function resolveVipOwned(player: Player): boolean
 	return player:GetAttribute("OwnsVIP") == true or player:GetAttribute("VIPBundleOwned") == true
 end
 
+local function resolveVipRewardMultiplier(player: Player): number
+	local SS = getStatService()
+	if SS and type(SS.GetVipRewardMultiplier) == "function" then
+		local mult = tonumber(SS.GetVipRewardMultiplier(player))
+		if mult and mult > 0 then
+			return mult
+		end
+	end
+	return resolveVipOwned(player) and VIP_COIN_MULTIPLIER_FALLBACK or 1
+end
+
 function EconomyService.GetMultipliedAmount(player: Player, baseAmount: number): number
 	return math.floor(baseAmount * resolveCoinMultiplier(player))
 end
 
 function EconomyService.AwardRewardCoins(player: Player, amount: number, source: string?): (boolean, number)
 	return EconomyService.AwardCoins(player, amount, source, false)
+end
+
+function EconomyService.AwardDailyRewardCoins(player: Player, amount: number, source: string?): (boolean, number)
+	if amount <= 0 then
+		return true, 0
+	end
+
+	local baseAmount = math.floor(amount)
+	local vipOwned = resolveVipOwned(player)
+	local vipMultiplier = resolveVipRewardMultiplier(player)
+	local statMultiplier = resolveCoinMultiplier(player)
+	local finalAmount = math.floor(baseAmount * vipMultiplier)
+
+	warn(string.format(
+		"[DailyCoinRewardDebug] player=%s source=%s base=%d vipOwned=%s vipMultiplier=%.2f statMultiplier=%.2f final=%d",
+		player.Name,
+		tostring(source or "DailyReward"),
+		baseAmount,
+		tostring(vipOwned),
+		vipMultiplier,
+		statMultiplier,
+		finalAmount
+	))
+
+	local ok, actual = EconomyService.AwardCoins(player, finalAmount, source or "DailyReward", true)
+	return ok, actual
 end
 
 function EconomyService.AwardCoins(player: Player, amount: number, reason: string?, skipMultiplier: boolean?): (boolean, number)

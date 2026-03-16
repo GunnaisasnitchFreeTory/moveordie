@@ -56,6 +56,8 @@ local RewardPopup       = require(Client:WaitForChild("RewardPopup"))
 
 local C = UIConfig.Colors
 local S = UIConfig.Sizes
+local ROBUX_ICON_IMAGE = "rbxassetid://138917867019056"
+local VIP_GAMEPASS_ID = 1745607323
 
 local canvas: CanvasGroup = nil
 local uiScale: UIScale = nil
@@ -518,6 +520,56 @@ local function checkGamepassOwned(gamepassId: number): boolean
 	return ok and owns == true
 end
 
+local function canPromptVipPurchase(context: string): boolean
+	local persistedOwned = LocalPlayer:GetAttribute("OwnsVIP") == true
+		or LocalPlayer:GetAttribute("VIPBundleOwned") == true
+
+	local gateBlocked = false
+	local gateMarketplaceOwned = false
+	local gatePersistedOwned = false
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	local gateRF = remotes and remotes:FindFirstChild("CanPurchaseGamepassReward")
+	if gateRF and gateRF:IsA("RemoteFunction") then
+		local okGate, gateResult = pcall(function()
+			return gateRF:InvokeServer(VIP_GAMEPASS_ID)
+		end)
+		if okGate and type(gateResult) == "table" then
+			gateBlocked = gateResult.allowed == false
+			gateMarketplaceOwned = gateResult.marketplaceOwned == true
+			gatePersistedOwned = gateResult.vipOwned == true
+			print(string.format(
+				"[VIPPromptGateClient] context=%s player=%s gateAllowed=%s gateAlreadyOwned=%s gateVipOwned=%s gateMarketplaceOwned=%s",
+				context,
+				LocalPlayer.Name,
+				tostring(gateResult.allowed == true),
+				tostring(gateResult.alreadyOwned == true),
+				tostring(gatePersistedOwned),
+				tostring(gateMarketplaceOwned)
+			))
+		end
+	end
+
+	local marketplaceOwned = gateMarketplaceOwned
+	if not marketplaceOwned then
+		marketplaceOwned = checkGamepassOwned(VIP_GAMEPASS_ID)
+	end
+
+	local alreadyOwned = gateBlocked or persistedOwned or gatePersistedOwned or marketplaceOwned
+	print(string.format(
+		"[VIPPromptGateClient] context=%s player=%s persistedOwned=%s marketplaceOwned=%s promptBlocked=%s",
+		context,
+		LocalPlayer.Name,
+		tostring(persistedOwned or gatePersistedOwned),
+		tostring(marketplaceOwned),
+		tostring(alreadyOwned)
+	))
+	if alreadyOwned then
+		showShopToast("You already own VIP.")
+		return false
+	end
+	return true
+end
+
 local function getOwnedSet(attrKey: string): {[string]: boolean}
 	local out = {}
 	local raw = LocalPlayer:GetAttribute(attrKey)
@@ -796,6 +848,9 @@ local function populatePetsTab()
 			onAction = function()
 				if isOwned then return end
 				if isGamepass then
+					if item.gamepassId == VIP_GAMEPASS_ID and not canPromptVipPurchase("ShopPanel.ExclusivePetCard") then
+						return
+					end
 					MarketplaceService:PromptGamePassPurchase(LocalPlayer, item.gamepassId)
 					return
 				end
@@ -816,6 +871,12 @@ local function populatePetsTab()
 		})
 		card.Name = "ItemCard_" .. item.id
 		card.LayoutOrder = layoutOrder
+		if actionColor == C.RobuxButton then
+			local btn = card:FindFirstChild("ActionBtn")
+			if btn and btn:IsA("TextButton") then
+				Components.ApplyRobuxBuyStyle(btn, tostring(item.robux or 0), ROBUX_ICON_IMAGE)
+			end
+		end
 
 		if modelPath and catalogImage == "" and not isFNAFPet then
 			local vpFrame = ensureViewportInCard(card, item.iconColor)
@@ -1313,6 +1374,9 @@ local function populateCards(filterType: string)
 				if isOwned then return end
 
 				if isGamepass then
+					if item.gamepassId == VIP_GAMEPASS_ID and not canPromptVipPurchase("ShopPanel.PremiumCard") then
+						return
+					end
 					MarketplaceService:PromptGamePassPurchase(LocalPlayer, item.gamepassId)
 				elseif isProduct then
 					MarketplaceService:PromptProductPurchase(LocalPlayer, item.productId)
@@ -1357,6 +1421,12 @@ local function populateCards(filterType: string)
 			local card = Components.CreateItemCard(contentFrame, cardData)
 			card.Name        = "ItemCard_" .. item.id   -- ID tag for surgical update
 			card.LayoutOrder = order
+			if actionColor == C.RobuxButton then
+				local actionBtn = card:FindFirstChild("ActionBtn")
+				if actionBtn and actionBtn:IsA("TextButton") then
+					Components.ApplyRobuxBuyStyle(actionBtn, tostring(item.robux or 0), ROBUX_ICON_IMAGE)
+				end
+			end
 
 			if wantsThumbnail then
 				local vpFrame = ensureViewportInCard(card, item.iconColor)

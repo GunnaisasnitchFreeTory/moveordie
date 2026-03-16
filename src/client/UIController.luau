@@ -35,6 +35,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
 if not Shared then
@@ -134,6 +135,7 @@ local MATCH_LOCKED_PANELS = {
 	Shop = true,
 	Crowns = true,
 	Pets = true,
+	Icons = true,
 	Daily = true,
 	Stats = true,
 	Spectate = true,
@@ -149,9 +151,49 @@ local UIController = {}
 
 UIController.CloseAllPanels = nil -- set after closeCurrentPanel is defined
 
+local LUCKIEST_GUY_FONT = Enum.Font.LuckiestGuy
+
 local function log(...)
 	if UIConfig.DebugLog then
 		print("[UIController]", ...)
+	end
+end
+
+local function applyLuckiestGuyFontToInstance(instance: Instance)
+	if instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox") then
+		instance.Font = LUCKIEST_GUY_FONT
+	end
+end
+
+local function applyLuckiestGuyFontRecursively(root: Instance)
+	applyLuckiestGuyFontToInstance(root)
+	for _, desc in ipairs(root:GetDescendants()) do
+		applyLuckiestGuyFontToInstance(desc)
+	end
+end
+
+local function isInsideBillboard(instance: Instance): boolean
+	local current = instance
+	while current do
+		if current:IsA("BillboardGui") then
+			return true
+		end
+		current = current.Parent
+	end
+	return false
+end
+
+local function applyLuckiestGuyToBillboardText(root: Instance)
+	local function maybeApply(instance: Instance)
+		if (instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox"))
+			and isInsideBillboard(instance) then
+			instance.Font = LUCKIEST_GUY_FONT
+		end
+	end
+
+	maybeApply(root)
+	for _, desc in ipairs(root:GetDescendants()) do
+		maybeApply(desc)
 	end
 end
 
@@ -322,6 +364,32 @@ function UIController.Init()
 	Components.SetupResponsiveScale(hudGui)
 	Components.SetupResponsiveScale(panelGui)
 
+	-- Global UI typography override: force Luckiest Guy for every text object.
+	applyLuckiestGuyFontRecursively(hudGui)
+	applyLuckiestGuyFontRecursively(panelGui)
+
+	local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	if playerGui then
+		applyLuckiestGuyFontRecursively(playerGui)
+		playerGui.DescendantAdded:Connect(function(desc)
+			applyLuckiestGuyFontToInstance(desc)
+		end)
+	end
+
+	-- World-space typography override: every BillboardGui text uses Luckiest Guy.
+	applyLuckiestGuyToBillboardText(workspace)
+	workspace.DescendantAdded:Connect(function(desc)
+		if desc:IsA("BillboardGui") then
+			applyLuckiestGuyToBillboardText(desc)
+			return
+		end
+		if desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox") then
+			if isInsideBillboard(desc) then
+				desc.Font = LUCKIEST_GUY_FONT
+			end
+		end
+	end)
+
 	local function onPanelClosed()
 		currentPanel = nil
 		HUDPanel.SetBannerOverrideHidden(false)
@@ -362,8 +430,12 @@ function UIController.Init()
 	if NpcDialoguePanel.SetResponseHandlers then
 		NpcDialoguePanel.SetResponseHandlers({
 			onYes = function(dialogueData)
-				local nextPanel = dialogueData and dialogueData.nextPanel or "EmoteShop"
-				openPanel(nextPanel)
+				local nextPanel = dialogueData and dialogueData.nextPanel
+				if type(nextPanel) == "string" and nextPanel ~= "" then
+					openPanel(nextPanel)
+				else
+					closeCurrentPanel()
+				end
 			end,
 			onNo = function()
 				closeCurrentPanel()
@@ -374,8 +446,12 @@ function UIController.Init()
 	if ToolboxDialoguePanel.SetResponseHandlers then
 		ToolboxDialoguePanel.SetResponseHandlers({
 			onYes = function(dialogueData)
-				local nextPanel = dialogueData and dialogueData.nextPanel or "EmoteShop"
-				openPanel(nextPanel)
+				local nextPanel = dialogueData and dialogueData.nextPanel
+				if type(nextPanel) == "string" and nextPanel ~= "" then
+					openPanel(nextPanel)
+				else
+					closeCurrentPanel()
+				end
 			end,
 			onNo = function()
 				closeCurrentPanel()
@@ -981,10 +1057,11 @@ function UIController.Init()
 		objectText: string,
 		anchorPart: BasePart,
 		usesBodyPartAnchor: boolean,
-		maxDistance: number
+		maxDistance: number,
+		actionText: string?
 	)
 		prompt.Name = promptName
-		prompt.ActionText = "Buy"
+		prompt.ActionText = actionText or "Buy"
 		prompt.ObjectText = objectText
 		prompt.KeyboardKeyCode = Enum.KeyCode.E
 		prompt.HoldDuration = 0
@@ -995,6 +1072,166 @@ function UIController.Init()
 			prompt.Parent = anchorPart
 		end
 		prompt.Enabled = true
+	end
+
+	local function formatCoinAmount(value: number): string
+		local s = tostring(math.max(0, math.floor(value)))
+		local k
+		repeat
+			s, k = string.gsub(s, "^(-?%d+)(%d%d%d)", "%1,%2")
+		until k == 0
+		return s
+	end
+
+	local function getCoinTopUp150kProductId(): number?
+		for _, entry in ipairs(UIConfig.MockPremiumItems or {}) do
+			if entry.type == "Currency" and tonumber(entry.coinsAmount) == 150000 then
+				local productId = tonumber(entry.productId)
+				if productId and productId > 0 then
+					return productId
+				end
+			end
+		end
+		return nil
+	end
+
+	local BUNDLE_PROMPT_BASE_COST: { [string]: number } = {
+		brainrot_bundle = 150000,
+		fnaf_pets_bundle = 150000,
+	}
+
+	local bundleQuoteRemote: RemoteFunction? = nil
+	local function getBundleQuoteRemote(): RemoteFunction?
+		if bundleQuoteRemote and bundleQuoteRemote.Parent then
+			return bundleQuoteRemote
+		end
+		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+		if not remotes then
+			return nil
+		end
+		local rf = remotes:FindFirstChild("Shop_GetBundleQuote")
+		if rf and rf:IsA("RemoteFunction") then
+			bundleQuoteRemote = rf
+			return rf
+		end
+		return nil
+	end
+
+	local function getBundlePromptState(bundleId: string)
+		local coins = math.max(0, math.floor(tonumber(LocalPlayer:GetAttribute("Coins")) or 0))
+		local basePrice = BUNDLE_PROMPT_BASE_COST[bundleId] or 150000
+		local state = {
+			ok = false,
+			reason = "QUOTE_UNAVAILABLE",
+			basePrice = basePrice,
+			price = basePrice,
+			deductionAmount = 0,
+			ownedCount = 0,
+			totalCount = 0,
+			missingCount = 0,
+			coins = coins,
+			affordable = false,
+		}
+		local quoteRF = getBundleQuoteRemote()
+		if quoteRF then
+			local okQuote, result = pcall(quoteRF.InvokeServer, quoteRF, bundleId)
+			if okQuote and type(result) == "table" then
+				state.ok = result.ok == true
+				state.reason = tostring(result.reason or "")
+				state.price = math.max(0, math.floor(tonumber(result.price) or basePrice))
+				state.ownedCount = math.max(0, math.floor(tonumber(result.ownedCount) or 0))
+				state.totalCount = math.max(0, math.floor(tonumber(result.totalCount) or 0))
+				state.missingCount = math.max(0, math.floor(tonumber(result.missingCount) or 0))
+			end
+		end
+		state.deductionAmount = math.max(0, state.basePrice - state.price)
+		state.affordable = state.coins >= state.price
+		return state
+	end
+
+	local function isBundleOwnedPromptState(state): boolean
+		if type(state) ~= "table" then
+			return false
+		end
+		if tostring(state.reason) == "ALREADY_OWNED" then
+			return true
+		end
+		if tonumber(state.price) and tonumber(state.price) <= 0 then
+			return true
+		end
+		if tonumber(state.totalCount) and tonumber(state.totalCount) > 0 then
+			return tonumber(state.missingCount) == 0
+		end
+		return false
+	end
+
+	local function applyBundlePromptPrice(prompt: ProximityPrompt, bundleId: string, objectText: string)
+		local state = getBundlePromptState(bundleId)
+		local owned = isBundleOwnedPromptState(state)
+		local actionText = if owned
+			then "OWNED"
+			else string.format("BUY FOR %s FATE COINS", formatCoinAmount(state.price))
+		prompt.ActionText = actionText
+		prompt.ObjectText = objectText
+		print(string.format(
+			"[BundlePromptState] bundle=%s totalBundleCost=%d ownedItemDeductions=%d owned=%d missing=%d remainingCost=%d coins=%d affordable=%s isOwned=%s action=%s",
+			bundleId,
+			state.basePrice,
+			state.deductionAmount,
+			state.totalCount,
+			state.ownedCount,
+			state.missingCount,
+			state.price,
+			state.coins,
+			tostring(state.affordable),
+			tostring(owned),
+			actionText
+		))
+		return state
+	end
+
+	local function handleBundlePromptTrigger(bundleId: string): boolean
+		local state = getBundlePromptState(bundleId)
+		local owned = isBundleOwnedPromptState(state)
+		print(string.format(
+			"[BundlePromptTrigger] bundle=%s totalBundleCost=%d ownedItemDeductions=%d owned=%d missing=%d remainingCost=%d coins=%d affordable=%s isOwned=%s reason=%s",
+			bundleId,
+			state.basePrice,
+			state.deductionAmount,
+			state.totalCount,
+			state.ownedCount,
+			state.missingCount,
+			state.price,
+			state.coins,
+			tostring(state.affordable),
+			tostring(owned),
+			tostring(state.reason)
+		))
+		if owned then
+			print(string.format("[BundlePromptRoute] bundle=%s branch=OWNED_NO_ACTION", bundleId))
+			return false
+		end
+		if state.affordable then
+			print(string.format("[BundlePromptRoute] bundle=%s branch=OPEN_BUNDLE_PANEL", bundleId))
+			openPanel("Shop")
+			if ShopPanel.ActivateBundleTab then
+				ShopPanel.ActivateBundleTab(bundleId)
+			end
+			return true
+		end
+
+		local topUpProductId = getCoinTopUp150kProductId()
+		if topUpProductId and topUpProductId > 0 then
+			print(string.format("[BundlePromptRoute] bundle=%s branch=OPEN_150K_TOPUP productId=%d", bundleId, topUpProductId))
+			MarketplaceService:PromptProductPurchase(LocalPlayer, topUpProductId)
+		else
+			warn(string.format("[BundlePromptRoute] bundle=%s topupProductMissing=true", bundleId))
+			openPanel("Shop")
+			if ShopPanel.ActivateBundleTab then
+				ShopPanel.ActivateBundleTab(bundleId)
+			end
+		end
+		return false
 	end
 
 	local function getOrCreateFixedBundleRootAnchor(
@@ -1119,6 +1356,7 @@ function UIController.Init()
 			log("[BrainrotBundle] Prompt created for fixed Dragon Cannelloni display anchor")
 		end
 		configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", promptPart, false, BUNDLE_OPEN_DISTANCE)
+		applyBundlePromptPrice(prompt, "brainrot_bundle", "Brainrot Bundle")
 		local removedPromptCount, removedAnchorCount = removeDuplicateBundlePrompts(brainrotFolder, prompt, promptPart, {
 			PromptAnchor = true,
 			BrainrotBundlePromptAnchor = true,
@@ -1136,10 +1374,9 @@ function UIController.Init()
 
 		prompt.Triggered:Connect(function(playerWhoTriggered)
 			if playerWhoTriggered ~= LocalPlayer then return end
-			bundleOpenTime = tick()
-			openPanel("Shop")
-			if ShopPanel.ActivateBundleTab then
-				ShopPanel.ActivateBundleTab("brainrot_bundle")
+			local openedBundle = handleBundlePromptTrigger("brainrot_bundle")
+			if openedBundle then
+				bundleOpenTime = tick()
 			end
 		end)
 
@@ -1159,12 +1396,12 @@ function UIController.Init()
 					if not prompt or not prompt.Parent then
 						prompt = Instance.new("ProximityPrompt")
 						configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", promptPart, false, BUNDLE_OPEN_DISTANCE)
+						applyBundlePromptPrice(prompt, "brainrot_bundle", "Brainrot Bundle")
 						prompt.Triggered:Connect(function(playerWhoTriggered)
 							if playerWhoTriggered ~= LocalPlayer then return end
-							bundleOpenTime = tick()
-							openPanel("Shop")
-							if ShopPanel.ActivateBundleTab then
-								ShopPanel.ActivateBundleTab("brainrot_bundle")
+							local openedBundle = handleBundlePromptTrigger("brainrot_bundle")
+							if openedBundle then
+								bundleOpenTime = tick()
 							end
 						end)
 						local removedPromptCountLoop, removedAnchorCountLoop = removeDuplicateBundlePrompts(brainrotFolder, prompt, promptPart, {
@@ -1184,6 +1421,7 @@ function UIController.Init()
 						log("[BrainrotBundle] Prompt recreated on fixed Dragon Cannelloni anchor")
 					else
 						configureBundlePrompt(prompt, "BrainrotBundlePrompt", "Brainrot Bundle", promptPart, false, BUNDLE_OPEN_DISTANCE)
+						applyBundlePromptPrice(prompt, "brainrot_bundle", "Brainrot Bundle")
 						local removedPromptCountLoop, removedAnchorCountLoop = removeDuplicateBundlePrompts(brainrotFolder, prompt, promptPart, {
 							PromptAnchor = true,
 							BrainrotBundlePromptAnchor = true,
@@ -1284,16 +1522,11 @@ function UIController.Init()
 					return
 				end
 				lastPromptOpenAt = now
-				bundleOpenTime = tick()
-				openedByFnafPrompt = true
-				print("[ShopOpen] source=FNAFPrompt action=OPEN")
-				if currentPanel ~= "Shop" then
-					openPanel("Shop")
-				else
-					ShopPanel.Show()
-				end
-				if ShopPanel.ActivateBundleTab then
-					ShopPanel.ActivateBundleTab("fnaf_pets_bundle")
+				local openedBundle = handleBundlePromptTrigger("fnaf_pets_bundle")
+				if openedBundle then
+					bundleOpenTime = tick()
+					openedByFnafPrompt = true
+					print("[ShopOpen] source=FNAFPrompt action=OPEN")
 				end
 			end)
 		end
@@ -1318,7 +1551,8 @@ function UIController.Init()
 			prompt = Instance.new("ProximityPrompt")
 			log("[FNAFBundle] Prompt created for Freddy Fzber display anchor")
 		end
-		configureBundlePrompt(prompt, "FNAFBundlePrompt", "", promptPart, false, BUNDLE_OPEN_DISTANCE)
+		configureBundlePrompt(prompt, "FNAFBundlePrompt", "Animatronic Pets", promptPart, false, BUNDLE_OPEN_DISTANCE)
+		applyBundlePromptPrice(prompt, "fnaf_pets_bundle", "Animatronic Pets")
 		local removedPromptCount, removedAnchorCount = removeFnafPromptArtifacts(fnafFolder, prompt, promptPart)
 		log(string.format(
 			"[FNAFBundle] displayModel=%s anchor=%s anchorPos=%s removedPrompts=%d removedAnchors=%d",
@@ -1347,11 +1581,13 @@ function UIController.Init()
 				if promptPart and promptPart.Parent then
 					if not prompt or not prompt.Parent then
 						prompt = Instance.new("ProximityPrompt")
-						configureBundlePrompt(prompt, "FNAFBundlePrompt", "", promptPart, false, BUNDLE_OPEN_DISTANCE)
+						configureBundlePrompt(prompt, "FNAFBundlePrompt", "Animatronic Pets", promptPart, false, BUNDLE_OPEN_DISTANCE)
+						applyBundlePromptPrice(prompt, "fnaf_pets_bundle", "Animatronic Pets")
 						bindFnafPrompt(prompt)
 						log("[FNAFBundle] Prompt recreated on fixed Freddy anchor")
 					else
-						configureBundlePrompt(prompt, "FNAFBundlePrompt", "", promptPart, false, BUNDLE_OPEN_DISTANCE)
+						configureBundlePrompt(prompt, "FNAFBundlePrompt", "Animatronic Pets", promptPart, false, BUNDLE_OPEN_DISTANCE)
+						applyBundlePromptPrice(prompt, "fnaf_pets_bundle", "Animatronic Pets")
 					end
 
 					local removedPromptCountLoop, removedAnchorCountLoop = removeFnafPromptArtifacts(fnafFolder, prompt, promptPart)

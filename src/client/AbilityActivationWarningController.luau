@@ -8,6 +8,8 @@ local LocalPlayer = Players.LocalPlayer
 local warningGui: ScreenGui? = nil
 local warningLabel: TextLabel? = nil
 local hideToken = 0
+local shownPosition = UDim2.new(0.5, 0, 0.6, 0)
+local hiddenPosition = UDim2.new(0.5, 0, 0.625, 0)
 
 local function ensureGui()
 	if warningGui and warningLabel and warningGui.Parent then
@@ -27,25 +29,20 @@ local function ensureGui()
 	warningLabel = Instance.new("TextLabel")
 	warningLabel.Name = "WarningLabel"
 	warningLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-	warningLabel.Position = UDim2.new(0.5, 0, 0.6, 0)
-	warningLabel.Size = UDim2.new(0, 300, 0, 42)
-	warningLabel.BackgroundColor3 = Color3.fromRGB(20, 24, 42)
-	warningLabel.BackgroundTransparency = 0.12
+	warningLabel.Position = hiddenPosition
+	warningLabel.Size = UDim2.new(0, 460, 0, 52)
+	warningLabel.BackgroundTransparency = 1
 	warningLabel.BorderSizePixel = 0
-	warningLabel.Font = Enum.Font.GothamBold
-	warningLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	warningLabel.TextSize = 16
+	warningLabel.Font = Enum.Font.GothamBlack
+	warningLabel.TextColor3 = Color3.fromRGB(112, 255, 149)
+	warningLabel.TextSize = 28
+	warningLabel.TextStrokeColor3 = Color3.fromRGB(6, 24, 11)
+	warningLabel.TextStrokeTransparency = 0.35
+	warningLabel.TextWrapped = true
 	warningLabel.TextTransparency = 1
 	warningLabel.Visible = false
 	warningLabel.ZIndex = 5
 	warningLabel.Parent = warningGui
-	Instance.new("UICorner", warningLabel).CornerRadius = UDim.new(0, 12)
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Color3.fromRGB(98, 214, 143)
-	stroke.Thickness = 1.5
-	stroke.Transparency = 0.15
-	stroke.Parent = warningLabel
 end
 
 local function showWarning(message: string)
@@ -58,9 +55,12 @@ local function showWarning(message: string)
 	local token = hideToken
 
 	warningLabel.Text = tostring(message or "")
+	warningLabel.Position = hiddenPosition
+	warningLabel.TextTransparency = 1
 	warningLabel.Visible = true
 	TweenService:Create(warningLabel, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		TextTransparency = 0,
+		Position = shownPosition,
 	}):Play()
 
 	task.delay(2.6, function()
@@ -69,6 +69,7 @@ local function showWarning(message: string)
 		end
 		local fade = TweenService:Create(warningLabel, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 			TextTransparency = 1,
+			Position = hiddenPosition,
 		})
 		fade:Play()
 		fade.Completed:Connect(function()

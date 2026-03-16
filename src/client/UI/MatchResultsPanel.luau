@@ -61,6 +61,7 @@ local _active = false
 local _hideTimer: thread? = nil
 local _escConn: RBXScriptConnection? = nil
 local _stateConn: RBXScriptConnection? = nil
+local _globalStateConn: RBXScriptConnection? = nil
 local _matchStateVal: StringValue? = nil  -- ReplicatedStorage.MatchStatus.State
 
 -- ═══════════════════════════════════════════
@@ -104,8 +105,25 @@ end
 -- ═══════════════════════════════════════════
 -- DISMISS
 -- ═══════════════════════════════════════════
+local function cleanupStaleWrappers(reason: string): number
+	if not _gui or not _gui.Parent then
+		return 0
+	end
+	local removed = 0
+	for _, child in ipairs(_gui:GetChildren()) do
+		if child:IsA("Frame") and child.Name == "ModalWrapper" then
+			child:Destroy()
+			removed += 1
+		end
+	end
+	if removed > 0 then
+		print(string.format("[MatchResultsPanel] stale cleanup reason=%s removedWrappers=%d", reason, removed))
+	end
+	return removed
+end
+
 function MatchResultsPanel.Hide()
-	if not _active then return end
+	local wasActive = _active
 	_active = false
 	if _hideTimer then
 		task.cancel(_hideTimer)
@@ -132,6 +150,8 @@ function MatchResultsPanel.Hide()
 		end
 	end
 	_overlay = nil
+	cleanupStaleWrappers("Hide")
+	print(string.format("[MatchResultsPanel] closed wasActive=%s", tostring(wasActive)))
 end
 
 -- ═══════════════════════════════════════════
@@ -139,6 +159,8 @@ end
 -- ═══════════════════════════════════════════
 function MatchResultsPanel.Show(data)
 	if not data then return end
+
+	cleanupStaleWrappers("ShowPreOpen")
 
 	local uic = getUIController()
 	if uic and uic.CloseAllPanels then uic.CloseAllPanels() end
@@ -155,6 +177,11 @@ function MatchResultsPanel.Show(data)
 	if not _gui or not _gui.Parent then return end
 
 	_active = true
+	print(string.format("[MatchResultsPanel] opened placement=%s coins=%s rankings=%d",
+		tostring(data.yourPlacement),
+		tostring(data.yourCoins),
+		type(data.rankings) == "table" and #data.rankings or 0
+	))
 
 	local wrapper = Instance.new("Frame")
 	wrapper.Name = "ModalWrapper"
@@ -176,6 +203,7 @@ function MatchResultsPanel.Show(data)
 	clickCatcher.ZIndex = 40
 	clickCatcher.Parent = wrapper
 	clickCatcher.MouseButton1Click:Connect(function()
+		print("[MatchResultsPanel] close clicked source=overlay")
 		MatchResultsPanel.Hide()
 	end)
 
@@ -183,6 +211,7 @@ function MatchResultsPanel.Show(data)
 	_escConn = UserInputService.InputBegan:Connect(function(input, processed)
 		if processed then return end
 		if input.KeyCode == Enum.KeyCode.Escape then
+			print("[MatchResultsPanel] close clicked source=escape")
 			MatchResultsPanel.Hide()
 		end
 	end)
@@ -211,6 +240,7 @@ function MatchResultsPanel.Show(data)
 	card.Parent = wrapper
 
 	card.MouseButton1Click:Connect(function()
+		print("[MatchResultsPanel] close clicked source=card")
 		MatchResultsPanel.Hide()
 	end)
 
@@ -239,6 +269,7 @@ function MatchResultsPanel.Show(data)
 	closeBtn.Parent = card
 	Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(1, 0)
 	closeBtn.MouseButton1Click:Connect(function()
+		print("[MatchResultsPanel] close clicked source=button")
 		MatchResultsPanel.Hide()
 	end)
 
@@ -633,6 +664,19 @@ function MatchResultsPanel.Init(screenGui: ScreenGui)
 			_matchStateVal = matchStatus:WaitForChild("State", 10)
 			if _matchStateVal then
 				print("[MatchResultsPanel] MatchStatus.State cached for auto-close")
+				if _globalStateConn then
+					_globalStateConn:Disconnect()
+				end
+				_globalStateConn = _matchStateVal.Changed:Connect(function(newVal)
+					if newVal ~= "Ending" then
+						local cleaned = cleanupStaleWrappers("RoundTransition:" .. tostring(newVal))
+						if _active or cleaned > 0 then
+							print(string.format("[MatchResultsPanel] round transition cleanup state=%s cleaned=%d",
+								tostring(newVal), cleaned))
+						end
+						MatchResultsPanel.Hide()
+					end
+				end)
 			end
 		end
 	end)

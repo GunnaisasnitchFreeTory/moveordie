@@ -76,6 +76,8 @@ end
 
 local C = UIConfig.Colors
 local S = UIConfig.Sizes
+local ROBUX_BUY_ICON_IMAGE = "rbxassetid://138917867019056"
+local ROBUX_ICON_SIZE = 28
 local DEBUG_LOGS = RunService:IsStudio() and UIConfig.DebugLogs == true
 local LOG_RATE_SECONDS = tonumber(UIConfig.LogRateSeconds) or 20
 local _lastLogByKey: {[string]: number} = {}
@@ -95,6 +97,110 @@ local function shouldLog(key: string, minInterval: number?): boolean
 end
 
 local Components = {}
+
+function Components.ApplyRobuxBuyStyle(button: TextButton, amountText: string?, iconImage: string?, subText: string?)
+	local buyGroup = button:FindFirstChild("RobuxBuyGroup")
+	if buyGroup then
+		buyGroup:Destroy()
+	end
+
+	local sourceText = button.Text or ""
+	button.Text = ""
+
+	local group = Instance.new("Frame")
+	group.Name = "RobuxBuyGroup"
+	group.AnchorPoint = Vector2.new(0.5, 0.5)
+	group.Position = UDim2.fromScale(0.5, 0.5)
+	group.Size = UDim2.new(1, -12, 1, -6)
+	group.BackgroundTransparency = 1
+	group.ZIndex = button.ZIndex + 1
+	group.Parent = button
+
+	local topRow = Instance.new("Frame")
+	topRow.Name = "TopRow"
+	topRow.AnchorPoint = Vector2.new(0.5, 0.5)
+	topRow.Position = UDim2.new(0.5, 0, (subText and subText ~= "") and 0.38 or 0.5, 0)
+	topRow.Size = UDim2.new(1, 0, 0, ROBUX_ICON_SIZE)
+	topRow.BackgroundTransparency = 1
+	topRow.ZIndex = group.ZIndex
+	topRow.Parent = group
+
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.Padding = UDim.new(0, 5)
+	layout.Parent = topRow
+
+	local icon = Instance.new("ImageLabel")
+	icon.Name = "Icon"
+	icon.Size = UDim2.fromOffset(ROBUX_ICON_SIZE, ROBUX_ICON_SIZE)
+	icon.BackgroundTransparency = 1
+	icon.Image = iconImage or ROBUX_BUY_ICON_IMAGE
+	icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+	icon.ScaleType = Enum.ScaleType.Fit
+	icon.ZIndex = topRow.ZIndex
+	icon.Parent = topRow
+
+	local iconSizeConstraint = Instance.new("UISizeConstraint")
+	iconSizeConstraint.MinSize = Vector2.new(ROBUX_ICON_SIZE, ROBUX_ICON_SIZE)
+	iconSizeConstraint.MaxSize = Vector2.new(ROBUX_ICON_SIZE, ROBUX_ICON_SIZE)
+	iconSizeConstraint.Parent = icon
+
+	local iconAspect = Instance.new("UIAspectRatioConstraint")
+	iconAspect.AspectRatio = 1
+	iconAspect.AspectType = Enum.AspectType.FitWithinMaxSize
+	iconAspect.DominantAxis = Enum.DominantAxis.Width
+	iconAspect.Parent = icon
+
+	local amount = tostring(amountText or "")
+	if amount == "" then
+		local parsed = string.match(string.upper(sourceText), "(%d[%d,]*)%s*ROBUX")
+		amount = parsed or "?"
+	end
+
+	local label = Instance.new("TextLabel")
+	label.Name = "Label"
+	label.AutomaticSize = Enum.AutomaticSize.X
+	label.Size = UDim2.fromOffset(0, 18)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.LuckiestGuy
+	label.Text = amount
+	label.TextColor3 = button.TextColor3
+	label.TextTransparency = 0.2
+	label.TextSize = math.max(16, button.TextSize)
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.ZIndex = topRow.ZIndex
+	label.Parent = topRow
+
+	local labelStroke = Instance.new("UIStroke")
+	labelStroke.Color = Color3.fromRGB(0, 0, 0)
+	labelStroke.Thickness = 1.3
+	labelStroke.Transparency = 0.18
+	labelStroke.Parent = label
+
+	if subText and subText ~= "" then
+		local qtyLabel = Instance.new("TextLabel")
+		qtyLabel.Name = "SubLabel"
+		qtyLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+		qtyLabel.Position = UDim2.new(0.5, 0, 0.78, 0)
+		qtyLabel.Size = UDim2.new(1, -6, 0, 14)
+		qtyLabel.BackgroundTransparency = 1
+		qtyLabel.Font = Enum.Font.GothamBold
+		qtyLabel.Text = tostring(subText)
+		qtyLabel.TextColor3 = button.TextColor3
+		qtyLabel.TextTransparency = 0.08
+		qtyLabel.TextSize = 10
+		qtyLabel.ZIndex = group.ZIndex
+		qtyLabel.Parent = group
+
+		local qtyStroke = Instance.new("UIStroke")
+		qtyStroke.Color = Color3.fromRGB(0, 0, 0)
+		qtyStroke.Thickness = 1.1
+		qtyStroke.Transparency = 0.25
+		qtyStroke.Parent = qtyLabel
+	end
+end
 
 -- ═══════════════════════════════════════════════════════════════════
 -- INTERNAL HELPERS
@@ -938,6 +1044,11 @@ function Components.CreateItemCard(parent: Instance, data: CardConfig): Frame
 		bts.Transparency = 0.12
 		bts.Parent = btn
 
+		if type(data.actionText) == "string" and string.find(string.upper(data.actionText), "ROBUX", 1, true) then
+			local amount = string.match(string.upper(data.actionText), "(%d[%d,]*)%s*ROBUX")
+			Components.ApplyRobuxBuyStyle(btn, amount)
+		end
+
 		AnimUtil.WireButton(btn, function()
 			SoundUtil.Click()
 			if data.onAction then data.onAction() end
@@ -1138,6 +1249,10 @@ function Components.CreateCrateSection(parent: Instance, data: CrateData): Frame
 		pbts.Thickness = 1.2
 		pbts.Transparency = 0.18
 		pbts.Parent = pBtn
+
+		if isRobux then
+			Components.ApplyRobuxBuyStyle(pBtn, tostring(price.cost), nil, tostring(price.label or ""))
+		end
 
 		AnimUtil.WireButton(pBtn, function()
 			SoundUtil.Click()
@@ -1762,6 +1877,11 @@ function Components.CreateViewportItemCard(parent: Instance, data): Frame
 		bs.Transparency = 0.4
 		bs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		bs.Parent = btn
+
+		if type(data.actionText) == "string" and string.find(string.upper(data.actionText), "ROBUX", 1, true) then
+			local amount = string.match(string.upper(data.actionText), "(%d[%d,]*)%s*ROBUX")
+			Components.ApplyRobuxBuyStyle(btn, amount)
+		end
 
 		AnimUtil.WireButton(btn, function()
 			SoundUtil.Click()

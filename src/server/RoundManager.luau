@@ -767,7 +767,10 @@ local function runRoundCycle(): boolean
 	end
 	
 	-- Select unsafe zones and show telegraph BEFORE freezing (grace window)
+	log(string.format("[BeamPhasePrep] round=%d step=SelectUnsafeZones", currentRound))
 	HazardManager.SelectUnsafeZones(currentRound)
+	log(string.format("[BeamPhasePrep] round=%d unsafeZones=%d", currentRound, #HazardManager.GetUnsafeZones()))
+	log(string.format("[BeamPhasePrep] round=%d step=ShowTelegraph", currentRound))
 	HazardManager.ShowTelegraph()
 
 	-- Grace window: telegraph is visible but players can still move
@@ -800,8 +803,23 @@ local function runRoundCycle(): boolean
 	end
 	
 	-- Phase 3: BeamWarning (tile warnings vanish instantly, beams appear)
+	log(string.format("[BeamPhaseStart] round=%d step=HideTelegraph", currentRound))
 	HazardManager.HideTelegraph()
-	HazardManager.SpawnBeams()
+	log(string.format("[BeamPhaseStart] round=%d step=SpawnBeams", currentRound))
+	local spawnOk, spawnErr = pcall(function()
+		HazardManager.SpawnBeams()
+	end)
+	if not spawnOk then
+		warn(string.format("[RoundManager] SpawnBeams failed round=%d err=%s", currentRound, tostring(spawnErr)))
+		matchEndReason = MatchEndReason.Cancelled
+		setMovementCountdownHudState(false, 0, "RoundCancelledSpawnBeams")
+		clearRoundLockedFreezes(currentRound, "RoundCancelledSpawnBeams")
+		unfreezeAllPlayers(true)
+		HazardManager.Cleanup()
+		cleanupModeRound()
+		running = false
+		return false
+	end
 	local beamWarningTime = math.max(0, RoundConfig.FreezeSeconds - RoundConfig.TelegraphSeconds)
 	if not runPhase(Phase.BeamWarning, beamWarningTime) then
 		setMovementCountdownHudState(false, 0, "RoundCancelledBeamWarning")
@@ -813,7 +831,21 @@ local function runRoundCycle(): boolean
 	end
 	
 	-- Phase 4: Strike (beam fires, eliminate players in unsafe zones)
-	HazardManager.Strike()
+	log(string.format("[BeamPhaseStrike] round=%d step=Strike", currentRound))
+	local strikeOk, strikeErr = pcall(function()
+		HazardManager.Strike()
+	end)
+	if not strikeOk then
+		warn(string.format("[RoundManager] Strike failed round=%d err=%s", currentRound, tostring(strikeErr)))
+		matchEndReason = MatchEndReason.Cancelled
+		setMovementCountdownHudState(false, 0, "RoundCancelledStrikeError")
+		clearRoundLockedFreezes(currentRound, "RoundCancelledStrikeError")
+		unfreezeAllPlayers(true)
+		HazardManager.Cleanup()
+		cleanupModeRound()
+		running = false
+		return false
+	end
 	if not runPhase(Phase.Strike, RoundConfig.StrikeSeconds) then
 		setMovementCountdownHudState(false, 0, "RoundCancelledStrike")
 		clearRoundLockedFreezes(currentRound, "RoundCancelledStrike")
@@ -1028,13 +1060,18 @@ function RoundManager.StartRoundLoop(mode: string?)
 	))
 	
 	task.spawn(function()
-		while running do
-			-- Run a round cycle
-			local completed = runRoundCycle()
-			
-			if not completed then
-				break -- Cancelled or match ended
+		local loopOk, loopErr = xpcall(function()
+			while running do
+				local completed = runRoundCycle()
+				if not completed then
+					break
+				end
 			end
+		end, debug.traceback)
+		if not loopOk then
+			warn("[RoundManager] Round loop crashed:", loopErr)
+			matchEndReason = MatchEndReason.Cancelled
+			running = false
 		end
 		
 		-- Cleanup

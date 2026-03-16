@@ -30,6 +30,7 @@ local initialized = false
 -- Removal callbacks: fired BEFORE state is cleared in RemovePlayer
 -- Signature: fn(player: Player, oldState: string?)
 local removalCallbacks: { (Player, string?) -> () } = {}
+local stateChangedCallbacks: { (Player, string?, string) -> () } = {}
 
 local PlayerStateService = {}
 
@@ -85,6 +86,13 @@ function PlayerStateService.SetState(player: Player, state: string): boolean
 			oldState or "nil", 
 			state
 		))
+	end
+
+	for _, fn in ipairs(stateChangedCallbacks) do
+		local ok, err = pcall(fn, player, oldState, state)
+		if not ok then
+			warn(string.format("[PlayerStateService] State callback error: %s", tostring(err)))
+		end
 	end
 	
 	return true
@@ -180,6 +188,10 @@ end
 ]]
 function PlayerStateService.OnPlayerRemoval(fn: (Player, string?) -> ())
 	table.insert(removalCallbacks, fn)
+end
+
+function PlayerStateService.OnStateChanged(fn: (Player, string?, string) -> ())
+	table.insert(stateChangedCallbacks, fn)
 end
 
 --[[

@@ -61,7 +61,7 @@ local function log(...)
 end
 
 local BASE_STATS = {
-	WalkSpeed      = 20,
+	WalkSpeed      = 18,
 	JumpPower      = 50,
 	CoinMultiplier = 1.0,
 }
@@ -303,6 +303,7 @@ function StatService.RecalculateStats(player: Player)
 			if isMovementTemporarilyLocked(player, humanoid) then
 				log(string.format("%s stats deferred (movement lock active)", player.Name))
 			else
+				humanoid.UseJumpPower = true
 				humanoid.WalkSpeed = walkSpeed
 				humanoid.JumpPower = jumpPower
 			end
@@ -406,6 +407,13 @@ function StatService.GetCoinMultiplier(player: Player): number
 	return coinMultiplierCache[player.UserId]
 		or tonumber(player:GetAttribute("CoinMultiplier"))
 		or BASE_STATS.CoinMultiplier
+end
+
+function StatService.GetVipRewardMultiplier(player: Player): number
+	if not player then
+		return 1
+	end
+	return getEffectiveVipOwned(player) and VIP_COIN_MULTIPLIER or 1
 end
 
 function StatService.OnPlayerRemoving(player: Player)

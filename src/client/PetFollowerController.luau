@@ -47,6 +47,7 @@ local _unequipRemote = _remotes:WaitForChild("UnequipWalkerPet")
 local TAG = "[PetFollower]"
 local PET_INSTANCE_NAME = "_EquippedPet"
 local TUNGTUNG_PET_ID = "pet_tungtungsahur"
+local FURRYHUGS_PET_ID = "pet_huggy_wuggy"
 
 local PetFollowerController = {}
 
@@ -234,6 +235,13 @@ local TUNGTUNG_EMOTE_FADE_OUT = 0.24
 local TUNGTUNG_EMOTE_PRE_BLEND_WAIT = 0.08
 local TUNGTUNG_EMOTE_POST_BLEND_HOLD = 0.16
 local TUNGTUNG_EMOTE_ROOT_LERP_ALPHA = 0.32
+local TUNGTUNG_LAUGH_ALIASES = { "laugh", "laughing", "emote_laugh" }
+local TUNGTUNG_LAUGH_FALLBACK_IDS = {
+	"rbxassetid://507770818",
+}
+local TUNGTUNG_LAUGH_FADE_IN = 0.15
+local TUNGTUNG_LAUGH_FADE_OUT = 0.18
+local TUNGTUNG_LAUGH_DEFAULT_DURATION = 2.2
 local TUNGTUNG_EMOTE_SPECS = {
 	{
 		label = "Dance1",
@@ -269,6 +277,13 @@ local TUNGTUNG_EMOTE_SPECS = {
 		duration = 4.8,
 	},
 }
+local SHARED_PET_EMOTE_IDS = {
+	[TUNGTUNG_PET_ID] = true,
+	[FURRYHUGS_PET_ID] = true,
+}
+local PET_EMOTE_ROOT_DRIVE_IDS = {
+	[TUNGTUNG_PET_ID] = true,
+}
 
 -- =====================================================================
 -- STATE (per-player pet tracking)
@@ -291,6 +306,11 @@ local _activePets: { [Player]: {
 } } = {}
 
 local _playerConns: { [Player]: { RBXScriptConnection } } = {}
+local _matchRoundConn: RBXScriptConnection? = nil
+local _killFeedConn: RBXScriptConnection? = nil
+local _trackedRoundNumber = 0
+local _sawDeathThisRound = false
+local _laughedThisRound = false
 
 local DEBUG_LOGS = RunService:IsStudio() and UIConfig.DebugLogs == true
 local LOG_RATE_SECONDS = tonumber(UIConfig.LogRateSeconds) or 20
@@ -481,6 +501,45 @@ local function findTungTungDriveRoot(model: Model, humanoid: Humanoid?): BasePar
 	return model:FindFirstChildWhichIsA("BasePart", true)
 end
 
+local function isSharedPetEmoteEnabled(petId: string?): boolean
+	return petId ~= nil and SHARED_PET_EMOTE_IDS[petId] == true
+end
+
+local function shouldUseEmoteRootDrive(petId: string?): boolean
+	return petId ~= nil and PET_EMOTE_ROOT_DRIVE_IDS[petId] == true
+end
+
+local function modelHasMotor6D(model: Model): boolean
+	return model:FindFirstChildWhichIsA("Motor6D", true) ~= nil
+end
+
+local function sanitizeFollowerRigArtifacts(model: Model, petId: string)
+	if petId ~= FURRYHUGS_PET_ID then
+		return
+	end
+	if modelHasMotor6D(model) then
+		return
+	end
+	local humanoid = findHumanoidInModel(model)
+	if humanoid then
+		humanoid:Destroy()
+	end
+	local hrp = model:FindFirstChild("HumanoidRootPart", true)
+	if hrp and hrp:IsA("BasePart") then
+		hrp:Destroy()
+	end
+	if not model.PrimaryPart then
+		local firstPart = model:FindFirstChildWhichIsA("BasePart", true)
+		if firstPart then
+			model.PrimaryPart = firstPart
+		end
+	end
+	print(string.format(
+		"[FurryHugsPetEmote] event=rig_sanitized_for_follow clone=%s motorsPresent=false",
+		model:GetFullName()
+	))
+end
+
 local function ensureAnimatorForPet(model: Model): (Humanoid?, Animator?, string)
 	local humanoid = findHumanoidInModel(model)
 	if humanoid then
@@ -587,7 +646,7 @@ local function setTungTungEmoteState(player: Player, clone: Model, isActive: boo
 	end
 end
 
-local function buildTungTungEmoteTracks(model: Model, animator: Animator, player: Player)
+local function buildTungTungEmoteTracks(model: Model, animator: Animator, player: Player, petId: string)
 	local loaded = {}
 	for _, spec in ipairs(TUNGTUNG_EMOTE_SPECS) do
 		local animationIds = collectAnimationIdsByAliases(model, spec.aliases)
@@ -605,7 +664,7 @@ local function buildTungTungEmoteTracks(model: Model, animator: Animator, player
 			"%s owner=%s event=track_loaded pet=%s emote=%s animationId=%s source=%s loadSucceeded=%s trackLength=%.3f",
 			TUNGTUNG_DEBUG_TAG,
 			player.Name,
-			TUNGTUNG_PET_ID,
+			petId,
 			spec.label,
 			tostring(animationId or "nil"),
 			source,
@@ -636,9 +695,11 @@ local function stopTungTungEmoteTracks(loadedTracks)
 	end
 end
 
-local function startTungTungPetEmoteLoop(clone: Model, player: Player): thread?
+local function startTungTungPetEmoteLoop(clone: Model, player: Player, petIdOverride: string?): thread?
+	local petId = petIdOverride or TUNGTUNG_PET_ID
 	local humanoid = findHumanoidInModel(clone)
-	local _, animator, animationDriver = ensureAnimatorForPet(clone)
+	local ensuredHumanoid, animator, animationDriver = ensureAnimatorForPet(clone)
+	humanoid = ensuredHumanoid or humanoid
 	local driveRoot = findTungTungDriveRoot(clone, humanoid)
 	local hasAnimator = animator ~= nil
 
@@ -646,7 +707,7 @@ local function startTungTungPetEmoteLoop(clone: Model, player: Player): thread?
 		"%s owner=%s event=spawn pet=%s humanoid=%s animator=%s driver=%s clone=%s root=%s",
 		TUNGTUNG_DEBUG_TAG,
 		player.Name,
-		TUNGTUNG_PET_ID,
+		petId,
 		tostring(humanoid ~= nil),
 		tostring(hasAnimator),
 		tostring(animationDriver),
@@ -663,7 +724,7 @@ local function startTungTungPetEmoteLoop(clone: Model, player: Player): thread?
 		return nil
 	end
 
-	local loadedTracks = buildTungTungEmoteTracks(clone, animator, player)
+	local loadedTracks = buildTungTungEmoteTracks(clone, animator, player, petId)
 	if #loadedTracks == 0 then
 		warn(string.format(
 			"%s owner=%s event=loop_not_started reason=no_tracks_loaded humanoid=%s animator=%s driver=%s",
@@ -679,6 +740,17 @@ local function startTungTungPetEmoteLoop(clone: Model, player: Player): thread?
 	if humanoid then
 		humanoid.AutoRotate = false
 		humanoid.PlatformStand = false
+	end
+	if petId == FURRYHUGS_PET_ID then
+		print(string.format(
+			"[FurryHugsPetEmote] owner=%s event=initialized_for_emotes clone=%s humanoid=%s animator=%s driver=%s root=%s",
+			player.Name,
+			clone:GetFullName(),
+			tostring(humanoid ~= nil),
+			tostring(hasAnimator),
+			tostring(animationDriver),
+			tostring(driveRoot and driveRoot:GetFullName() or "nil")
+		))
 	end
 
 	print(string.format(
@@ -732,7 +804,7 @@ local function startTungTungPetEmoteLoop(clone: Model, player: Player): thread?
 					"%s owner=%s event=play_emote pet=%s baseWait=%d emote=%s animationId=%s source=%s loadSucceeded=%s trackLength=%.3f trackPlayed=%s replacedImmediately=%s followerDrivenByRoot=%s clone=%s",
 					TUNGTUNG_DEBUG_TAG,
 					player.Name,
-					TUNGTUNG_PET_ID,
+					petId,
 					interval,
 					tostring(chosen.label),
 					tostring(chosen.animationId or "nil"),
@@ -757,6 +829,14 @@ local function startTungTungPetEmoteLoop(clone: Model, player: Player): thread?
 					setTungTungEmoteState(player, clone, false, nil, driveRoot)
 				elseif trackActuallyPlayed then
 					playedTrack = chosen
+					if petId == FURRYHUGS_PET_ID then
+						print(string.format(
+							"[FurryHugsPetEmote] owner=%s event=play_success emote=%s animationId=%s",
+							player.Name,
+							tostring(chosen.label),
+							tostring(chosen.animationId or "nil")
+						))
+					end
 					break
 				else
 					pcall(function()
@@ -791,6 +871,155 @@ local function startTungTungPetEmoteLoop(clone: Model, player: Player): thread?
 			TUNGTUNG_DEBUG_TAG,
 			player.Name
 		))
+	end)
+end
+
+local function resetTungTungLaughStateForRound(newRoundNumber: number, source: string)
+	if newRoundNumber == _trackedRoundNumber then
+		return
+	end
+	_trackedRoundNumber = newRoundNumber
+	_sawDeathThisRound = false
+	_laughedThisRound = false
+	print(string.format(
+		"[TungTungPetEmote] owner=%s event=round_reset_cleared_laugh_state round=%d source=%s",
+		Players.LocalPlayer.Name,
+		newRoundNumber,
+		source
+	))
+end
+
+local function tryPlayTungTungLaughOnceThisRound(triggerReason: string): boolean
+	local localPlayer = Players.LocalPlayer
+	if _laughedThisRound then
+		return false
+	end
+	if localPlayer:GetAttribute("EquippedPet") ~= TUNGTUNG_PET_ID then
+		return false
+	end
+
+	local entry = _activePets[localPlayer]
+	if not entry or not entry.pet or not entry.pet:IsA("Model") then
+		return false
+	end
+	local clone = entry.pet
+	if clone:GetAttribute("_petId") ~= TUNGTUNG_PET_ID then
+		return false
+	end
+
+	if entry.emoteThread then
+		task.cancel(entry.emoteThread)
+		entry.emoteThread = nil
+	end
+	if entry.emoteTrack then
+		pcall(function()
+			entry.emoteTrack:Stop(TUNGTUNG_EMOTE_FADE_OUT)
+		end)
+	end
+	setTungTungEmoteState(localPlayer, clone, false, nil, entry.emoteRoot)
+
+	local humanoid = findHumanoidInModel(clone)
+	local _, animator = ensureAnimatorForPet(clone)
+	if not animator then
+		return false
+	end
+	local driveRoot = entry.emoteRoot or findTungTungDriveRoot(clone, humanoid)
+	local animationIds = collectAnimationIdsByAliases(clone, TUNGTUNG_LAUGH_ALIASES)
+	local source = "model"
+	if #animationIds == 0 then
+		animationIds = TUNGTUNG_LAUGH_FALLBACK_IDS
+		source = "fallback"
+	end
+	local track, animationId = loadPetAnimationTrack(animator, animationIds, false)
+	if not track then
+		warn(string.format(
+			"[TungTungPetEmote] owner=%s event=laugh_failed reason=no_track_loaded source=%s",
+			localPlayer.Name,
+			source
+		))
+		entry.emoteThread = startTungTungPetEmoteLoop(clone, localPlayer)
+		return false
+	end
+
+	track.Priority = TUNGTUNG_EMOTE_PRIORITY
+	track.Looped = false
+	setTungTungEmoteState(localPlayer, clone, true, track, driveRoot)
+	local okPlay = pcall(function()
+		track.TimePosition = 0
+		track:Play(TUNGTUNG_LAUGH_FADE_IN, 1, 1)
+	end)
+	if not okPlay then
+		setTungTungEmoteState(localPlayer, clone, false, nil, driveRoot)
+		entry.emoteThread = startTungTungPetEmoteLoop(clone, localPlayer)
+		return false
+	end
+
+	_laughedThisRound = true
+	print(string.format(
+		"[TungTungPetEmote] owner=%s event=pet_laughed_this_round round=%d reason=%s animationId=%s source=%s",
+		localPlayer.Name,
+		_trackedRoundNumber,
+		triggerReason,
+		tostring(animationId or "nil"),
+		source
+	))
+
+	local duration = waitForTrackReady(track, TUNGTUNG_TRACK_READY_TIMEOUT)
+	if duration <= 0 then
+		duration = TUNGTUNG_LAUGH_DEFAULT_DURATION
+	end
+
+	task.spawn(function()
+		task.wait(duration + 0.08)
+		local liveEntry = _activePets[localPlayer]
+		if not liveEntry or liveEntry.pet ~= clone then
+			return
+		end
+		pcall(function()
+			track:Stop(TUNGTUNG_LAUGH_FADE_OUT)
+		end)
+		setTungTungEmoteState(localPlayer, clone, false, nil, driveRoot)
+		if clone.Parent then
+			liveEntry.emoteThread = startTungTungPetEmoteLoop(clone, localPlayer)
+		end
+	end)
+
+	return true
+end
+
+local function bindKillFeedFirstDeathHook()
+	if _killFeedConn then
+		return
+	end
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	local killFeedEvent = remotes and remotes:FindFirstChild("KillFeedEvent")
+	if not (killFeedEvent and killFeedEvent:IsA("RemoteEvent")) then
+		return
+	end
+	_killFeedConn = killFeedEvent.OnClientEvent:Connect(function(_victimName, _reasonOrKiller)
+		if _trackedRoundNumber <= 0 then
+			return
+		end
+		if _sawDeathThisRound then
+			return
+		end
+		_sawDeathThisRound = true
+		tryPlayTungTungLaughOnceThisRound("FirstDeathInRound")
+	end)
+end
+
+local function bindRoundResetHook()
+	if _matchRoundConn then
+		return
+	end
+	local matchStatus = ReplicatedStorage:FindFirstChild("MatchStatus")
+	local roundValue = matchStatus and matchStatus:FindFirstChild("Round")
+	if not (roundValue and roundValue:IsA("IntValue")) then
+		return
+	end
+	resetTungTungLaughStateForRound(roundValue.Value, "Init")
+	_matchRoundConn = roundValue:GetPropertyChangedSignal("Value"):Connect(function()
+		resetTungTungLaughStateForRound(roundValue.Value, "RoundValueChanged")
 	end)
 end
 
@@ -1007,7 +1236,8 @@ local function destroyPetFor(player: Player, reason: string?)
 		end)
 	end
 	if entry.emoteThread then
-		if entry.pet and entry.pet:GetAttribute("_petId") == TUNGTUNG_PET_ID then
+		local activePetId = entry.pet and tostring(entry.pet:GetAttribute("_petId")) or nil
+		if isSharedPetEmoteEnabled(activePetId) then
 			print(string.format(
 				"%s owner=%s event=loop_stop_requested reason=%s",
 				TUNGTUNG_DEBUG_TAG,
@@ -1129,6 +1359,9 @@ local function spawnPetFor(player: Player, petId: string)
 
 	local clone = sourceModel:Clone()
 	local deterministicTarget = DETERMINISTIC_PET_IDS[petId] == true
+	if clone:IsA("Model") then
+		sanitizeFollowerRigArtifacts(clone, petId)
+	end
 
 	-- Unwrap Accessory → extract children into a Model wrapper
 	if clone:IsA("Accessory") then
@@ -1399,7 +1632,9 @@ local function spawnPetFor(player: Player, petId: string)
 	-- every frame from the player's LookVector so pitch/roll are ALWAYS 0.
 	local currentPos = startPos
 	local t0 = tick()
-	local tungtungDriveRoot = if petId == TUNGTUNG_PET_ID and clone:IsA("Model") then findTungTungDriveRoot(clone, findHumanoidInModel(clone)) else nil
+	local sharedEmoteEnabled = isSharedPetEmoteEnabled(petId)
+	local useEmoteRootDrive = shouldUseEmoteRootDrive(petId)
+	local tungtungDriveRoot = if useEmoteRootDrive and clone:IsA("Model") then findTungTungDriveRoot(clone, findHumanoidInModel(clone)) else nil
 
 	local followConn = RunService.Heartbeat:Connect(function()
 		if not clone or not clone.Parent then
@@ -1439,7 +1674,7 @@ local function spawnPetFor(player: Player, petId: string)
 		local activeEntry = _activePets[player]
 
 		-- 5) Apply
-		if petId == TUNGTUNG_PET_ID and tungtungDriveRoot and activeEntry and activeEntry.pet == clone and activeEntry.emoteActive then
+		if useEmoteRootDrive and tungtungDriveRoot and activeEntry and activeEntry.pet == clone and activeEntry.emoteActive then
 			setTungTungDriveRoot(tungtungDriveRoot, finalCF)
 			currentPos = tungtungDriveRoot.Position
 		elseif deterministicTarget and clone:IsA("Model") then
@@ -1457,7 +1692,7 @@ local function spawnPetFor(player: Player, petId: string)
 	end)
 
 	local emoteThread
-	if petId == TUNGTUNG_PET_ID and clone:IsA("Model") then
+	if sharedEmoteEnabled and clone:IsA("Model") then
 		print(string.format(
 			"%s owner=%s event=equip pet=%s clone=%s",
 			TUNGTUNG_DEBUG_TAG,
@@ -1465,7 +1700,7 @@ local function spawnPetFor(player: Player, petId: string)
 			petId,
 			clone:GetFullName()
 		))
-		emoteThread = startTungTungPetEmoteLoop(clone, player)
+		emoteThread = startTungTungPetEmoteLoop(clone, player, petId)
 	end
 
 	_activePets[player] = {
@@ -1557,6 +1792,19 @@ function PetFollowerController.Init()
 	for _, player in ipairs(Players:GetPlayers()) do
 		task.spawn(setupPlayer, player)
 	end
+
+	bindKillFeedFirstDeathHook()
+	bindRoundResetHook()
+	task.spawn(function()
+		for _ = 1, 30 do
+			if _killFeedConn and _matchRoundConn then
+				return
+			end
+			bindKillFeedFirstDeathHook()
+			bindRoundResetHook()
+			task.wait(1)
+		end
+	end)
 
 	log("ready", "Ready — tracking pets for all players")
 end

@@ -465,6 +465,208 @@ local function teleportPlayersToArena(players: { Player })
 	log(string.format("Teleported %d players to Arena", teleported))
 end
 
+local function formatPlayerNames(players: { Player }): string
+	if #players == 0 then
+		return "none"
+	end
+
+	local names = {}
+	for _, player in ipairs(players) do
+		table.insert(names, player.Name)
+	end
+	return table.concat(names, ",")
+end
+
+local function logMatchEntrySnapshot(tag: string, player: Player, included: boolean, reason: string)
+	local state = PlayerStateService.GetState(player)
+	local isAFK = PlayerStateService.IsAFK(player)
+	local pendingAbility = PerkMatchEffectService.GetPendingAbility(player)
+	local activeAbility = PerkMatchEffectService.GetActiveAbility(player)
+	log(string.format(
+		"[%s] player=%s state=%s afk=%s pendingAbility=%s activeMatchAbility=%s included=%s reason=%s",
+		tag,
+		player.Name,
+		tostring(state),
+		tostring(isAFK),
+		tostring(pendingAbility),
+		tostring(activeAbility),
+		tostring(included),
+		reason
+	))
+end
+
+local function getParticipantRejectReason(player: Player): string?
+	if not player or not player.Parent then
+		return "unknown"
+	end
+	if PlayerStateService.IsAFK(player) then
+		return "AFK"
+	end
+
+	local state = PlayerStateService.GetState(player)
+	if state ~= PlayerState.States.Waiting then
+		return "invalid state"
+	end
+
+	return nil
+end
+
+local function collectWaitingParticipants(): ({ Player }, { { player: Player, reason: string } })
+	local waitingPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
+	log(string.format("[MatchCandidates] count=%d names=%s", #waitingPlayers, formatPlayerNames(waitingPlayers)))
+
+	local accepted = {}
+	local rejected = {}
+	for _, player in ipairs(waitingPlayers) do
+		local rejectReason = getParticipantRejectReason(player)
+		if rejectReason then
+			table.insert(rejected, {
+				player = player,
+				reason = rejectReason,
+			})
+			log(string.format("[MatchCandidate] player=%s result=rejected reason=%s", player.Name, rejectReason))
+			logMatchEntrySnapshot("FinalParticipantFilter", player, false, rejectReason)
+		else
+			table.insert(accepted, player)
+			log(string.format("[MatchCandidate] player=%s result=accepted reason=accepted", player.Name))
+			logMatchEntrySnapshot("FinalParticipantFilter", player, true, "accepted")
+		end
+	end
+
+	log(string.format("[MatchCandidatesFinalFilter] accepted=%d rejected=%d names=%s",
+		#accepted,
+		#rejected,
+		formatPlayerNames(accepted)
+	))
+	return accepted, rejected
+end
+
+local function ensureCharacterReadyForCommit(player: Player): (Model?, Humanoid?, BasePart?, string)
+	local character = player.Character
+	if not character then
+		local ok = pcall(function()
+			player:LoadCharacter()
+		end)
+		if not ok then
+			return nil, nil, nil, "load_character_failed"
+		end
+		character = player.Character or player.CharacterAdded:Wait()
+	end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
+	local rootPart = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 5)
+	if not humanoid or not rootPart or not rootPart:IsA("BasePart") then
+		return character, nil, nil, "character_not_ready"
+	end
+	if humanoid.Health <= 0 then
+		return character, humanoid, rootPart, "not_alive_for_commit"
+	end
+	return character, humanoid, rootPart, "ready"
+end
+
+local function teleportPlayerToArenaWithRetry(player: Player, targetCFrame: CFrame): (boolean, string)
+	local attempts = math.max(1, SpawnConfig.MaxTeleportRetries + 1)
+	for attempt = 1, attempts do
+		if safeTeleport(player, targetCFrame) then
+			return true, string.format("attempt_%d", attempt)
+		end
+		if attempt < attempts then
+			task.wait(SpawnConfig.TeleportRetryDelay)
+		end
+	end
+	return false, "teleport failure"
+end
+
+local function commitWaitingParticipantsToMatch(): ({ Player }, string?)
+	local accepted = collectWaitingParticipants()
+	if #accepted == 0 then
+		log(string.format("[MatchCommitAbort] reason=%s accepted=0 minRequired=%d", "no_valid_participants", Config.MinPlayersToStart))
+		return {}, "no_valid_participants"
+	end
+
+	local spawnCFrames = MapManager.GetArenaSpawnCFrames(#accepted)
+	if #spawnCFrames == 0 then
+		for _, player in ipairs(accepted) do
+			log(string.format("[MatchCandidate] player=%s result=rejected reason=%s", player.Name, "map/spawn unavailable"))
+		end
+		log(string.format("[MatchCommitAbort] reason=%s accepted=%d minRequired=%d", "map/spawn unavailable", #accepted, Config.MinPlayersToStart))
+		return {}, "map/spawn unavailable"
+	end
+
+	local unseatedAny = false
+	for _, player in ipairs(accepted) do
+		if forceUnseat(player) then
+			unseatedAny = true
+		end
+	end
+	if unseatedAny then
+		task.wait(0.15)
+	end
+
+	local committed = {}
+	for index, player in ipairs(accepted) do
+		local currentState = PlayerStateService.GetState(player)
+		if currentState ~= PlayerState.States.Waiting then
+			log(string.format("[MatchCandidate] player=%s result=rejected reason=%s", player.Name, "stale round data"))
+			logMatchEntrySnapshot("ParticipantCommit", player, false, "stale round data")
+			continue
+		end
+		local _, _, _, readinessDetail = ensureCharacterReadyForCommit(player)
+		if readinessDetail ~= "ready" then
+			log(string.format("[MatchCandidate] player=%s result=rejected reason=%s", player.Name, readinessDetail))
+			logMatchEntrySnapshot("ParticipantCommit", player, false, readinessDetail)
+			continue
+		end
+		log(string.format(
+			"[MatchPlayerStatePreTeleport] player=%s state=%s pendingAbility=%s activeAbility=%s",
+			player.Name,
+			tostring(currentState),
+			tostring(PerkMatchEffectService.GetPendingAbility(player)),
+			tostring(PerkMatchEffectService.GetActiveAbility(player))
+		))
+
+		local spawnCFrame = spawnCFrames[((index - 1) % #spawnCFrames) + 1]
+		log(string.format("[MatchTeleportStart] player=%s index=%d target=(%.1f, %.1f, %.1f)",
+			player.Name,
+			index,
+			spawnCFrame.Position.X,
+			spawnCFrame.Position.Y,
+			spawnCFrame.Position.Z
+		))
+		local teleported, detail = teleportPlayerToArenaWithRetry(player, spawnCFrame)
+		if not teleported then
+			log(string.format("[MatchCandidate] player=%s result=rejected reason=%s", player.Name, detail))
+			logMatchEntrySnapshot("ParticipantCommit", player, false, detail)
+			continue
+		end
+
+		log(string.format("[MatchTeleportSuccess] player=%s detail=%s", player.Name, detail))
+		PlayerStateService.SetState(player, PlayerState.States.InMatch)
+		log(string.format(
+			"[MatchPlayerCommitted] player=%s state=%s pendingAbility=%s activeAbility=%s",
+			player.Name,
+			tostring(PlayerStateService.GetState(player)),
+			tostring(PerkMatchEffectService.GetPendingAbility(player)),
+			tostring(PerkMatchEffectService.GetActiveAbility(player))
+		))
+		logMatchEntrySnapshot("ParticipantCommit", player, true, "teleported_and_committed")
+		table.insert(committed, player)
+	end
+
+	log(string.format("[MatchParticipantsCommitted] count=%d names=%s", #committed, formatPlayerNames(committed)))
+	if #committed < Config.MinPlayersToStart then
+		log(string.format("[MatchCommitAbort] reason=%s committed=%d minRequired=%d initialAccepted=%d",
+			"below_min_players_after_filter",
+			#committed,
+			Config.MinPlayersToStart,
+			#accepted
+		))
+		return committed, "below_min_players_after_filter"
+	end
+
+	return committed, nil
+end
+
 local function teleportPlayersToLobby(players: { Player })
 	if #players == 0 then return end
 	if not SpawnConfig.ReturnToLobbyOnEnd then return end
@@ -514,6 +716,17 @@ local function fireAbilityActivationWarnings(players: { Player })
 	end
 end
 
+local function forceVoteClosedForMatchStart(context: string)
+	if replicatedVoteActive then
+		replicatedVoteActive.Value = false
+	end
+	if replicatedVoteEndTime then
+		replicatedVoteEndTime.Value = 0
+	end
+	clearCurrentVoteLockState()
+	log(string.format("[ModeVoteForceClosed] context=%s active=false", context))
+end
+
 function MatchManager.GetEligiblePlayers(): { Player }
 	local eligible = {}
 	
@@ -537,23 +750,6 @@ local function setEligibleToWaiting()
 			PlayerStateService.SetState(player, PlayerState.States.Waiting)
 		end
 	end
-end
-
-local function setWaitingToInMatch(): { Player }
-	local waitingPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
-	local playersToTeleport = {}
-	
-	for _, player in ipairs(waitingPlayers) do
-		if not PlayerStateService.IsAFK(player) then
-			PlayerStateService.SetState(player, PlayerState.States.InMatch)
-			table.insert(playersToTeleport, player)
-		end
-	end
-	
-	log(string.format("Moved %d players to InMatch", #playersToTeleport))
-	teleportPlayersToArena(playersToTeleport)
-	
-	return playersToTeleport
 end
 
 local function setMatchPlayersToLobby()
@@ -597,6 +793,7 @@ local function runIntermission()
 	end
 
 	log(string.format("Intermission started (%ds)", Config.IntermissionSeconds))
+	log(string.format("[IntermissionStart] waiting=%d mode=%s", #PlayerStateService.GetPlayersInState(PlayerState.States.Waiting), tostring(currentMode)))
 
 	local knownPlayers: { [Player]: boolean } = {}
 	for _, p in ipairs(Players:GetPlayers()) do
@@ -659,15 +856,25 @@ local function runIntermission()
 		task.wait(1)
 	end
 
+	log(string.format("[IntermissionEnding] waiting=%d eligible=%d mode=%s",
+		#PlayerStateService.GetPlayersInState(PlayerState.States.Waiting),
+		#MatchManager.GetEligiblePlayers(),
+		tostring(currentMode)
+	))
 	if voteStarted then
 		endVote()
 	end
+	forceVoteClosedForMatchStart("IntermissionComplete")
 	
 	setEligibleToWaiting()
 end
 
 local function runPlaying()
+	setEligibleToWaiting()
 	local waitingPlayers = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
+	for _, player in ipairs(waitingPlayers) do
+		logMatchEntrySnapshot("RunPlayingWaitingSnapshot", player, true, "waiting_at_run_playing_start")
+	end
 	
 	if #waitingPlayers < Config.MinPlayersToStart then
 		if pendingForcedModeReservation then
@@ -679,14 +886,18 @@ local function runPlaying()
 			))
 			pendingForcedModeReservation = nil
 		end
-		log(string.format("Not enough players (%d/%d), skipping match", #waitingPlayers, Config.MinPlayersToStart))
+		log(string.format("[MatchStartAbort] reason=%s waiting=%d minRequired=%d names=%s",
+			"initial_waiting_below_min",
+			#waitingPlayers,
+			Config.MinPlayersToStart,
+			formatPlayerNames(waitingPlayers)
+		))
 		for _, player in ipairs(waitingPlayers) do
 			PlayerStateService.SetState(player, PlayerState.States.Lobby)
 		end
 		return false
 	end
 	
-	setMatchState(MatchState.States.Playing)
 	if pendingForcedModeReservation then
 		local reservation = pendingForcedModeReservation
 		pendingForcedModeReservation = nil
@@ -710,16 +921,32 @@ local function runPlaying()
 			))
 		end
 	end
-	log(string.format("Playing started (mode=%s) — waiting for RoundManager to complete", currentMode))
+	log(string.format("[MatchStartBegin] mode=%s waitingPlayers=%d", currentMode, #waitingPlayers))
 
 	local played = false
+	local startedMatchPlayers: { Player } = {}
 	local ok, err = xpcall(function()
+		log(string.format("[MatchStartStep] step=%s mode=%s", "ApplyEnvironment", currentMode))
 		applyEnvironmentForMode(currentMode)
 
+		log("[MatchStartStep] step=MapManager.OnMatchStart")
 		MapManager.OnMatchStart()
-		local matchPlayers = setWaitingToInMatch()
+		forceVoteClosedForMatchStart("RunPlayingStart")
+		log("[MatchStartStep] step=CommitWaitingParticipants")
+		local matchPlayers, commitAbortReason = commitWaitingParticipantsToMatch()
+		startedMatchPlayers = matchPlayers
+		if commitAbortReason then
+			error(string.format("MATCH_COMMIT_ABORT:%s", commitAbortReason))
+		end
+		log(string.format("[MatchStartPlayers] teleported=%d names=%s",
+			#matchPlayers,
+			formatPlayerNames(matchPlayers)
+		))
+		log("[MatchStartStep] step=EliminationTracker.Reset")
+		EliminationTracker.Reset(matchPlayers)
 		local matchId = EliminationTracker.GetMatchId()
-		PerkMatchEffectService.ActivatePendingAbilities(matchPlayers, matchId)
+		setMatchState(MatchState.States.Playing)
+		log(string.format("[MatchStartCommitted] state=%s matchId=%d mode=%s", MatchState.States.Playing, matchId, currentMode))
 		do
 			local dqs = getDQS()
 			if dqs and dqs.OnMatchStart then
@@ -731,17 +958,27 @@ local function runPlaying()
 			BrainrotModeService.OnMatchStart()
 		end
 
-		EliminationTracker.Reset(matchPlayers)
 		EconomyService.ResetMatchCoins()
 
+		log(string.format("[BeamPhaseStartRequest] mode=%s players=%d", currentMode, #matchPlayers))
 		RoundManager.StartRoundLoop(currentMode)
+		log(string.format("[BeamPhaseStartIssued] running=%s round=%d phase=%s",
+			tostring(RoundManager.IsRunning()),
+			RoundManager.GetCurrentRound(),
+			tostring(RoundManager.GetCurrentPhase())
+		))
+		if not RoundManager.IsRunning() then
+			error("MATCH_COMMIT_ABORT:round_loop_not_running_after_start")
+		end
+		log(string.format("[MatchStartStep] step=AbilityMatchStart matchId=%d participants=%d", matchId, #matchPlayers))
+		PerkMatchEffectService.OnMatchStart(matchPlayers, matchId)
 
 		while RoundManager.IsRunning() do
 			task.wait(0.5)
 		end
 
 		local endReason = RoundManager.GetMatchEndReason()
-		log(string.format("Round loop completed — reason: %s", endReason or "unknown"))
+		log(string.format("[BeamPhaseComplete] reason=%s", endReason or "unknown"))
 		do
 			local dqs = getDQS()
 			if dqs and dqs.OnMatchEnd then
@@ -762,6 +999,14 @@ local function runPlaying()
 
 	if not ok then
 		warn("[MatchManager] runPlaying failed:", err)
+		log(string.format("[MatchStartAbort] reason=runPlaying_failed startedPlayers=%d startedNames=%s err=%s",
+			#startedMatchPlayers,
+			formatPlayerNames(startedMatchPlayers),
+			tostring(err)
+		))
+		pcall(function()
+			RoundManager.StopRoundLoop()
+		end)
 		do
 			local dqs = getDQS()
 			if dqs and dqs.OnMatchEnd then
@@ -777,6 +1022,13 @@ local function runPlaying()
 		pcall(function() SwordSpawnService.OnMatchEnd() end)
 		pcall(function() TungTungSahurService.OnMatchEnd() end)
 		pcall(function() MapManager.OnMatchEnd() end)
+		pcall(function() setMatchPlayersToLobby() end)
+		pcall(function()
+			for _, player in ipairs(PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)) do
+				log(string.format("[MatchStartAbortReset] player=%s state=%s -> Lobby", player.Name, PlayerState.States.Waiting))
+				PlayerStateService.SetState(player, PlayerState.States.Lobby)
+			end
+		end)
 	end
 
 	restoreEnvironment("PlayingCleanup")

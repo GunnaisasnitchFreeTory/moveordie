@@ -63,6 +63,7 @@ end
 
 local C = UIConfig.Colors
 local S = UIConfig.Sizes
+local ROBUX_ICON_IMAGE = "rbxassetid://138917867019056"
 
 local canvas: CanvasGroup = nil
 local uiScale: UIScale = nil
@@ -201,10 +202,13 @@ local function showCrateRewards(results)
 	if not revealUI then
 		return false
 	end
+	local rawCount = type(results) == "table" and #results or 0
 	local revealItems = {}
 	for _, r in ipairs(results or {}) do
-		local shouldShow = (r.grantSuccess == true) or (r.isDuplicate == true)
-		if not shouldShow then
+		if type(r) ~= "table" then
+			continue
+		end
+		if tostring(r.itemId or "") == "" then
 			continue
 		end
 		local entry = ItemCatalog.Get(r.category, r.itemId)
@@ -221,6 +225,11 @@ local function showCrateRewards(results)
 			image = entry and entry.image or "",
 		})
 	end
+	print(string.format(
+		"[CrateUIAudit] rewardsRaw=%d rewardsDisplayed=%d",
+		rawCount,
+		#revealItems
+	))
 	if #revealItems > 1 and revealUI.ShowRewards then
 		revealUI.ShowRewards(revealItems)
 		return true
@@ -245,6 +254,13 @@ local function openPurchasedCrates(crateId: string, qty: number): boolean
 	if type(result.newCount) == "number" then
 		updateCrateCountLabel(crateId, result.newCount)
 	end
+	local rewardsCount = type(result.results) == "table" and #result.results or 0
+	print(string.format(
+		"[CrateUIAudit] crateType=%s qtyRequested=%d rewardsReturned=%d",
+		crateId,
+		qty,
+		rewardsCount
+	))
 	print(string.format("[CrateUI] ShowingRewardModal crateType=%s qty=%d", crateId, qty))
 	return showCrateRewards(result.results)
 end
@@ -572,6 +588,10 @@ local function createCrateSection(parent: ScrollingFrame, crateData: { [string]:
 		pbs.Transparency = 0.05
 		pbs.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
 		pbs.Parent = pBtn
+
+		if isRobux then
+			Components.ApplyRobuxBuyStyle(pBtn, tostring(price.cost), ROBUX_ICON_IMAGE, tostring(price.label or ""))
+		end
 
 		-- Determine quantity from label
 		local qty = tonumber(string.match(price.label, "(%d+)")) or 1

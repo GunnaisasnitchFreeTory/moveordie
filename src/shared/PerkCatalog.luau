@@ -16,9 +16,9 @@ PerkCatalog.Jump = {
 	name = "Jump Ability",
 	productConfigKey = "PerkJump",
 	robux = 5,
-	description = "Get a jump boost for one match.",
+	description = "Get a huge jump boost for one match. Grants +20 jump power.",
 	statusAttribute = "PerkJumpStatus",
-	jumpPowerBonus = 10,
+	jumpPowerBonus = 20,
 }
 
 PerkCatalog.All = {

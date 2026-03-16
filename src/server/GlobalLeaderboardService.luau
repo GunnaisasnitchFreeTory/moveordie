@@ -61,6 +61,7 @@ local BG_COLOR           = Color3.fromRGB(12, 12, 22)
 local ROW_ALT_COLOR      = Color3.fromRGB(30, 30, 45)
 local HEADER_TEXT_COLOR  = Color3.fromRGB(140, 140, 160)
 local NAME_TEXT_COLOR    = Color3.fromRGB(255, 255, 255)
+local LEADERBOARD_FONT   = Enum.Font.LuckiestGuy
 
 local RANK_COLORS = {
 	[1] = Color3.fromRGB(255, 215, 0),
@@ -509,7 +510,7 @@ local function makeLabel(parent, props)
 	label.Text                = props.text or ""
 	label.TextColor3          = props.color or Color3.new(1, 1, 1)
 	label.TextSize            = props.textSize or 20
-	label.Font                = props.font or Enum.Font.GothamMedium
+	label.Font                = props.font or LEADERBOARD_FONT
 	label.TextXAlignment      = props.xAlign or Enum.TextXAlignment.Left
 	label.TextYAlignment      = Enum.TextYAlignment.Center
 	label.TextTruncate        = props.truncate or Enum.TextTruncate.None
@@ -583,7 +584,7 @@ local function renderBoard(boardDef, entries)
 		position = UDim2.new(0.5, 0, 0.055, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		color = accent, textSize = titleSize,
-		font = Enum.Font.GothamBlack,
+		font = LEADERBOARD_FONT,
 		xAlign = Enum.TextXAlignment.Center,
 		strokeThickness = 2.5,
 	})
@@ -607,14 +608,14 @@ local function renderBoard(boardDef, entries)
 	headerFrame.Parent = bg
 
 	makeLabel(headerFrame, { name = "HRank", text = "#", size = UDim2.fromScale(0.15, 1),
-		color = HEADER_TEXT_COLOR, textSize = headerSize, font = Enum.Font.GothamBold,
+		color = HEADER_TEXT_COLOR, textSize = headerSize, font = LEADERBOARD_FONT,
 		xAlign = Enum.TextXAlignment.Center, strokeThickness = 1.5 })
 	makeLabel(headerFrame, { name = "HName", text = "PLAYER", size = UDim2.fromScale(0.55, 1),
 		position = UDim2.fromScale(0.15, 0), color = HEADER_TEXT_COLOR, textSize = headerSize,
-		font = Enum.Font.GothamBold, xAlign = Enum.TextXAlignment.Left, strokeThickness = 1.5 })
+		font = LEADERBOARD_FONT, xAlign = Enum.TextXAlignment.Left, strokeThickness = 1.5 })
 	makeLabel(headerFrame, { name = "HValue", text = "SCORE", size = UDim2.fromScale(0.3, 1),
 		position = UDim2.fromScale(0.7, 0), color = HEADER_TEXT_COLOR, textSize = headerSize,
-		font = Enum.Font.GothamBold, xAlign = Enum.TextXAlignment.Right, strokeThickness = 1.5 })
+		font = LEADERBOARD_FONT, xAlign = Enum.TextXAlignment.Right, strokeThickness = 1.5 })
 
 	local rowContainer = Instance.new("Frame")
 	rowContainer.Name = "Rows"
@@ -635,7 +636,7 @@ local function renderBoard(boardDef, entries)
 			name = "NoData", text = "No entries yet...",
 			size = UDim2.fromScale(1, 0.15),
 			color = Color3.fromRGB(100, 100, 120), textSize = rowSize,
-			font = Enum.Font.GothamMedium, xAlign = Enum.TextXAlignment.Center,
+			font = LEADERBOARD_FONT, xAlign = Enum.TextXAlignment.Center,
 		})
 	else
 		local rowHeightScale = 0.085
@@ -659,16 +660,16 @@ local function renderBoard(boardDef, entries)
 
 			local rankColor = RANK_COLORS[i] or DEFAULT_RANK_COLOR
 			makeLabel(row, { name = "Rank", text = "#" .. i, size = UDim2.fromScale(0.15, 1),
-				color = rankColor, textSize = rowBold, font = Enum.Font.GothamBold,
+				color = rankColor, textSize = rowBold, font = LEADERBOARD_FONT,
 				xAlign = Enum.TextXAlignment.Center })
 			makeLabel(row, { name = "Name", text = entry.name, size = UDim2.fromScale(0.55, 1),
 				position = UDim2.fromScale(0.15, 0),
 				color = (i <= 3) and rankColor or NAME_TEXT_COLOR, textSize = rowSize,
-				font = Enum.Font.GothamMedium, xAlign = Enum.TextXAlignment.Left,
+				font = LEADERBOARD_FONT, xAlign = Enum.TextXAlignment.Left,
 				truncate = Enum.TextTruncate.AtEnd })
 			makeLabel(row, { name = "Value", text = formatNumber(entry.value),
 				size = UDim2.fromScale(0.3, 1), position = UDim2.fromScale(0.7, 0),
-				color = accent, textSize = rowBold, font = Enum.Font.GothamBold,
+				color = accent, textSize = rowBold, font = LEADERBOARD_FONT,
 				xAlign = Enum.TextXAlignment.Right })
 		end
 	end

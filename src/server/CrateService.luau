@@ -446,6 +446,9 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 	local crateTxnId = HttpService:GenerateGUID(false)
 	local results = {}
 	local grantedPopupItems = {}
+	local grantSuccessCount = 0
+	local duplicateCount = 0
+	local grantFailureCount = 0
 
 	for rollIndex = 1, quantity do
 		local itemId, category, isDuplicate = rollItem(player, crateId)
@@ -461,6 +464,9 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 		}
 
 		if isDuplicate or itemId == "" then
+			if isDuplicate then
+				duplicateCount += 1
+			end
 			log(string.format("%s opened %s — already owned: %s (%s)",
 				player.Name, crateId, itemId, category))
 		else
@@ -486,8 +492,9 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 			if inv then
 				ownsAfterGrant = inv.OwnsItem(player, category, itemId) == true
 			end
-			if grantRes.success and (category ~= "Crowns" or ownsAfterGrant) then
+			if grantRes.success then
 				result.grantSuccess = true
+				grantSuccessCount += 1
 				table.insert(grantedPopupItems, {
 					type = grantType,
 					id = itemId,
@@ -501,6 +508,7 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 				end
 			else
 				result.grantSuccess = false
+				grantFailureCount += 1
 				result.grantFailReason = grantRes.reason or (category == "Crowns" and "OWNERSHIP_NOT_PERSISTED") or "UNKNOWN"
 				warn(string.format("[CrateService] Grant failed player=%s crate=%s roll=%d item=%s reason=%s",
 					player.Name, crateId, rollIndex, itemId, tostring(grantRes.reason)))
@@ -526,6 +534,17 @@ function CrateService.OpenCrate(player: Player, crateId: string, quantity: numbe
 			batchItems = grantedPopupItems,
 		})
 	end
+
+	print(string.format(
+		"[CrateOpenAudit] player=%s crate=%s requestedQty=%d rewardsGenerated=%d inventoryGranted=%d duplicates=%d grantFailures=%d",
+		player.Name,
+		crateId,
+		quantity,
+		#results,
+		grantSuccessCount,
+		duplicateCount,
+		grantFailureCount
+	))
 
 	return { results = results, success = true }
 end
@@ -554,6 +573,9 @@ function CrateService.RollCrateFree(player: Player, crateId: string, quantity: n
 	local crateTxnId = HttpService:GenerateGUID(false)
 	local results = {}
 	local grantedPopupItems = {}
+	local grantSuccessCount = 0
+	local duplicateCount = 0
+	local grantFailureCount = 0
 
 	for i = 1, quantity do
 		local itemId, category, isDuplicate = rollItem(player, crateId)
@@ -569,6 +591,9 @@ function CrateService.RollCrateFree(player: Player, crateId: string, quantity: n
 		}
 
 		if isDuplicate or itemId == "" then
+			if isDuplicate then
+				duplicateCount += 1
+			end
 			log(string.format("%s FREE roll #%d %s — already owned: %s (%s)",
 				player.Name, i, crateId, itemId, category))
 		else
@@ -594,8 +619,9 @@ function CrateService.RollCrateFree(player: Player, crateId: string, quantity: n
 			if inv then
 				ownsAfterGrant = inv.OwnsItem(player, category, itemId) == true
 			end
-			if grantRes.success and (category ~= "Crowns" or ownsAfterGrant) then
+			if grantRes.success then
 				result.grantSuccess = true
+				grantSuccessCount += 1
 				table.insert(grantedPopupItems, {
 					type = grantType,
 					id = itemId,
@@ -609,6 +635,7 @@ function CrateService.RollCrateFree(player: Player, crateId: string, quantity: n
 				end
 			else
 				result.grantSuccess = false
+				grantFailureCount += 1
 				result.grantFailReason = grantRes.reason or (category == "Crowns" and "OWNERSHIP_NOT_PERSISTED") or "UNKNOWN"
 				warn(string.format("[CrateService] Free grant failed player=%s crate=%s roll=%d item=%s reason=%s",
 					player.Name, crateId, i, itemId, tostring(grantRes.reason)))
@@ -633,6 +660,17 @@ function CrateService.RollCrateFree(player: Player, crateId: string, quantity: n
 			batchItems = grantedPopupItems,
 		})
 	end
+
+	print(string.format(
+		"[CrateOpenAudit] player=%s crate=%s requestedQty=%d rewardsGenerated=%d inventoryGranted=%d duplicates=%d grantFailures=%d source=Free",
+		player.Name,
+		crateId,
+		quantity,
+		#results,
+		grantSuccessCount,
+		duplicateCount,
+		grantFailureCount
+	))
 
 	return { results = results, success = true }
 end

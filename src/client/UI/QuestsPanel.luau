@@ -758,17 +758,18 @@ local function buildPanel(parent)
 	end)
 
 	local resetLabel = Instance.new("TextLabel")
-	resetLabel.AnchorPoint    = Vector2.new(1, 0)
-	resetLabel.Position       = UDim2.new(1, -14, 0, 60)
-	resetLabel.Size           = UDim2.fromOffset(240, 20)
+	resetLabel.Name           = "ResetLabel"
+	resetLabel.AnchorPoint    = Vector2.new(1, 0.5)
+	resetLabel.Position       = UDim2.new(1, -56, 0.5, 0)
+	resetLabel.Size           = UDim2.fromOffset(250, 18)
 	resetLabel.BackgroundTransparency = 1
 	resetLabel.Font           = Enum.Font.Gotham
 	resetLabel.Text           = "Resets daily at midnight UTC"
 	resetLabel.TextColor3     = TEXT_MUTED
-	resetLabel.TextSize       = 12
+	resetLabel.TextSize       = 11
 	resetLabel.TextXAlignment = Enum.TextXAlignment.Right
-	resetLabel.ZIndex         = 7
-	resetLabel.Parent         = canvas
+	resetLabel.ZIndex         = 10
+	resetLabel.Parent         = header
 
 	-- Scroll frame
 	scrollFrame = Instance.new("ScrollingFrame")
@@ -776,7 +777,8 @@ local function buildPanel(parent)
 	scrollFrame.AnchorPoint         = Vector2.new(0, 0)
 	scrollFrame.Position            = UDim2.new(0, 12, 0, 62)
 	scrollFrame.Size                = UDim2.new(1, -24, 1, -74)
-	scrollFrame.BackgroundTransparency = 1
+	scrollFrame.BackgroundColor3    = INNER_BG
+	scrollFrame.BackgroundTransparency = 0
 	scrollFrame.BorderSizePixel     = 0
 	scrollFrame.ScrollBarThickness  = 6
 	scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(220, 60, 60)

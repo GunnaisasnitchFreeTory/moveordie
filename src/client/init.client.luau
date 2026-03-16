@@ -446,6 +446,17 @@ else
 	warn("[Client] AbilityActivationWarningController FAILED:", abilityWarningErr)
 end
 
+-- 15b. AbilitySellerLabelController (rainbow billboard text)
+local abilityLabelOk, abilityLabelErr = pcall(function()
+	local AbilitySellerLabelController = require(Client:WaitForChild("AbilitySellerLabelController"))
+	AbilitySellerLabelController.Init()
+end)
+if abilityLabelOk then
+	print("[Client] AbilitySellerLabelController loaded OK")
+else
+	warn("[Client] AbilitySellerLabelController FAILED:", abilityLabelErr)
+end
+
 -- BUILD_ID label (bottom-left corner, subtle version stamp)
 pcall(function()
 	local buildVal = ReplicatedStorage:WaitForChild("BUILD_ID", 10)

@@ -40,7 +40,7 @@ local SWORD_LIFESPAN_ROUNDS = 2
 local KILL_BONUS = 50
 local SOUND_ID = "rbxassetid://93965767748928"
 local SWORD_WALKSPEED_OVERRIDE_KEY = "SwordHold"
-local SWORD_WALKSPEED = 18
+local SWORD_WALKSPEED = 15
 
 -- Spawn frequency: one attempt every SPAWN_INTERVAL_MIN–MAX seconds while a round is active
 local SPAWN_INTERVAL_MIN = 16

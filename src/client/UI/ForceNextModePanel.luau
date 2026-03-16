@@ -53,6 +53,8 @@ local STUD_TEXTURE_TRANSPARENCY = 0.88
 local BUTTON_BG_TRANSPARENCY = 0.08
 local BUTTON_OVERLAY_TRANSPARENCY = 0.5
 local CLOSE_BTN_TRANSPARENCY = 0.1
+local ROBUX_ICON_IMAGE = "rbxassetid://138917867019056"
+local ROBUX_ICON_SIZE = 28
 
 local NORMAL_MODE_IMAGE = "rbxassetid://90452980108887"
 local BRAINROT_MODE_IMAGE = "rbxassetid://134040200136136"
@@ -354,23 +356,59 @@ local function createChoiceButton(
 	lblStroke.Thickness = 2
 	lblStroke.Parent = lblText
 
-	local priceLbl = Instance.new("TextLabel")
-	priceLbl.Name = "PriceLabel"
-	priceLbl.AnchorPoint = Vector2.new(0.5, 1)
-	priceLbl.Position = UDim2.new(0.5, 0, 1, -12)
-	priceLbl.Size = UDim2.new(1, -12, 0, 22)
-	priceLbl.BackgroundTransparency = 1
-	priceLbl.Font = Enum.Font.GothamBold
-	priceLbl.TextColor3 = Color3.fromRGB(255, 240, 185)
-	priceLbl.TextSize = 15
-	priceLbl.Text = "5 ROBUX"
-	priceLbl.ZIndex = PANEL_ZINDEX + 7
-	priceLbl.Parent = btn
+	local buyRow = Instance.new("Frame")
+	buyRow.Name = "BuyRow"
+	buyRow.AnchorPoint = Vector2.new(0.5, 1)
+	buyRow.Position = UDim2.new(0.5, 0, 1, -12)
+	buyRow.Size = UDim2.new(1, -12, 0, 22)
+	buyRow.BackgroundTransparency = 1
+	buyRow.ZIndex = PANEL_ZINDEX + 7
+	buyRow.Parent = btn
+
+	local buyLayout = Instance.new("UIListLayout")
+	buyLayout.FillDirection = Enum.FillDirection.Horizontal
+	buyLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	buyLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	buyLayout.Padding = UDim.new(0, 5)
+	buyLayout.Parent = buyRow
+
+	local buyIcon = Instance.new("ImageLabel")
+	buyIcon.Name = "RobuxIcon"
+	buyIcon.Size = UDim2.fromOffset(ROBUX_ICON_SIZE, ROBUX_ICON_SIZE)
+	buyIcon.BackgroundTransparency = 1
+	buyIcon.Image = ROBUX_ICON_IMAGE
+	buyIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+	buyIcon.ScaleType = Enum.ScaleType.Fit
+	buyIcon.ZIndex = PANEL_ZINDEX + 7
+	buyIcon.Parent = buyRow
+
+	local iconSizeConstraint = Instance.new("UISizeConstraint")
+	iconSizeConstraint.MinSize = Vector2.new(ROBUX_ICON_SIZE, ROBUX_ICON_SIZE)
+	iconSizeConstraint.MaxSize = Vector2.new(ROBUX_ICON_SIZE, ROBUX_ICON_SIZE)
+	iconSizeConstraint.Parent = buyIcon
+
+	local iconAspect = Instance.new("UIAspectRatioConstraint")
+	iconAspect.AspectRatio = 1
+	iconAspect.AspectType = Enum.AspectType.FitWithinMaxSize
+	iconAspect.DominantAxis = Enum.DominantAxis.Width
+	iconAspect.Parent = buyIcon
+
+	local buyLbl = Instance.new("TextLabel")
+	buyLbl.Name = "PriceLabel"
+	buyLbl.AutomaticSize = Enum.AutomaticSize.X
+	buyLbl.Size = UDim2.fromOffset(0, 22)
+	buyLbl.BackgroundTransparency = 1
+	buyLbl.Font = Enum.Font.LuckiestGuy
+	buyLbl.TextColor3 = Color3.fromRGB(255, 240, 185)
+	buyLbl.TextSize = 18
+	buyLbl.Text = "5"
+	buyLbl.ZIndex = PANEL_ZINDEX + 7
+	buyLbl.Parent = buyRow
 
 	local priceStroke = Instance.new("UIStroke")
 	priceStroke.Color = Color3.fromRGB(0, 0, 0)
 	priceStroke.Thickness = 1.5
-	priceStroke.Parent = priceLbl
+	priceStroke.Parent = buyLbl
 
 	btn.MouseEnter:Connect(function()
 		TweenService:Create(darkOverlay, TweenInfo.new(0.15), { BackgroundTransparency = 0.64 }):Play()

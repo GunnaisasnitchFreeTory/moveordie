@@ -22,7 +22,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 
 local DailyRewardConfig = require(Shared:WaitForChild("DailyRewardConfig"))
 
-local _PDS, _Economy, _Inventory, _Crate, _SpinWheel = nil, nil, nil, nil, nil
+local _PDS, _Economy, _Inventory, _Crate, _SpinWheel, _Stat = nil, nil, nil, nil, nil, nil
 
 local function getPDS()
 	if _PDS then return _PDS end
@@ -57,6 +57,13 @@ local function getSpinWheel()
 	local ok, mod = pcall(require, Server:WaitForChild("SpinWheelService", 5))
 	if ok and mod then _SpinWheel = mod end
 	return _SpinWheel
+end
+
+local function getStat()
+	if _Stat then return _Stat end
+	local ok, mod = pcall(require, Server:WaitForChild("StatService", 5))
+	if ok and mod then _Stat = mod end
+	return _Stat
 end
 
 local DailyRewardService = {}
@@ -153,13 +160,32 @@ function DailyRewardService.Claim(player)
 	if rewardDef.type == "Coins" then
 		local eco = getEconomy()
 		if eco then
-			local ok, actualAmount = eco.AwardRewardCoins(player, rewardDef.amount, "DailyReward_Day" .. streak)
+			local source = "DailyReward_Day" .. streak
+			local baseAmount = tonumber(rewardDef.amount) or 0
+			local stat = getStat()
+			local vipOwned = false
+			if stat and type(stat.HasVipEntitlement) == "function" then
+				vipOwned = stat.HasVipEntitlement(player) == true
+			else
+				vipOwned = player:GetAttribute("OwnsVIP") == true or player:GetAttribute("VIPBundleOwned") == true
+			end
+			local ok, actualAmount = eco.AwardDailyRewardCoins(player, baseAmount, source)
 			if not ok then
 				_claimLock[userId] = nil
 				return { success = false, reason = "Coin grant failed" }
 			end
 			grantResult.amount = actualAmount or rewardDef.amount
 			grantResult.label = string.format("%d Coins", grantResult.amount)
+			warn(string.format(
+				"[DailyRewardGrantAudit] player=%s userId=%d day=%d base=%d vipOwned=%s final=%d source=%s",
+				player.Name,
+				userId,
+				streak,
+				baseAmount,
+				tostring(vipOwned),
+				tonumber(grantResult.amount) or 0,
+				source
+			))
 		else
 			_claimLock[userId] = nil
 			return { success = false, reason = "Economy unavailable" }

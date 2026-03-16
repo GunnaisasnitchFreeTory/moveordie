@@ -217,10 +217,19 @@ function IconImagesPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	player:GetAttributeChangedSignal("OwnedIconImages"):Connect(function()
 		if visible then refresh() end
 	end)
+	player:GetAttributeChangedSignal("PlayerState"):Connect(function()
+		if player:GetAttribute("PlayerState") == "InMatch" and visible then
+			IconImagesPanel.Hide()
+		end
+	end)
 end
 
 function IconImagesPanel.Show()
 	if visible then return end
+	if player:GetAttribute("PlayerState") == "InMatch" then
+		print("[IconImagesPanel] Blocked Show while InMatch")
+		return
+	end
 	visible = true
 	overlay.Visible = true
 	refresh()

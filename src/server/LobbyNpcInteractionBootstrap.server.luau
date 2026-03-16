@@ -181,6 +181,52 @@ local function ensurePrompt(model: Model, rootPart: BasePart, npcId: string, npc
 	return chosen
 end
 
+local function ensureAbilitySellerBillboard(model: Model, rootPart: BasePart)
+	local existing = rootPart:FindFirstChild("AbilityLabel")
+	if existing and not existing:IsA("BillboardGui") then
+		existing:Destroy()
+		existing = nil
+	end
+
+	local billboard = existing
+	if not billboard then
+		billboard = Instance.new("BillboardGui")
+	end
+
+	billboard.Name = "AbilityLabel"
+	billboard.Size = UDim2.new(0, 160, 0, 36)
+	billboard.StudsOffset = Vector3.new(0, 3.8, 0)
+	billboard.AlwaysOnTop = true
+	billboard.MaxDistance = 80
+	billboard.ResetOnSpawn = false
+	billboard.Enabled = true
+	billboard.LightInfluence = 0
+
+	local label = billboard:FindFirstChild("TextLabel")
+	if label and not label:IsA("TextLabel") then
+		label:Destroy()
+		label = nil
+	end
+	if not label then
+		label = Instance.new("TextLabel")
+	end
+
+	label.Name = "TextLabel"
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.Text = "Abilities"
+	label.TextScaled = false
+	label.TextSize = 28
+	label.Font = Enum.Font.LuckiestGuy
+	label.TextStrokeTransparency = 0.5
+	label.TextColor3 = Color3.new(1, 0, 0)
+	label.Parent = billboard
+
+	if billboard.Parent ~= rootPart then
+		billboard.Parent = rootPart
+	end
+end
+
 local function playAmbientAnimation(model: Model, animator: Animator, npcId: string, npcConfig)
 	local animationConfig = npcConfig.ambientAnimation
 	if not animationConfig or animationConfig.animationId == nil or animationConfig.animationId == "" then
@@ -246,6 +292,9 @@ local function setupNpc(npcId: string, npcConfig, remote: RemoteEvent)
 	end
 
 	local prompt = ensurePrompt(model, rootPart, npcId, npcConfig)
+	if npcId == "AbilitySeller" then
+		ensureAbilitySellerBillboard(model, rootPart)
+	end
 	playAmbientAnimation(model, animator, npcId, npcConfig)
 
 	prompt.Triggered:Connect(function(player: Player)

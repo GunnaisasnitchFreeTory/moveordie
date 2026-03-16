@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
+local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared", 60)
 if not Shared then
@@ -22,6 +23,7 @@ local SoundUtil = require(Client:WaitForChild("SoundUtil"))
 local Components = require(Client:WaitForChild("Components"))
 
 local C = UIConfig.Colors
+local LocalPlayer = Players.LocalPlayer
 
 local EmoteShopPanel = {}
 
@@ -47,14 +49,72 @@ local activeEmoteAnimationId: string? = nil
 local emoteButtons: { [string]: TextButton } = {}
 local emoteOwnedLocal: { [string]: boolean } = {}
 local emoteDataById: { [string]: { [string]: any } } = {}
-local emoteIdByGamepassId: { [number]: string } = {}
+local emoteIdByAssetId: { [number]: string } = {}
+local ownershipCheckInFlight: { [string]: boolean } = {}
+local pendingPurchaseByAssetId: { [number]: { emoteId: string, emoteName: string, startedAt: number } } = {}
 
-local function getEmoteGamepassId(emoteData): number
-	if type(emoteData) ~= "table" then
-		return 0
+local function showEmoteShopToast(message: string)
+	if not canvas or not canvas.Parent then
+		return
 	end
 
-	return tonumber(emoteData.gamepassId) or 0
+	local old = canvas:FindFirstChild("EmoteShopToast")
+	if old then
+		old:Destroy()
+	end
+
+	local toast = Instance.new("TextLabel")
+	toast.Name = "EmoteShopToast"
+	toast.AnchorPoint = Vector2.new(0.5, 1)
+	toast.Position = UDim2.new(0.5, 0, 1, -14)
+	toast.Size = UDim2.new(0, 360, 0, 38)
+	toast.BackgroundColor3 = Color3.fromRGB(20, 24, 42)
+	toast.BackgroundTransparency = 0.08
+	toast.TextColor3 = Color3.fromRGB(255, 255, 255)
+	toast.Font = Enum.Font.LuckiestGuy
+	toast.TextSize = 15
+	toast.Text = tostring(message or "")
+	toast.BorderSizePixel = 0
+	toast.ZIndex = 120
+	toast.Parent = canvas
+	Instance.new("UICorner", toast).CornerRadius = UDim.new(0, 10)
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(0, 0, 0)
+	stroke.Thickness = 1.2
+	stroke.Transparency = 0.25
+	stroke.Parent = toast
+
+	task.delay(2.2, function()
+		if toast and toast.Parent then
+			toast:Destroy()
+		end
+	end)
+end
+
+type EmotePurchaseInfo = {
+	promptType: "asset" | "none",
+	id: number,
+}
+
+local function getEmotePurchaseInfo(emoteData): EmotePurchaseInfo
+	if type(emoteData) ~= "table" then
+		return { promptType = "none", id = 0 }
+	end
+
+	local explicitType = string.lower(tostring(emoteData.purchaseType or emoteData.productType or ""))
+	local assetId = tonumber(emoteData.assetId or emoteData.emoteAssetId) or 0
+
+	if explicitType == "asset" and assetId > 0 then
+		return { promptType = "asset", id = assetId }
+	end
+
+	-- Emote shop uses third-party asset purchase prompts.
+	if assetId > 0 then
+		return { promptType = "asset", id = assetId }
+	end
+
+	return { promptType = "none", id = 0 }
 end
 
 local function isEmoteOwned(emoteId: string): boolean
@@ -93,11 +153,17 @@ local function refreshEmoteCard(emoteId: string)
 	end
 
 	if isEmoteOwned(emoteId) then
+		local buyGroup = button:FindFirstChild("RobuxBuyGroup")
+		if buyGroup then
+			buyGroup:Destroy()
+		end
 		button.Text = "Use"
 		applyActionButtonColor(button, C.EquipButton)
 	else
-		button.Text = string.format("%d ROBUX", tonumber(emoteData.robux) or 99)
+		local robuxAmount = tostring(tonumber(emoteData.robux) or 99)
+		button.Text = string.format("%s ROBUX", robuxAmount)
 		applyActionButtonColor(button, C.RobuxButton)
+		Components.ApplyRobuxBuyStyle(button, robuxAmount)
 	end
 end
 
@@ -108,16 +174,21 @@ local function refreshEmoteOwnership(emoteId: string, optimisticOwned: boolean?)
 	end
 
 	local owned = optimisticOwned == true
-	local gamepassId = getEmoteGamepassId(emoteData)
-	if not owned and gamepassId > 0 then
-		local ok, owns = pcall(function()
-			return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, gamepassId)
-		end)
-		if ok then
-			owned = owns == true
-		else
-			warn(string.format("[EmoteShopPanel] Ownership check failed for %s: %s", tostring(emoteData.name), tostring(owns)))
+	local purchase = getEmotePurchaseInfo(emoteData)
+	if not owned and not ownershipCheckInFlight[emoteId] then
+		ownershipCheckInFlight[emoteId] = true
+		if purchase.promptType == "asset" and purchase.id > 0 then
+			local ok, owns = pcall(function()
+				return MarketplaceService:PlayerOwnsAsset(LocalPlayer, purchase.id)
+			end)
+			if ok then
+				owned = owns == true
+			else
+				warn(string.format("[EmoteShopPanel] Asset ownership check failed for %s (%d): %s",
+					tostring(emoteData.name), purchase.id, tostring(owns)))
+			end
 		end
+		ownershipCheckInFlight[emoteId] = nil
 	end
 
 	emoteOwnedLocal[emoteId] = owned
@@ -222,20 +293,59 @@ local function handleEmoteAction(emoteData)
 		return
 	end
 
-	local gamepassId = getEmoteGamepassId(emoteData)
-	if gamepassId <= 0 then
-		warn(string.format(
-			"[EmoteShopPanel] Purchase blocked for %s - gamepassId is not configured",
-			tostring(emoteData.name)
-		))
+	local purchase = getEmotePurchaseInfo(emoteData)
+	print(string.format(
+		"[EmoteShopPanel] Buy clicked emote=%s id=%s promptType=%s assetId=%d",
+		tostring(emoteData.name),
+		tostring(emoteData.id),
+		purchase.promptType,
+		purchase.id
+	))
+
+	if purchase.promptType == "none" or purchase.id <= 0 then
+		warn(string.format("[EmoteShopPanel] Purchase blocked emote=%s id=%s reason=missing_product_config",
+			tostring(emoteData.name), tostring(emoteData.id)))
 		return
 	end
 
-	MarketplaceService:PromptGamePassPurchase(LocalPlayer, gamepassId)
+	if purchase.promptType == "asset" then
+		pendingPurchaseByAssetId[purchase.id] = {
+			emoteId = emoteData.id,
+			emoteName = tostring(emoteData.name or emoteData.id),
+			startedAt = os.clock(),
+		}
+		print(string.format(
+			"[EmoteShopPanel] PromptPurchase request emote=%s id=%s assetId=%d studio=%s",
+			tostring(emoteData.name),
+			tostring(emoteData.id),
+			purchase.id,
+			tostring(RunService:IsStudio())
+		))
+		local okPrompt, promptErr = pcall(function()
+			MarketplaceService:PromptPurchase(LocalPlayer, purchase.id)
+		end)
+		if not okPrompt then
+			pendingPurchaseByAssetId[purchase.id] = nil
+			warn(string.format(
+				"[EmoteShopPanel] PromptPurchase failed emote=%s id=%s assetId=%d error=%s studio=%s",
+				tostring(emoteData.name),
+				tostring(emoteData.id),
+				purchase.id,
+				tostring(promptErr),
+				tostring(RunService:IsStudio())
+			))
+			if RunService:IsStudio() then
+				showEmoteShopToast("Purchase prompt unavailable in this Studio test mode.")
+			else
+				showEmoteShopToast("Couldn't open purchase prompt. Please try again.")
+			end
+		end
+	end
 end
 
 function EmoteShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 	closeCallback = onClose
+	print("[EmoteShopPanel] Init complete (client asset purchase flow)")
 
 	overlay = Components.CreateDimOverlay(screenGui, function()
 		EmoteShopPanel.Hide()
@@ -347,9 +457,12 @@ function EmoteShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 
 	for _, emoteData in ipairs(UIConfig.MockEmotes or {}) do
 		emoteDataById[emoteData.id] = emoteData
-		local gamepassId = getEmoteGamepassId(emoteData)
-		if gamepassId > 0 then
-			emoteIdByGamepassId[gamepassId] = emoteData.id
+		local purchase = getEmotePurchaseInfo(emoteData)
+		if purchase.promptType == "asset" and purchase.id > 0 then
+			emoteIdByAssetId[purchase.id] = emoteData.id
+		else
+			warn(string.format("[EmoteShopPanel] Missing purchase config emote=%s id=%s",
+				tostring(emoteData.name), tostring(emoteData.id)))
 		end
 
 		local card = Components.CreateItemCard(gridHolder, {
@@ -391,26 +504,40 @@ function EmoteShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 		stopActiveEmote(0.08)
 	end)
 
-	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(a, b, c)
-		local gamepassId: number? = nil
-		local wasPurchased: boolean? = nil
-		if typeof(a) == "Instance" and a:IsA("Player") then
-			gamepassId = tonumber(b)
-			wasPurchased = (c == true)
-		else
-			gamepassId = tonumber(a)
-			wasPurchased = (b == true)
-		end
-
-		if not wasPurchased or not gamepassId or gamepassId <= 0 then
+	MarketplaceService.PromptPurchaseFinished:Connect(function(player, assetId, wasPurchased)
+		if player ~= LocalPlayer then
 			return
 		end
+		local resolvedAssetId = tonumber(assetId)
+		if not resolvedAssetId or resolvedAssetId <= 0 then
+			return
+		end
+		local pending = pendingPurchaseByAssetId[resolvedAssetId]
+		local elapsedMs = 0
+		if pending and type(pending.startedAt) == "number" then
+			elapsedMs = math.floor((os.clock() - pending.startedAt) * 1000)
+		end
+		print(string.format(
+			"[EmoteShopPanel] PromptPurchaseFinished assetId=%d purchased=%s emote=%s emoteId=%s elapsedMs=%d studio=%s",
+			resolvedAssetId,
+			tostring(wasPurchased == true),
+			tostring(pending and pending.emoteName or "unknown"),
+			tostring(pending and pending.emoteId or "unknown"),
+			elapsedMs,
+			tostring(RunService:IsStudio())
+		))
+		pendingPurchaseByAssetId[resolvedAssetId] = nil
 
-		local emoteId = emoteIdByGamepassId[gamepassId]
+		if wasPurchased ~= true then
+			if RunService:IsStudio() then
+				showEmoteShopToast("Purchase not completed. Studio Start Server/Player may block third-party prompts.")
+			end
+			return
+		end
+		local emoteId = emoteIdByAssetId[resolvedAssetId]
 		if not emoteId then
 			return
 		end
-
 		emoteOwnedLocal[emoteId] = true
 		refreshEmoteCard(emoteId)
 		task.delay(0.5, function()
@@ -426,6 +553,7 @@ function EmoteShopPanel.Show()
 
 	visible = true
 	overlay.Visible = true
+	print("[EmoteShopPanel] Opened")
 	refreshAllEmoteOwnership()
 	SoundUtil.Open()
 	AnimUtil.OpenPanel(canvas, uiScale)

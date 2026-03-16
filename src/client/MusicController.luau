@@ -90,6 +90,8 @@ local lastLoggedAudioState: string? = nil
 local intermissionWarned         = false
 local _initialized               = false
 local matchStatusModeValue: StringValue? = nil
+local matchStatusStateValue: StringValue? = nil
+local modeVoteActiveValue: BoolValue? = nil
 
 -- SFX sounds (persistent, not part of single-channel)
 local winSfx: Sound?             = nil
@@ -315,7 +317,9 @@ end
 
 local function resolveAudioStateFromContext(state: string?): string
 	-- Only players actively in the match hear match music.
-	if state == PlayerState.States.InMatch then
+	local matchState = matchStatusStateValue and matchStatusStateValue.Value or nil
+	local modeVoteActive = modeVoteActiveValue and modeVoteActiveValue.Value == true or false
+	if state == PlayerState.States.InMatch and matchState == "Playing" and not modeVoteActive then
 		local mode = matchStatusModeValue and matchStatusModeValue.Value or "Normal"
 		if mode == "Brainrot" then
 			return "BrainrotMatch"
@@ -444,10 +448,20 @@ function MusicController.Init()
 		local stateVal    = matchStatus:WaitForChild("State", 10)
 		local phaseEndVal = matchStatus:WaitForChild("PhaseEndTime", 10)
 		local modeVal     = matchStatus:WaitForChild("Mode", 10)
+		local voteActiveVal = matchStatus:WaitForChild("ModeVoteActive", 10)
+		if stateVal and stateVal:IsA("StringValue") then
+			matchStatusStateValue = stateVal
+		end
 		if modeVal and modeVal:IsA("StringValue") then
 			matchStatusModeValue = modeVal
 			modeVal.Changed:Connect(function()
 				-- Re-evaluate per-player routing when selected match mode changes.
+				updateContext()
+			end)
+		end
+		if voteActiveVal and voteActiveVal:IsA("BoolValue") then
+			modeVoteActiveValue = voteActiveVal
+			voteActiveVal.Changed:Connect(function()
 				updateContext()
 			end)
 		end

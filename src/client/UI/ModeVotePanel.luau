@@ -37,6 +37,7 @@ local voteRemote: RemoteEvent? = nil
 local reopenBtn: TextButton? = nil
 local voteLockedValue: BoolValue? = nil
 local voteLockedModeValue: StringValue? = nil
+local matchStateValue: StringValue? = nil
 
 local currentVote: string? = nil
 local voteWindowOpen = false
@@ -698,12 +699,8 @@ function ModeVotePanel.Init()
 						forcedMode = voteLockedModeValue and voteLockedModeValue.Value or nil,
 					})
 				elseif newVal == false and voteWindowOpen then
-					task.delay(1.5, function()
-						if not voteWindowOpen then
-							return
-						end
-						hidePanel()
-					end)
+					print("[ModeVote] Replicated inactive detected - force hiding UI")
+					hidePanel()
 				end
 			end)
 
@@ -724,6 +721,18 @@ function ModeVotePanel.Init()
 				if currentVoteLocked or (voteLockedValue and voteLockedValue.Value == true) then
 					setVoteLockState(true, newVal)
 					updateSelection()
+				end
+			end)
+		end
+
+		local stateVal = matchStatus:WaitForChild("State", 5)
+		if stateVal and stateVal:IsA("StringValue") then
+			matchStateValue = stateVal
+			stateVal.Changed:Connect(function(newVal)
+				print("[ModeVote] MatchStatus.State changed to:", tostring(newVal))
+				if newVal ~= "Intermission" and voteWindowOpen then
+					print("[ModeVote] Match state left intermission - force hiding UI")
+					hidePanel()
 				end
 			end)
 		end

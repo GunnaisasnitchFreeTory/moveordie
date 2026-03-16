@@ -39,6 +39,7 @@ local BUTTON_BG_DISABLED = Color3.fromRGB(43, 58, 49)
 local TEXT_PRIMARY = Color3.fromRGB(244, 250, 246)
 local TEXT_MUTED = Color3.fromRGB(166, 190, 175)
 local BADGE_BG = Color3.fromRGB(16, 48, 31)
+local ROBUX_ICON_IMAGE = "rbxassetid://138917867019056"
 
 local STATUS_NONE = "None"
 local STATUS_QUEUED = "Queued"
@@ -50,28 +51,47 @@ local overlay: TextButton? = nil
 local visible = false
 local closeCallback: (() -> ())? = nil
 local requestRemote: RemoteEvent? = nil
+local requestRemoteLogged = false
 
 local actionButtons: { [string]: TextButton } = {}
-local priceLabels: { [string]: TextLabel } = {}
 local statusLabels: { [string]: TextLabel } = {}
 local cardsGridLayout: UIGridLayout? = nil
+local lastRenderedStatusByAbility: { [string]: string } = {}
 
 local function getRequestRemote(): RemoteEvent?
 	if requestRemote and requestRemote.Parent then
 		return requestRemote
 	end
 
-	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:WaitForChild("Remotes", 5)
 	if not remotes then
 		return nil
 	end
 
-	local remote = remotes:FindFirstChild("PerkProductPromptRequest")
+	local remote = remotes:FindFirstChild("PerkProductPromptRequest") or remotes:WaitForChild("PerkProductPromptRequest", 5)
 	if remote and remote:IsA("RemoteEvent") then
 		requestRemote = remote
+		if not requestRemoteLogged then
+			requestRemoteLogged = true
+			print(string.format("[AbilityShopPanel] Purchase remote ready: %s", remote:GetFullName()))
+		end
+	elseif remote then
+		warn(string.format("[AbilityShopPanel] PerkProductPromptRequest has wrong class: %s", remote.ClassName))
 	end
 
 	return requestRemote
+end
+
+local function getReplicatedMatchState(): string
+	local matchStatus = ReplicatedStorage:FindFirstChild("MatchStatus")
+	if not matchStatus then
+		return ""
+	end
+	local stateValue = matchStatus:FindFirstChild("State")
+	if stateValue and stateValue:IsA("StringValue") then
+		return stateValue.Value
+	end
+	return ""
 end
 
 local function getAbilityStatus(abilityId: string): string
@@ -81,6 +101,19 @@ local function getAbilityStatus(abilityId: string): string
 	end
 
 	local value = LocalPlayer:GetAttribute(ability.statusAttribute)
+	local playerState = tostring(LocalPlayer:GetAttribute("PlayerState") or "")
+	local roundRunning = getReplicatedMatchState() == "Playing"
+	if value == STATUS_ACTIVE and (playerState ~= "InMatch" or not roundRunning) then
+		print(string.format(
+			"[AbilityStateGuardUI] Invalid active status ability=%s playerState=%s roundRunning=%s rawStatus=%s -> effectiveStatus=%s",
+			abilityId,
+			playerState,
+			tostring(roundRunning),
+			tostring(value),
+			STATUS_QUEUED
+		))
+		return STATUS_QUEUED
+	end
 	if value == STATUS_QUEUED or value == STATUS_ACTIVE then
 		return value
 	end
@@ -89,33 +122,52 @@ end
 
 local function refreshAbilityCard(abilityId: string)
 	local button = actionButtons[abilityId]
-	local priceLabel = priceLabels[abilityId]
 	local statusLabel = statusLabels[abilityId]
 	local ability = PerkCatalog.Get(abilityId)
-	if not button or not priceLabel or not statusLabel or not ability then
+	if not button or not statusLabel or not ability then
 		return
 	end
 
+	local buyGroup = button:FindFirstChild("RobuxBuyGroup")
 	local status = getAbilityStatus(abilityId)
 	if status == STATUS_QUEUED then
+		if buyGroup then
+			buyGroup:Destroy()
+		end
 		button.Text = "QUEUED"
 		button.BackgroundColor3 = BUTTON_BG_DISABLED
-		priceLabel.Text = "Queued for your next match"
 		statusLabel.Text = "NEXT MATCH"
 		statusLabel.TextColor3 = CARD_ACCENT
 	elseif status == STATUS_ACTIVE then
+		if buyGroup then
+			buyGroup:Destroy()
+		end
 		button.Text = "ACTIVE"
 		button.BackgroundColor3 = BUTTON_BG_DISABLED
-		priceLabel.Text = "Active for this match"
 		statusLabel.Text = "LIVE NOW"
 		statusLabel.TextColor3 = CARD_ACCENT
 	else
-		button.Text = "BUY ABILITY"
+		local robuxAmount = tostring(tonumber(ability.robux) or 5)
+		button.Text = string.format("%s ROBUX", robuxAmount)
 		button.BackgroundColor3 = BUTTON_BG
-		priceLabel.Text = string.format("%d Robux", tonumber(ability.robux) or 5)
+		Components.ApplyRobuxBuyStyle(button, robuxAmount, ROBUX_ICON_IMAGE)
 		statusLabel.Text = "ONE MATCH"
 		statusLabel.TextColor3 = TEXT_MUTED
 	end
+
+	local statusLogToken = string.format(
+		"status=%s raw=%s playerState=%s matchState=%s button=%s",
+		tostring(status),
+		tostring(LocalPlayer:GetAttribute(ability.statusAttribute)),
+		tostring(LocalPlayer:GetAttribute("PlayerState") or ""),
+		getReplicatedMatchState(),
+		button.Text
+	)
+	if lastRenderedStatusByAbility[abilityId] ~= statusLogToken then
+		lastRenderedStatusByAbility[abilityId] = statusLogToken
+		print(string.format("[AbilityShopStatus] ability=%s %s", abilityId, statusLogToken))
+	end
+
 end
 
 local function refreshAllAbilityCards()
@@ -209,7 +261,7 @@ local function createAbilityCard(parent: Instance, ability, layoutOrder: number?
 	description.Name = "Description"
 	description.AnchorPoint = Vector2.new(0.5, 0)
 	description.Position = UDim2.new(0.5, 0, 0, 108)
-	description.Size = UDim2.new(1, -28, 0, 56)
+	description.Size = UDim2.new(1, -28, 0, 66)
 	description.BackgroundTransparency = 1
 	description.Font = Enum.Font.GothamMedium
 	description.Text = ability.description
@@ -222,39 +274,26 @@ local function createAbilityCard(parent: Instance, ability, layoutOrder: number?
 	local accentLine = Instance.new("Frame")
 	accentLine.Name = "AccentLine"
 	accentLine.AnchorPoint = Vector2.new(0.5, 0)
-	accentLine.Position = UDim2.new(0.5, 0, 0, 168)
+	accentLine.Position = UDim2.new(0.5, 0, 0, 178)
 	accentLine.Size = UDim2.new(1, -34, 0, 2)
 	accentLine.BackgroundColor3 = CARD_ACCENT
 	accentLine.BorderSizePixel = 0
 	accentLine.ZIndex = 4
 	accentLine.Parent = card
 
-	local priceLabel = Instance.new("TextLabel")
-	priceLabel.Name = "Price"
-	priceLabel.AnchorPoint = Vector2.new(0.5, 1)
-	priceLabel.Position = UDim2.new(0.5, 0, 1, -48)
-	priceLabel.Size = UDim2.new(1, -28, 0, 18)
-	priceLabel.BackgroundTransparency = 1
-	priceLabel.Font = Enum.Font.GothamBold
-	priceLabel.Text = string.format("%d Robux", tonumber(ability.robux) or 5)
-	priceLabel.TextColor3 = TEXT_PRIMARY
-	priceLabel.TextSize = 15
-	priceLabel.ZIndex = 4
-	priceLabel.Parent = card
-	priceLabels[ability.id] = priceLabel
-
 	local button = Instance.new("TextButton")
 	button.Name = "BuyButton"
 	button.AnchorPoint = Vector2.new(0.5, 1)
-	button.Position = UDim2.new(0.5, 0, 1, -14)
-	button.Size = UDim2.new(1, -28, 0, 32)
+	button.Position = UDim2.new(0.5, 0, 1, -16)
+	button.Size = UDim2.new(1, -28, 0, 36)
 	button.BackgroundColor3 = BUTTON_BG
 	button.BorderSizePixel = 0
 	button.AutoButtonColor = false
 	button.Font = Enum.Font.GothamBold
-	button.Text = "BUY ABILITY"
+	button.Text = "BUY"
 	button.TextColor3 = TEXT_PRIMARY
 	button.TextSize = 15
+	button.TextXAlignment = Enum.TextXAlignment.Center
 	button.ZIndex = 4
 	button.Parent = card
 	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 12)
@@ -413,6 +452,9 @@ function AbilityShopPanel.Init(screenGui: ScreenGui, onClose: () -> ())
 			refreshAbilityCard(ability.id)
 		end)
 	end
+	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(function()
+		refreshAllAbilityCards()
+	end)
 
 	updateCardsHolderHeight()
 end

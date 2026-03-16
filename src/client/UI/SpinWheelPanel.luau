@@ -20,6 +20,8 @@ local Lighting = game:GetService("Lighting")
 local UserInputService = game:GetService("UserInputService")
 
 local SpinWheelPanel = {}
+local ROBUX_ICON_IMAGE = "rbxassetid://138917867019056"
+local ROBUX_ICON_SIZE = 28
 
 local visible = false
 local closeCallback = nil
@@ -32,6 +34,149 @@ local buttonsFrame = nil
 
 local function log(...)
 	print("[SpinWheelPanel]", ...)
+end
+
+local function getSpinAmountSuffix(sourceText: string): string
+	local textUpper = string.upper(sourceText or "")
+	local spinCount = string.match(textUpper, "(%d+)%s*SPIN")
+	if spinCount then
+		local n = tonumber(spinCount) or 1
+		if n == 1 then
+			return "1 SPIN"
+		end
+		return string.format("%d SPINS", n)
+	end
+	return ""
+end
+
+local function getRobuxAmountText(sourceText: string): string
+	local textUpper = string.upper(sourceText or "")
+	local amount = string.match(textUpper, "(%d[%d,]*)%s*ROBUX")
+	if amount and amount ~= "" then
+		return amount
+	end
+	return "?"
+end
+
+local function applyRobuxBuyStyle(button: TextButton, sourceText: string)
+	local existing = button:FindFirstChild("RobuxBuyGroup")
+	if existing then
+		existing:Destroy()
+	end
+
+	button.Text = ""
+
+	local group = Instance.new("Frame")
+	group.Name = "RobuxBuyGroup"
+	group.AnchorPoint = Vector2.new(0.5, 0.5)
+	group.Position = UDim2.fromScale(0.5, 0.5)
+	group.Size = UDim2.new(1, -10, 1, -6)
+	group.BackgroundTransparency = 1
+	group.ZIndex = button.ZIndex + 1
+	group.Parent = button
+
+	local topRow = Instance.new("Frame")
+	topRow.Name = "TopRow"
+	topRow.AnchorPoint = Vector2.new(0.5, 0.5)
+	topRow.Position = UDim2.new(0.5, 0, 0.38, 0)
+	topRow.Size = UDim2.new(1, 0, 0, ROBUX_ICON_SIZE)
+	topRow.BackgroundTransparency = 1
+	topRow.ZIndex = group.ZIndex
+	topRow.Parent = group
+
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.Padding = UDim.new(0, 5)
+	layout.Parent = topRow
+
+	local icon = Instance.new("ImageLabel")
+	icon.Name = "Icon"
+	icon.Size = UDim2.fromOffset(ROBUX_ICON_SIZE, ROBUX_ICON_SIZE)
+	icon.BackgroundTransparency = 1
+	icon.Image = ROBUX_ICON_IMAGE
+	icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+	icon.ScaleType = Enum.ScaleType.Fit
+	icon.ZIndex = topRow.ZIndex
+	icon.Parent = topRow
+
+	local iconSizeConstraint = Instance.new("UISizeConstraint")
+	iconSizeConstraint.MinSize = Vector2.new(ROBUX_ICON_SIZE, ROBUX_ICON_SIZE)
+	iconSizeConstraint.MaxSize = Vector2.new(ROBUX_ICON_SIZE, ROBUX_ICON_SIZE)
+	iconSizeConstraint.Parent = icon
+
+	local iconAspect = Instance.new("UIAspectRatioConstraint")
+	iconAspect.AspectRatio = 1
+	iconAspect.AspectType = Enum.AspectType.FitWithinMaxSize
+	iconAspect.DominantAxis = Enum.DominantAxis.Width
+	iconAspect.Parent = icon
+
+	local buyLabel = Instance.new("TextLabel")
+	buyLabel.Name = "Label"
+	buyLabel.AutomaticSize = Enum.AutomaticSize.X
+	buyLabel.Size = UDim2.fromOffset(0, 18)
+	buyLabel.BackgroundTransparency = 1
+	buyLabel.Font = Enum.Font.LuckiestGuy
+	buyLabel.Text = getRobuxAmountText(sourceText)
+	buyLabel.TextColor3 = button.TextColor3
+	buyLabel.TextTransparency = 0.2
+	buyLabel.TextSize = math.max(16, button.TextSize)
+	buyLabel.ZIndex = topRow.ZIndex
+	buyLabel.Parent = topRow
+
+	local buyStroke = Instance.new("UIStroke")
+	buyStroke.Color = Color3.fromRGB(0, 0, 0)
+	buyStroke.Thickness = 1.3
+	buyStroke.Transparency = 0.2
+	buyStroke.Parent = buyLabel
+
+	local suffix = getSpinAmountSuffix(sourceText)
+	if suffix ~= "" then
+		local spinLabel = Instance.new("TextLabel")
+		spinLabel.Name = "SpinCount"
+		spinLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+		spinLabel.Position = UDim2.new(0.5, 0, 0.78, 0)
+		spinLabel.Size = UDim2.new(1, -6, 0, 14)
+		spinLabel.BackgroundTransparency = 1
+		spinLabel.Font = Enum.Font.GothamBold
+		spinLabel.Text = suffix
+		spinLabel.TextColor3 = button.TextColor3
+		spinLabel.TextSize = 10
+		spinLabel.TextTransparency = 0.08
+		spinLabel.ZIndex = group.ZIndex
+		spinLabel.Parent = group
+
+		local spinStroke = Instance.new("UIStroke")
+		spinStroke.Color = Color3.fromRGB(0, 0, 0)
+		spinStroke.Thickness = 1.1
+		spinStroke.Transparency = 0.25
+		spinStroke.Parent = spinLabel
+	end
+end
+
+local function standardizeSpinRobuxButtons()
+	if not spinFrame then
+		return
+	end
+	local patched = 0
+	for _, d in ipairs(spinFrame:GetDescendants()) do
+		if d:IsA("TextButton") then
+			local originalText = d:GetAttribute("RobuxOriginalText")
+			if type(originalText) ~= "string" or originalText == "" then
+				originalText = d.Text or ""
+				d:SetAttribute("RobuxOriginalText", originalText)
+			end
+			local textUpper = string.upper(originalText)
+			if string.find(textUpper, "ROBUX", 1, true) or string.find(textUpper, "R$", 1, true) then
+				applyRobuxBuyStyle(d, originalText)
+				patched += 1
+			end
+		end
+	end
+	if patched > 0 then
+		log(string.format("Standardized %d Spin Wheel robux buttons", patched))
+	end
 end
 
 ----------------------------------------------------------------------------
@@ -322,6 +467,8 @@ function SpinWheelPanel.Init(screenGui, onClose)
 		log("Created close button (none found in imported UI)")
 	end
 
+	standardizeSpinRobuxButtons()
+
 	log("Initialized ✓ (imported wheel at: " .. spinFrame:GetFullName() .. ")")
 end
 
@@ -339,6 +486,7 @@ function SpinWheelPanel.Show()
 
 	-- Make frame visible with open animation (matches imported AnimateFrames style)
 	spinFrame.Visible = true
+	standardizeSpinRobuxButtons()
 	spinFrame.Size = UDim2.new(0.8, 0, 0.8, 0)
 	spinFrame.Position = UDim2.new(0.5, 0, 0.7, 0)
 

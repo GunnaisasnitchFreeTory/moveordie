@@ -82,6 +82,11 @@ local Config = {
 	ArmSwing        = 0.12,
 	ArmRecovery     = 0.20,
 	WalkAnimId      = "rbxassetid://507777826",
+	FreezeDanceAnimIds = {
+		"rbxassetid://507771019",
+		"rbxassetid://507776043",
+		"rbxassetid://507777268",
+	},
 	NpcFolderName   = "TungTungSahurNPC",
 	RemoteName      = "TungTungSahurEvent",
 	-- Brainrot-only NPC presentation + obstacle jump tuning
@@ -116,6 +121,7 @@ local timerThread: thread?                = nil
 local healthConn:  RBXScriptConnection?   = nil
 local moveToConn:  RBXScriptConnection?   = nil
 local walkTrack:   AnimationTrack?        = nil
+local freezeDanceTrack: AnimationTrack?   = nil
 local hitDebounce:     {[number]: number} = {}
 local contactDebounce: {[number]: number} = {}
 local contactConns:    {RBXScriptConnection} = {}
@@ -220,6 +226,59 @@ local function stopWalkAnim()
 		pcall(function() walkTrack:Stop() end)
 		walkTrack = nil
 	end
+end
+
+local function stopFreezeDanceAnim(reason: string?)
+	if freezeDanceTrack then
+		pcall(function()
+			freezeDanceTrack:Stop(0.18)
+		end)
+		freezeDanceTrack = nil
+		log(string.format("[TTS FreezeDance] stopped reason=%s", tostring(reason or "unspecified")))
+	end
+end
+
+local function startFreezeDanceAnim()
+	if not npcModel or not frozen then
+		return
+	end
+	local animator = getAnimator()
+	if not animator then
+		warn("[TungTungSahur] Freeze dance start skipped: missing animator")
+		return
+	end
+
+	stopFreezeDanceAnim("replace_existing")
+	local danceIds = Config.FreezeDanceAnimIds or {}
+	if #danceIds == 0 then
+		return
+	end
+
+	local animationId = danceIds[math.random(1, #danceIds)]
+	local animation = Instance.new("Animation")
+	animation.AnimationId = animationId
+	local okLoad, trackOrErr = pcall(function()
+		return animator:LoadAnimation(animation)
+	end)
+	animation:Destroy()
+	if not okLoad or not trackOrErr then
+		warn(string.format("[TungTungSahur] Freeze dance failed to load: %s", tostring(trackOrErr)))
+		return
+	end
+
+	local track: AnimationTrack = trackOrErr
+	track.Priority = Enum.AnimationPriority.Action
+	track.Looped = true
+	local okPlay, playErr = pcall(function()
+		track:Play(0.12, 1, 1)
+	end)
+	if not okPlay then
+		warn(string.format("[TungTungSahur] Freeze dance failed to play: %s", tostring(playErr)))
+		return
+	end
+
+	freezeDanceTrack = track
+	log(string.format("[TTS FreezeDance] started animationId=%s", animationId))
 end
 
 -- --- ATTACK ANIMATION (Motor6D arm swing) ------------------------------------
@@ -594,6 +653,7 @@ local function despawn(reason: string)
 
 	disconnectAll()
 	stopWalkAnim()
+	stopFreezeDanceAnim("despawn")
 	hitDebounce    = {}
 	contactDebounce = {}
 	lastLungeTick  = 0
@@ -1182,8 +1242,9 @@ end
 
 function TungTungSahurService.OnFreezeBegin()
 	if not active or frozen then return end
+	if currentRound <= 0 then return end
 	frozen = true
-	log("Freeze begin -- NPC paused")
+	log(string.format("[SaveTheBrainrot] freeze_started round=%d", currentRound))
 
 	if npcModel then
 		local hum = npcModel:FindFirstChildOfClass("Humanoid")
@@ -1194,18 +1255,20 @@ function TungTungSahurService.OnFreezeBegin()
 	end
 
 	stopWalkAnim()
+	startFreezeDanceAnim()
 end
 
 function TungTungSahurService.OnFreezeEnd()
 	if not active or not frozen then return end
 	frozen = false
-	log("Freeze end -- NPC resumed")
+	log(string.format("[SaveTheBrainrot] freeze_ended round=%d", currentRound))
 
 	if npcModel then
 		local hum = npcModel:FindFirstChildOfClass("Humanoid")
 		if hum then hum.WalkSpeed = Config.WalkSpeed end
 	end
 
+	stopFreezeDanceAnim("freeze_end")
 	startWalkAnim()
 end
 
