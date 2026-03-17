@@ -27,6 +27,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local MusicConfig = require(Shared:WaitForChild("MusicConfig"))
 local PlayerState = require(Shared:WaitForChild("PlayerState"))
 
 local MusicController = {}
@@ -36,36 +37,61 @@ local MusicController = {}
 -- ═══════════════════════════════════════════════════════════════════
 
 -- Lobby track A: original lobby music (10%)
-local LOBBY_TRACK_A_ID      = "rbxassetid://132796863583176"
-local LOBBY_TRACK_A_START   = 0
-local LOBBY_TRACK_A_VOLUME  = 0.35
-local LOBBY_TRACK_A_CHANCE  = 0.10
+local LOBBY_TRACK_A_ID      = MusicConfig.LobbyTracks.Primary.Id
+local LOBBY_TRACK_A_START   = MusicConfig.LobbyTracks.Primary.Start
+local LOBBY_TRACK_A_VOLUME  = MusicConfig.LobbyTracks.Primary.Volume
+local LOBBY_TRACK_A_CHANCE  = MusicConfig.LobbyTracks.Primary.Chance
 
 -- Lobby track B: alt lobby music (90%)
-local LOBBY_TRACK_B_ID      = "rbxassetid://100199384595840"
-local LOBBY_TRACK_B_START   = 10
-local LOBBY_TRACK_B_VOLUME  = 1.0
+local LOBBY_TRACK_B_ID      = MusicConfig.LobbyTracks.Alternate.Id
+local LOBBY_TRACK_B_START   = MusicConfig.LobbyTracks.Alternate.Start
+local LOBBY_TRACK_B_VOLUME  = MusicConfig.LobbyTracks.Alternate.Volume
+
+local function buildTrackSequence(trackConfig)
+	local tracks = {}
+	local playlist = trackConfig.Playlist
+	if typeof(playlist) == "table" and #playlist > 0 then
+		for _, track in ipairs(playlist) do
+			table.insert(tracks, {
+				Id = track.Id,
+				Start = track.Start or 0,
+			})
+		end
+	elseif trackConfig.Id then
+		table.insert(tracks, {
+			Id = trackConfig.Id,
+			Start = trackConfig.Start or 0,
+		})
+	end
+	return tracks
+end
+
+local function describeTrackSequence(tracks): string
+	local parts = table.create(#tracks)
+	for index, track in ipairs(tracks) do
+		parts[index] = string.format("%s@%.2f", track.Id, track.Start or 0)
+	end
+	return table.concat(parts, ",")
+end
 
 -- Match music (mode-aware)
--- Normal mode keeps existing track ID as requested.
-local NORMAL_MAP_TRACK_ID       = "rbxassetid://79513722933054"
-local NORMAL_MAP_TRACK_START    = 32
-local NORMAL_MAP_TRACK_VOLUME   = 0.48
+local NORMAL_MAP_TRACKS         = buildTrackSequence(MusicConfig.MapTracks.Normal)
+local NORMAL_MAP_TRACK_VOLUME   = MusicConfig.MapTracks.Normal.Volume
 
 -- Save a Brainrot mode track (new)
-local BRAINROT_MAP_TRACK_ID     = "rbxassetid://81348512826018"
-local BRAINROT_MAP_TRACK_START  = 0
-local BRAINROT_MAP_TRACK_VOLUME = 0.48
+local BRAINROT_MAP_TRACK_ID     = MusicConfig.MapTracks.Brainrot.Id
+local BRAINROT_MAP_TRACK_START  = MusicConfig.MapTracks.Brainrot.Start
+local BRAINROT_MAP_TRACK_VOLUME = MusicConfig.MapTracks.Brainrot.Volume
 
 -- Crossfade transition (both tracks overlap — no silent gap)
 local CROSSFADE_TIME        = 1.2
 
 -- SFX
-local SFX_VOLUME            = 0.8
-local COUNTDOWN_VOLUME      = 0.24
-local COUNTDOWN_THRESHOLD   = 5.0
-local WIN_SFX_ID            = "rbxassetid://111217342629113"
-local INTERMISSION_SFX_ID   = "rbxassetid://115128556144522"
+local SFX_VOLUME            = MusicConfig.SFX.Win.Volume
+local COUNTDOWN_VOLUME      = MusicConfig.SFX.IntermissionCountdown.Volume
+local COUNTDOWN_THRESHOLD   = MusicConfig.SFX.IntermissionCountdown.Threshold
+local WIN_SFX_ID            = MusicConfig.SFX.Win.Id
+local INTERMISSION_SFX_ID   = MusicConfig.SFX.IntermissionCountdown.Id
 
 -- Legacy sounds to purge (old map music + any leftovers)
 local LEGACY_SOUND_IDS = {
@@ -87,15 +113,18 @@ local activeFadeTween: Tween?    = nil
 local currentContext: string?    = nil   -- "lobby" | "normal_match" | "brainrot_match"
 local lastLoggedPlayerState: string? = nil
 local lastLoggedAudioState: string? = nil
-local intermissionWarned         = false
 local _initialized               = false
 local matchStatusModeValue: StringValue? = nil
 local matchStatusStateValue: StringValue? = nil
+local matchStatusPhaseEndValue: NumberValue? = nil
 local modeVoteActiveValue: BoolValue? = nil
+local lastWarnedPhaseEnd: number? = nil
+local normalPlaylistToken = 0
 
 -- SFX sounds (persistent, not part of single-channel)
 local winSfx: Sound?             = nil
 local intermissionSfx: Sound?    = nil
+local log
 
 -- Hard-stop intermission countdown SFX and reset playback position
 local function stopIntermissionSfx()
@@ -105,11 +134,80 @@ local function stopIntermissionSfx()
 	end
 end
 
+local function clearIntermissionWarning(reason: string, remaining: number?, phaseEnd: number?, clearWarnedPhase: boolean?)
+	local hadWarning = lastWarnedPhaseEnd ~= nil
+	local wasPlaying = intermissionSfx ~= nil and intermissionSfx.Playing
+	if wasPlaying or hadWarning then
+		log(string.format(
+			"[IntermissionCountdownSFX] action=stop reason=%s remaining=%.2f phaseEnd=%.2f warned=%s playing=%s",
+			reason,
+			remaining or -1,
+			phaseEnd or -1,
+			tostring(hadWarning),
+			tostring(wasPlaying)
+		))
+	end
+	stopIntermissionSfx()
+	if clearWarnedPhase ~= false then
+		lastWarnedPhaseEnd = nil
+	end
+end
+
+local function syncIntermissionCountdownSfx(reason: string)
+	local stateVal = matchStatusStateValue
+	local phaseEndVal = matchStatusPhaseEndValue
+	if not stateVal or not phaseEndVal then
+		return
+	end
+
+	local phaseEnd = phaseEndVal.Value
+	local remaining = phaseEnd - workspace:GetServerTimeNow()
+	local playerState = LocalPlayer:GetAttribute("PlayerState")
+
+	if stateVal.Value ~= "Intermission" then
+		clearIntermissionWarning(reason .. "_not_intermission", remaining, phaseEnd, true)
+		return
+	end
+
+	if playerState == "AFK" then
+		clearIntermissionWarning(reason .. "_player_afk", remaining, phaseEnd, true)
+		return
+	end
+
+	if remaining <= 0.5 then
+		clearIntermissionWarning(reason .. "_expired", remaining, phaseEnd, true)
+		return
+	end
+
+	if remaining > COUNTDOWN_THRESHOLD then
+		clearIntermissionWarning(reason .. "_above_threshold", remaining, phaseEnd, true)
+		return
+	end
+
+	if lastWarnedPhaseEnd == phaseEnd then
+		return
+	end
+
+	lastWarnedPhaseEnd = phaseEnd
+	if intermissionSfx then
+		intermissionSfx.Volume = COUNTDOWN_VOLUME
+		intermissionSfx:Stop()
+		intermissionSfx.TimePosition = 0
+		intermissionSfx:Play()
+	end
+	log(string.format(
+		"[IntermissionCountdownSFX] action=start reason=%s remaining=%.2f phaseEnd=%.2f",
+		reason,
+		remaining,
+		phaseEnd
+	))
+end
+
 -- ═══════════════════════════════════════════════════════════════════
 -- LOGGING
 -- ═══════════════════════════════════════════════════════════════════
 
-local function log(...)
+log = function(...)
 	print("[MusicController]", ...)
 end
 
@@ -129,6 +227,53 @@ local function logState()
 	end
 	log(string.format("Context=%s nowPlaying=%s timePos=%s volume=%s | SoundService sounds=%d, BGM group sounds=%d",
 		tostring(currentContext), id, tp, vol, soundCount, groupCount))
+end
+
+local function getInstancePath(instance: Instance?): string
+	if not instance then
+		return "nil"
+	end
+
+	local path = instance.Name
+	local current = instance.Parent
+	while current do
+		path = current.Name .. "." .. path
+		current = current.Parent
+	end
+	return path
+end
+
+local function logMusicDiagnostics(stage: string, sound: Sound?, extra: string?)
+	if not sound then
+		log(string.format("[MapMusicAudit] stage=%s sound=nil %s", stage, extra or ""))
+		return
+	end
+
+	log(string.format(
+		"[MapMusicAudit] stage=%s name=%s id=%s loaded=%s playing=%s time=%.2f volume=%.2f parent=%s %s",
+		stage,
+		sound.Name,
+		sound.SoundId,
+		tostring(sound.IsLoaded),
+		tostring(sound.Playing),
+		sound.TimePosition,
+		sound.Volume,
+		getInstancePath(sound.Parent),
+		extra or ""
+	))
+end
+
+local function logPossiblePermissionIssue(sound: Sound, stage: string)
+	warn(string.format(
+		"[MusicController][MapMusicAudit] stage=%s likelyPermissionOrOwnershipIssue=true name=%s id=%s loaded=%s playing=%s volume=%.2f parent=%s",
+		stage,
+		sound.Name,
+		sound.SoundId,
+		tostring(sound.IsLoaded),
+		tostring(sound.Playing),
+		sound.Volume,
+		getInstancePath(sound.Parent)
+	))
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -205,6 +350,7 @@ local function createMusicSound(name: string, soundId: string, looped: boolean):
 	sound.Volume = 0
 	sound.SoundGroup = bgmGroup
 	sound.Parent = SoundService
+	logMusicDiagnostics("created", sound, string.format("looped=%s", tostring(looped)))
 	return sound
 end
 
@@ -251,8 +397,28 @@ local function crossfadeTo(newName: string, newId: string, newStart: number, new
 	newSound.Volume = 0
 	activeSound = newSound
 
+	logMusicDiagnostics("before_play", newSound, string.format("requestedStart=%.2f targetVolume=%.2f", newStart, newVolume))
 	newSound:Play()
-	log(string.format("New track started: name=%s id=%s looped=%s", newName, newId, tostring(looped)))
+	logMusicDiagnostics("after_play_call", newSound, string.format("requestedStart=%.2f targetVolume=%.2f", newStart, newVolume))
+
+	if not newSound.IsLoaded then
+		task.spawn(function()
+			newSound.Loaded:Wait()
+			if newSound.Parent then
+				logMusicDiagnostics("loaded", newSound, "loaded_event=true")
+			end
+		end)
+	end
+
+	task.delay(2, function()
+		if activeSound ~= newSound or not newSound.Parent then
+			return
+		end
+		logMusicDiagnostics("post_play_check", newSound, string.format("requestedStart=%.2f targetVolume=%.2f", newStart, newVolume))
+		if not newSound.IsLoaded then
+			logPossiblePermissionIssue(newSound, "post_play_check")
+		end
+	end)
 
 	local fadeIn = TweenService:Create(newSound, TweenInfo.new(CROSSFADE_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		Volume = newVolume,
@@ -275,6 +441,84 @@ end
 -- LOBBY MUSIC
 -- ═══════════════════════════════════════════════════════════════════
 
+local function cancelNormalMapPlaylist(reason: string)
+	normalPlaylistToken += 1
+	if currentContext == "normal_match" then
+		log(string.format("[MapMusicAudit] context=normal_match playlistCancelled reason=%s token=%d", reason, normalPlaylistToken))
+	end
+end
+
+local playNormalMapPlaylistTrack
+
+local function scheduleNormalMapPlaylistAdvance(token: number, trackIndex: number, sound: Sound)
+	if #NORMAL_MAP_TRACKS <= 1 then
+		return
+	end
+
+	task.spawn(function()
+		if not sound.IsLoaded then
+			sound.Loaded:Wait()
+		end
+		if normalPlaylistToken ~= token or activeSound ~= sound or currentContext ~= "normal_match" or not sound.Parent then
+			return
+		end
+
+		local remaining = sound.TimeLength - sound.TimePosition
+		if remaining <= 0 then
+			remaining = CROSSFADE_TIME
+		end
+		local advanceDelay = math.max(remaining - CROSSFADE_TIME, 0.1)
+		log(string.format(
+			"[MapMusicAudit] context=normal_match playlistScheduled track=%d/%d soundId=%s delay=%.2f",
+			trackIndex,
+			#NORMAL_MAP_TRACKS,
+			sound.SoundId,
+			advanceDelay
+		))
+
+		task.wait(advanceDelay)
+		if normalPlaylistToken ~= token or activeSound ~= sound or currentContext ~= "normal_match" or not sound.Parent then
+			return
+		end
+
+		local nextTrackIndex = (trackIndex % #NORMAL_MAP_TRACKS) + 1
+		local nextTrack = NORMAL_MAP_TRACKS[nextTrackIndex]
+		log(string.format(
+			"[MapMusicAudit] context=normal_match playlistAdvance from=%d to=%d nextSoundId=%s",
+			trackIndex,
+			nextTrackIndex,
+			nextTrack.Id
+		))
+		playNormalMapPlaylistTrack(token, nextTrackIndex)
+	end)
+end
+
+playNormalMapPlaylistTrack = function(token: number, trackIndex: number)
+	if normalPlaylistToken ~= token or currentContext ~= "normal_match" then
+		return
+	end
+
+	local track = NORMAL_MAP_TRACKS[trackIndex]
+	if not track then
+		return
+	end
+
+	log(string.format(
+		"[MapMusicAudit] context=normal_match playlistTrack=%d/%d selectedSoundId=%s start=%.2f volume=%.2f",
+		trackIndex,
+		#NORMAL_MAP_TRACKS,
+		track.Id,
+		track.Start or 0,
+		NORMAL_MAP_TRACK_VOLUME
+	))
+	crossfadeTo(string.format("MapMusic_Normal_%d", trackIndex), track.Id, track.Start or 0, NORMAL_MAP_TRACK_VOLUME, false)
+
+	local scheduledSound = activeSound
+	if scheduledSound then
+		scheduleNormalMapPlaylistAdvance(token, trackIndex, scheduledSound)
+	end
+end
+
 local function pickLobbyTrack(): (string, number, number)
 	if math.random() < LOBBY_TRACK_A_CHANCE then
 		return LOBBY_TRACK_A_ID, LOBBY_TRACK_A_START, LOBBY_TRACK_A_VOLUME
@@ -285,10 +529,12 @@ end
 
 local function startLobby()
 	if currentContext == "lobby" then return end
+	cancelNormalMapPlaylist("switch_to_lobby")
 	currentContext = "lobby"
 	log("Context → lobby")
 
 	local trackId, startPos, volume = pickLobbyTrack()
+	log(string.format("[MapMusicAudit] context=lobby selectedSoundId=%s start=%.2f volume=%.2f", trackId, startPos, volume))
 	crossfadeTo("LobbyMusic", trackId, startPos, volume, true)
 end
 
@@ -298,15 +544,32 @@ end
 
 local function startNormalMap()
 	if currentContext == "normal_match" then return end
+	cancelNormalMapPlaylist("restart_normal_playlist")
 	currentContext = "normal_match"
 	log("Context → normal_match")
-	crossfadeTo("MapMusic_Normal", NORMAL_MAP_TRACK_ID, NORMAL_MAP_TRACK_START, NORMAL_MAP_TRACK_VOLUME, true)
+	normalPlaylistToken += 1
+	log(string.format(
+		"[MapMusicAudit] context=normal_match playlistStart tracks=%s volume=%.2f token=%d",
+		describeTrackSequence(NORMAL_MAP_TRACKS),
+		NORMAL_MAP_TRACK_VOLUME,
+		normalPlaylistToken
+	))
+	if #NORMAL_MAP_TRACKS <= 1 then
+		local onlyTrack = NORMAL_MAP_TRACKS[1]
+		if onlyTrack then
+			crossfadeTo("MapMusic_Normal", onlyTrack.Id, onlyTrack.Start or 0, NORMAL_MAP_TRACK_VOLUME, true)
+		end
+		return
+	end
+	playNormalMapPlaylistTrack(normalPlaylistToken, 1)
 end
 
 local function startBrainrotMap()
 	if currentContext == "brainrot_match" then return end
+	cancelNormalMapPlaylist("switch_to_brainrot")
 	currentContext = "brainrot_match"
 	log("Context → brainrot_match")
+	log(string.format("[MapMusicAudit] context=brainrot_match selectedSoundId=%s start=%.2f volume=%.2f", BRAINROT_MAP_TRACK_ID, BRAINROT_MAP_TRACK_START, BRAINROT_MAP_TRACK_VOLUME))
 	-- Smooth transition requirement: fade from lobby -> brainrot (and any context switch) via crossfade.
 	crossfadeTo("MapMusic_Brainrot", BRAINROT_MAP_TRACK_ID, BRAINROT_MAP_TRACK_START, BRAINROT_MAP_TRACK_VOLUME, true)
 end
@@ -425,13 +688,8 @@ function MusicController.Init()
 
 	-- 4. Listen for PlayerState changes (primary context signal)
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(function()
-		local state = LocalPlayer:GetAttribute("PlayerState")
 		updateContext()
-		-- Stop countdown SFX immediately when going AFK; do NOT reset
-		-- intermissionWarned so it won't replay on the same intermission
-		if state == "AFK" then
-			stopIntermissionSfx()
-		end
+		syncIntermissionCountdownSfx("player_state_changed")
 	end)
 
 	-- 5. Listen for MatchStatus (secondary signal + intermission countdown)
@@ -452,6 +710,9 @@ function MusicController.Init()
 		if stateVal and stateVal:IsA("StringValue") then
 			matchStatusStateValue = stateVal
 		end
+		if phaseEndVal and phaseEndVal:IsA("NumberValue") then
+			matchStatusPhaseEndValue = phaseEndVal
+		end
 		if modeVal and modeVal:IsA("StringValue") then
 			matchStatusModeValue = modeVal
 			modeVal.Changed:Connect(function()
@@ -467,40 +728,39 @@ function MusicController.Init()
 		end
 
 		if stateVal then
-		stateVal.Changed:Connect(function()
-			-- MatchStatus is global; do not drive per-player music from it.
-			-- Re-evaluate using local authoritative PlayerState only.
-			updateContext()
-			-- Reset flag so the next intermission cycle can trigger the SFX
-			intermissionWarned = false
-			-- If leaving intermission, hard-stop any playing countdown SFX
-			if stateVal.Value ~= "Intermission" then
-				stopIntermissionSfx()
-			end
-		end)
-		end
-
-		-- Intermission 5-second countdown SFX
-		if phaseEndVal and stateVal then
-			RunService.Heartbeat:Connect(function()
-				if intermissionWarned then return end
-				if stateVal.Value ~= "Intermission" then return end
-				if LocalPlayer:GetAttribute("PlayerState") == "AFK" then return end
-				local remaining = phaseEndVal.Value - workspace:GetServerTimeNow()
-				if remaining <= COUNTDOWN_THRESHOLD and remaining > 0.5 then
-					intermissionWarned = true
-					if intermissionSfx then
-						intermissionSfx.Volume = COUNTDOWN_VOLUME
-						intermissionSfx:Stop()
-						intermissionSfx:Play()
-					end
-				end
+			stateVal.Changed:Connect(function()
+				-- MatchStatus is global; do not drive per-player music from it.
+				-- Re-evaluate using local authoritative PlayerState only.
+				updateContext()
+				syncIntermissionCountdownSfx("match_state_changed")
 			end)
 		end
+
+		if phaseEndVal then
+			phaseEndVal.Changed:Connect(function()
+				syncIntermissionCountdownSfx("phase_end_changed")
+			end)
+		end
+
+		-- Intermission countdown SFX stays in sync with replicated state/end time.
+		if phaseEndVal and stateVal then
+			RunService.Heartbeat:Connect(function()
+				syncIntermissionCountdownSfx("heartbeat")
+			end)
+		end
+
+		syncIntermissionCountdownSfx("match_status_ready")
 	end)
 
 	-- 6. Start with correct context immediately
 	updateContext()
+	log(string.format(
+		"[MapMusicAudit] configuredIds lobbyA=%s lobbyB=%s normalMap=%s brainrotMap=%s",
+		LOBBY_TRACK_A_ID,
+		LOBBY_TRACK_B_ID,
+		describeTrackSequence(NORMAL_MAP_TRACKS),
+		BRAINROT_MAP_TRACK_ID
+	))
 
 	log("Initialized — legacy sounds purged, crossfade active")
 	logState()

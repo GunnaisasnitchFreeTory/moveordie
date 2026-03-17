@@ -25,8 +25,12 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local UIConfig = require(Shared:WaitForChild("UIConfig"))
+local DEBUG_LOGS = RunService:IsStudio() and UIConfig.DebugLogs == true
 
 local Client = script.Parent
 local AnimUtil = require(Client:WaitForChild("AnimUtil"))
@@ -315,6 +319,7 @@ function MatchResultsPanel.Show(data)
 	ps.Parent = placeLbl
 	yOffset += 36
 
+	local rewardLabelText = if data.yourPlacement == 1 then "Win Bonus" else "Placement Bonus"
 	local coinLbl = Instance.new("TextLabel")
 	coinLbl.AnchorPoint = Vector2.new(0.5, 0)
 	coinLbl.Position = UDim2.new(0.5, 0, 0, yOffset)
@@ -323,9 +328,17 @@ function MatchResultsPanel.Show(data)
 	coinLbl.Font = Enum.Font.GothamSemibold
 	coinLbl.TextColor3 = Color3.fromRGB(255, 220, 60)
 	coinLbl.TextSize = 16
-	coinLbl.Text = string.format("+%d Win Bonus", data.yourCoins or 0)
+	coinLbl.Text = string.format("+%d %s", data.yourCoins or 0, rewardLabelText)
 	coinLbl.ZIndex = 42
 	coinLbl.Parent = card
+	if DEBUG_LOGS then
+		print(string.format(
+			"[MatchResultsPanel] placement=%s rewardLabel=%s amount=%s",
+			tostring(data.yourPlacement),
+			rewardLabelText,
+			tostring(data.yourCoins or 0)
+		))
+	end
 	yOffset += 22
 
 	local matchCoins = data.matchCoinsCollected or 0

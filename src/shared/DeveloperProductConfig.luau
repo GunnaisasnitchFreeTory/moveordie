@@ -7,33 +7,21 @@
 ]]
 
 local DeveloperProductConfig = {}
+local MonetizationConfig = require(script.Parent:WaitForChild("MonetizationConfig"))
 
-DeveloperProductConfig.FreezePlayer = {
-	id = "freeze_player",
-	name = "Freeze Player",
-	robux = 15,
-	productId = 3552077669,
-}
+local function makeEntry(entryId: string, fallbackName: string, fallbackRobux: number)
+	local entry = MonetizationConfig.GetDeveloperProduct(entryId) or {}
+	return {
+		id = entryId,
+		name = tostring(entry.name or fallbackName),
+		robux = tonumber(entry.robux) or fallbackRobux,
+		productId = tonumber(entry.productId) or 0,
+	}
+end
 
-DeveloperProductConfig.ForceNextMode = {
-	id = "force_next_mode",
-	name = "FORCE NEXT MODE!",
-	robux = 5,
-	productId = 3554497295,
-}
-
-DeveloperProductConfig.PerkSpeed = {
-	id = "perk_speed",
-	name = "Speed Ability",
-	robux = 5,
-	productId = 3556716610,
-}
-
-DeveloperProductConfig.PerkJump = {
-	id = "perk_jump",
-	name = "Jump Ability",
-	robux = 5,
-	productId = 3556733510,
-}
+DeveloperProductConfig.FreezePlayer = makeEntry("freeze_player", "Freeze Player", 15)
+DeveloperProductConfig.ForceNextMode = makeEntry("force_next_mode", "FORCE NEXT MODE!", 5)
+DeveloperProductConfig.PerkSpeed = makeEntry("perk_speed", "Speed Ability", 5)
+DeveloperProductConfig.PerkJump = makeEntry("perk_jump", "Jump Ability", 5)
 
 return DeveloperProductConfig

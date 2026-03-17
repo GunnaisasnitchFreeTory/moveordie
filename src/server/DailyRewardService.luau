@@ -10,8 +10,8 @@
 	Uses PlayerDataService for persistence, EconomyService for coins,
 	InventoryService for crown grants, CrateService for crate openings.
 
-	Coin rewards are granted through EconomyService so VIP and other
-	server-authoritative Fate Coin multipliers apply consistently.
+	Coin rewards are granted through EconomyService so VIP-only
+	server-authoritative Fate Coin modifiers apply consistently.
 ]]
 
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -177,7 +177,7 @@ function DailyRewardService.Claim(player)
 			grantResult.amount = actualAmount or rewardDef.amount
 			grantResult.label = string.format("%d Coins", grantResult.amount)
 			warn(string.format(
-				"[DailyRewardGrantAudit] player=%s userId=%d day=%d base=%d vipOwned=%s final=%d source=%s",
+				"[DailyRewardGrantAudit] player=%s userId=%d day=%d base=%d policy=vip_only vipOwned=%s final=%d source=%s",
 				player.Name,
 				userId,
 				streak,

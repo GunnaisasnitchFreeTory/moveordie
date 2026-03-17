@@ -1,5 +1,10 @@
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local UIConfig = require(Shared:WaitForChild("UIConfig"))
 
 local UIScalingController = {}
 
@@ -28,20 +33,40 @@ local ORIG_PAD_Y = 8
 
 local DESKTOP_SIDEBAR_Y_OFFSET = 75
 
-local PHONE_INTERMISSION_Y = -28
-local PHONE_INTERMISSION_SCALE = 0.78
 local PHONE_SIDEBAR_X_SHIFT = 6
 local PHONE_COIN_SCALE = 0.55
 local PHONE_COIN_Y_SHIFT = -6
+local COMPACT_TOP_CENTER_SHORT_SIDE_MAX = 800
+local PHONE_ROUND_SCALE = 0.92
+local PHONE_STATE_SCALE = 0.90
+local PHONE_INTERMISSION_SCALE = 0.82
+local DEBUG_LOGS = RunService:IsStudio() and UIConfig.DebugLogs == true
+
+local SWORD_ANNOUNCEMENT_PROFILE = {
+	TextSize = 19,
+	Height = 34,
+	YOffset = 132,
+}
+
+local TTS_COUNTDOWN_PROFILE = {
+	TextSize = 19,
+	Height = 24,
+	YOffset = 6,
+}
+
+local TTS_ANNOUNCEMENT_PROFILE = {
+	TextSize = 19,
+	Height = 24,
+	YOffset = 176,
+}
 
 local Camera = workspace.CurrentCamera
 local deviceClass: string = "Desktop"
 local trackedScales: { UIScale } = {}
 local _sidebarPhoneTuned = false
 local _sidebarDesktopOffset = false
-local _intermissionPhoneTuned = false
 local _coinPhoneTuned = false
-local _origIntermissionY: number? = nil
+local _compactTopCenterTuned = false
 local _origSidebarBgAlpha: number? = nil
 local _origSidebarBgStrokeAlpha: number? = nil
 local _origSidebarStudAlpha: number? = nil
@@ -66,6 +91,82 @@ local function classify(): string
 	end
 
 	return "Desktop"
+end
+
+local function debugLog(message: string, ...)
+	if not DEBUG_LOGS then
+		return
+	end
+	print(string.format(message, ...))
+end
+
+local function isCompactTopCenterViewport(): boolean
+	if not UserInputService.TouchEnabled then
+		return false
+	end
+	local vp = Camera.ViewportSize
+	return math.min(vp.X, vp.Y) <= COMPACT_TOP_CENTER_SHORT_SIDE_MAX
+end
+
+local function ensureNamedScale(guiObject: Instance, scaleName: string, scaleValue: number)
+	local existing = guiObject:FindFirstChild(scaleName)
+	if existing and existing:IsA("UIScale") then
+		existing.Scale = scaleValue
+		return
+	end
+
+	local scale = Instance.new("UIScale")
+	scale.Name = scaleName
+	scale.Scale = scaleValue
+	scale.Parent = guiObject
+end
+
+local function removeNamedScale(guiObject: Instance?, scaleName: string)
+	if not guiObject then
+		return
+	end
+	local existing = guiObject:FindFirstChild(scaleName)
+	if existing and existing:IsA("UIScale") then
+		existing:Destroy()
+	end
+end
+
+local function rememberNumberAttribute(instance: Instance, attributeName: string, value: number)
+	if instance:GetAttribute(attributeName) == nil then
+		instance:SetAttribute(attributeName, value)
+	end
+end
+
+local function applyLabelCompactProfile(label: TextLabel, profileKey: string, profile)
+	local attrPrefix = "CompactTopCenter" .. profileKey
+	rememberNumberAttribute(label, attrPrefix .. "TextSize", label.TextSize)
+	rememberNumberAttribute(label, attrPrefix .. "SizeYScale", label.Size.Y.Scale)
+	rememberNumberAttribute(label, attrPrefix .. "SizeYOffset", label.Size.Y.Offset)
+	rememberNumberAttribute(label, attrPrefix .. "PosYScale", label.Position.Y.Scale)
+	rememberNumberAttribute(label, attrPrefix .. "PosYOffset", label.Position.Y.Offset)
+
+	label.TextSize = profile.TextSize
+	label.Size = UDim2.new(label.Size.X.Scale, label.Size.X.Offset, label.Size.Y.Scale, profile.Height)
+	label.Position = UDim2.new(label.Position.X.Scale, label.Position.X.Offset, label.Position.Y.Scale, profile.YOffset)
+end
+
+local function restoreLabelCompactProfile(label: TextLabel, profileKey: string)
+	local attrPrefix = "CompactTopCenter" .. profileKey
+	local textSize = label:GetAttribute(attrPrefix .. "TextSize")
+	local sizeYScale = label:GetAttribute(attrPrefix .. "SizeYScale")
+	local sizeYOffset = label:GetAttribute(attrPrefix .. "SizeYOffset")
+	local posYScale = label:GetAttribute(attrPrefix .. "PosYScale")
+	local posYOffset = label:GetAttribute(attrPrefix .. "PosYOffset")
+
+	if typeof(textSize) == "number" then
+		label.TextSize = textSize
+	end
+	if typeof(sizeYScale) == "number" and typeof(sizeYOffset) == "number" then
+		label.Size = UDim2.new(label.Size.X.Scale, label.Size.X.Offset, sizeYScale, sizeYOffset)
+	end
+	if typeof(posYScale) == "number" and typeof(posYOffset) == "number" then
+		label.Position = UDim2.new(label.Position.X.Scale, label.Position.X.Offset, posYScale, posYOffset)
+	end
 end
 
 local function trackGui(screenGui: ScreenGui)
@@ -339,42 +440,133 @@ local function removeDesktopLeftStackOffset()
 	_sidebarDesktopOffset = false
 end
 
-local function applyIntermissionPhoneTuning()
-	if _intermissionPhoneTuned then return end
+local function applyCompactTopCenterHudTuning()
 	if not _playerGui then return end
 	local hudGui = _playerGui:FindFirstChild("HUDGui")
 	if not hudGui then return end
-	local bar = hudGui:FindFirstChild("IntermissionBar")
-	if not bar then return end
-	_origIntermissionY = bar.Position.Y.Offset
-	bar.Position = UDim2.new(bar.Position.X.Scale, bar.Position.X.Offset, 0, PHONE_INTERMISSION_Y)
 
-	if not bar:FindFirstChild("PhoneIntermissionScale") then
-		local s = Instance.new("UIScale")
-		s.Name = "PhoneIntermissionScale"
-		s.Scale = PHONE_INTERMISSION_SCALE
-		s.Parent = bar
+	local roundFrame = hudGui:FindFirstChild("RoundFrame")
+	if roundFrame then
+		ensureNamedScale(roundFrame, "PhoneRoundScale", PHONE_ROUND_SCALE)
 	end
 
-	_intermissionPhoneTuned = true
-	print(string.format("[UI] Phone -> IntermissionBar moved higher (Y=%d) scaled %.2f", PHONE_INTERMISSION_Y, PHONE_INTERMISSION_SCALE))
-end
+	local stateLabel = hudGui:FindFirstChild("StateLabel")
+	if stateLabel then
+		ensureNamedScale(stateLabel, "PhoneStateScale", PHONE_STATE_SCALE)
+	end
 
-local function removeIntermissionPhoneTuning()
-	if not _intermissionPhoneTuned then return end
-	if not _playerGui then return end
-	local hudGui = _playerGui:FindFirstChild("HUDGui")
-	if not hudGui then return end
 	local bar = hudGui:FindFirstChild("IntermissionBar")
 	if bar then
-		local ps = bar:FindFirstChild("PhoneIntermissionScale")
-		if ps then ps:Destroy() end
-		if _origIntermissionY ~= nil then
-			bar.Position = UDim2.new(bar.Position.X.Scale, bar.Position.X.Offset, 0, _origIntermissionY)
-			_origIntermissionY = nil
+		ensureNamedScale(bar, "PhoneIntermissionScale", PHONE_INTERMISSION_SCALE)
+	end
+end
+
+local function removeCompactTopCenterHudTuning()
+	if not _playerGui then return end
+	local hudGui = _playerGui:FindFirstChild("HUDGui")
+	if not hudGui then return end
+
+	removeNamedScale(hudGui:FindFirstChild("RoundFrame"), "PhoneRoundScale")
+	removeNamedScale(hudGui:FindFirstChild("StateLabel"), "PhoneStateScale")
+	removeNamedScale(hudGui:FindFirstChild("IntermissionBar"), "PhoneIntermissionScale")
+end
+
+local function applyRuntimeBannerTuning(screenGui: ScreenGui)
+	if screenGui.Name == "SwordAnnouncement" then
+		local label = screenGui:FindFirstChild("AnnouncementLabel")
+		if label and label:IsA("TextLabel") then
+			applyLabelCompactProfile(label, "SwordAnnouncement", SWORD_ANNOUNCEMENT_PROFILE)
+		end
+	elseif screenGui.Name == "TungTungStatusStack" then
+		local countdown = screenGui:FindFirstChild("CountdownText")
+		if countdown and countdown:IsA("TextLabel") then
+			applyLabelCompactProfile(countdown, "TTSCountdown", TTS_COUNTDOWN_PROFILE)
+		end
+
+		local announce = screenGui:FindFirstChild("AnnounceText")
+		if announce and announce:IsA("TextLabel") then
+			applyLabelCompactProfile(announce, "TTSAnnouncement", TTS_ANNOUNCEMENT_PROFILE)
 		end
 	end
-	_intermissionPhoneTuned = false
+end
+
+local function removeRuntimeBannerTuning(screenGui: ScreenGui)
+	if screenGui.Name == "SwordAnnouncement" then
+		local label = screenGui:FindFirstChild("AnnouncementLabel")
+		if label and label:IsA("TextLabel") then
+			restoreLabelCompactProfile(label, "SwordAnnouncement")
+		end
+	elseif screenGui.Name == "TungTungStatusStack" then
+		local countdown = screenGui:FindFirstChild("CountdownText")
+		if countdown and countdown:IsA("TextLabel") then
+			restoreLabelCompactProfile(countdown, "TTSCountdown")
+		end
+
+		local announce = screenGui:FindFirstChild("AnnounceText")
+		if announce and announce:IsA("TextLabel") then
+			restoreLabelCompactProfile(announce, "TTSAnnouncement")
+		end
+	end
+end
+
+local function applyCompactTopCenterRuntimeTuning()
+	if not _playerGui then return end
+	for _, guiName in ipairs({"SwordAnnouncement", "TungTungStatusStack"}) do
+		local screenGui = _playerGui:FindFirstChild(guiName)
+		if screenGui and screenGui:IsA("ScreenGui") then
+			applyRuntimeBannerTuning(screenGui)
+		end
+	end
+end
+
+local function removeCompactTopCenterRuntimeTuning()
+	if not _playerGui then return end
+	for _, guiName in ipairs({"SwordAnnouncement", "TungTungStatusStack"}) do
+		local screenGui = _playerGui:FindFirstChild(guiName)
+		if screenGui and screenGui:IsA("ScreenGui") then
+			removeRuntimeBannerTuning(screenGui)
+		end
+	end
+end
+
+local function applyCompactTopCenterTuning()
+	if not _playerGui then
+		return
+	end
+
+	applyCompactTopCenterHudTuning()
+	applyCompactTopCenterRuntimeTuning()
+
+	if not _compactTopCenterTuned then
+		_compactTopCenterTuned = true
+		local vp = Camera.ViewportSize
+		debugLog(
+			"[UI] CompactTopCenterProfile applied viewport=%dx%d roundScale=%.2f stateScale=%.2f intermissionScale=%.2f",
+			math.floor(vp.X),
+			math.floor(vp.Y),
+			PHONE_ROUND_SCALE,
+			PHONE_STATE_SCALE,
+			PHONE_INTERMISSION_SCALE
+		)
+	end
+end
+
+local function removeCompactTopCenterTuning()
+	if not _playerGui then
+		return
+	end
+
+	removeCompactTopCenterHudTuning()
+	removeCompactTopCenterRuntimeTuning()
+	_compactTopCenterTuned = false
+end
+
+local function refreshCompactTopCenterTuning()
+	if isCompactTopCenterViewport() then
+		applyCompactTopCenterTuning()
+	else
+		removeCompactTopCenterTuning()
+	end
 end
 
 local function applyCoinFramePhoneTuning()
@@ -428,7 +620,6 @@ local function applyPhoneTuning()
 	applyDailyRewardsPhoneConstraint()
 	applyModeVotePhoneClamp()
 	applyForceNextModePhoneClamp()
-	applyIntermissionPhoneTuning()
 	applyCoinFramePhoneTuning()
 end
 
@@ -437,12 +628,10 @@ local function removePhoneTuning()
 	removeDailyRewardsPhoneConstraint()
 	removeModeVotePhoneClamp()
 	removeForceNextModePhoneClamp()
-	removeIntermissionPhoneTuning()
 	removeCoinFramePhoneTuning()
 end
 
 local function onViewportChanged()
-	local oldClass = deviceClass
 	applyScale()
 	if deviceClass == "Desktop" then
 		removePhoneTuning()
@@ -455,6 +644,7 @@ local function onViewportChanged()
 		removePhoneTuning()
 		print("[UI] Tablet -> no LeftStack offset applied")
 	end
+	refreshCompactTopCenterTuning()
 end
 
 local function runUIAudit()
@@ -513,7 +703,11 @@ function UIScalingController.Init()
 	end
 
 	playerGui.ChildAdded:Connect(function(child)
-		if child:IsA("ScreenGui") and SCALED_GUI_NAMES[child.Name] then
+		if not child:IsA("ScreenGui") then
+			return
+		end
+
+		if SCALED_GUI_NAMES[child.Name] then
 			trackGui(child)
 			if deviceClass == "Phone" then
 				task.defer(function()
@@ -522,6 +716,8 @@ function UIScalingController.Init()
 				end)
 			end
 		end
+
+		task.defer(refreshCompactTopCenterTuning)
 	end)
 
 	if #trackedScales == 0 then
@@ -545,6 +741,7 @@ function UIScalingController.Init()
 	else
 		print("[UI] Tablet -> no LeftStack offset applied")
 	end
+	refreshCompactTopCenterTuning()
 
 	runUIAudit()
 

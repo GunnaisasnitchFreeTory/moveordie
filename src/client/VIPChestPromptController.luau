@@ -2,11 +2,14 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local VIPChestPromptController = {}
 
 local LocalPlayer = Players.LocalPlayer
-local VIP_GAMEPASS_ID = 1745607323
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local MonetizationConfig = require(Shared:WaitForChild("MonetizationConfig"))
+local VIP_GAMEPASS_ID = MonetizationConfig.GetGamePassId("bundle_vip") or 0
 local VIP_LABEL_MAX_DISTANCE = 60
 local UPDATE_INTERVAL = 0.2
 

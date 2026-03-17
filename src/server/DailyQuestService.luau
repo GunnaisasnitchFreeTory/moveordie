@@ -587,10 +587,20 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 	if reward.type == "Coins" then
 		local eco = getEconomy()
 		if eco then
-			local ok, actualAmount = eco.AwardRewardCoins(player, reward.amount, "DailyQuest_" .. questId)
+			local source = "DailyQuest_" .. questId
+			local baseAmount = tonumber(reward.amount) or 0
+			local ok, actualAmount = eco.AwardVipOnlyCoins(player, baseAmount, source)
 			granted = ok == true
 			if granted then
-				extra.actualAmount = actualAmount or reward.amount
+				extra.actualAmount = actualAmount or baseAmount
+				log(string.format(
+					"[DailyQuestGrantAudit] player=%s quest=%s base=%d policy=vip_only final=%d source=%s",
+					player.Name,
+					questId,
+					baseAmount,
+					tonumber(extra.actualAmount) or 0,
+					source
+				))
 			end
 			if not granted then
 				failReason = "COIN_GRANT_FAILED"

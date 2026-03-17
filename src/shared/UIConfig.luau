@@ -16,6 +16,7 @@
 ]]
 
 local UIConfig = {}
+local MonetizationConfig = require(script.Parent:WaitForChild("MonetizationConfig"))
 
 -- Global debug logging controls (kept OFF by default to avoid output spam).
 UIConfig.DebugLogs = false
@@ -241,28 +242,28 @@ UIConfig.RarityInfo = {
 
 UIConfig.MockPremiumItems = {
 	-- Coin packs (Developer Products)
-	{ id = "coins_500",      name = "500 Fate Coins",    type = "Currency", robux = 100,  productId = 3539712298, iconColor = Color3.fromRGB(255, 218, 48), tag = "POPULAR",    coinsAmount = 500 },
-	{ id = "coins_2000",     name = "2,000 Fate Coins",  type = "Currency", robux = 200,  productId = 3539713007, iconColor = Color3.fromRGB(255, 198, 28), tag = "",           coinsAmount = 2000 },
-	{ id = "coins_5000",     name = "5,000 Fate Coins",  type = "Currency", robux = 400,  productId = 3539713203, iconColor = Color3.fromRGB(255, 178, 18), tag = "",           coinsAmount = 5000 },
-	{ id = "coins_10000",    name = "10,000 Fate Coins", type = "Currency", robux = 500,  productId = 3548924617, iconColor = Color3.fromRGB(255, 170, 24), tag = "",           coinsAmount = 10000 },
-	{ id = "coins_20000",    name = "20,000 Fate Coins", type = "Currency", robux = 600,  productId = 3548924750, iconColor = Color3.fromRGB(255, 160, 24), tag = "",           coinsAmount = 20000 },
-	{ id = "coins_80000",    name = "80,000 Fate Coins", type = "Currency", robux = 800,  productId = 3548924909, iconColor = Color3.fromRGB(255, 150, 24), tag = "",           coinsAmount = 80000 },
-	{ id = "coins_100000",   name = "100,000 Fate Coins",type = "Currency", robux = 1000, productId = 3548925138, iconColor = Color3.fromRGB(255, 140, 24), tag = "",           coinsAmount = 100000 },
-	{ id = "coins_150000",   name = "150,000 Fate Coins",type = "Currency", robux = 1200, productId = 3548925310, iconColor = Color3.fromRGB(255, 130, 24), tag = "",           coinsAmount = 150000 },
-	{ id = "coins_200000",   name = "200,000 Fate Coins",type = "Currency", robux = 2000, productId = 3548925433, iconColor = Color3.fromRGB(255, 120, 24), tag = "",           coinsAmount = 200000 },
+	{ id = "coins_500",      name = "500 Fate Coins",    type = "Currency", robux = 100,  productId = MonetizationConfig.GetDeveloperProductId("coins_500"),    iconColor = Color3.fromRGB(255, 218, 48), tag = "POPULAR",    coinsAmount = 500 },
+	{ id = "coins_2000",     name = "2,000 Fate Coins",  type = "Currency", robux = 200,  productId = MonetizationConfig.GetDeveloperProductId("coins_2000"),   iconColor = Color3.fromRGB(255, 198, 28), tag = "",           coinsAmount = 2000 },
+	{ id = "coins_5000",     name = "5,000 Fate Coins",  type = "Currency", robux = 400,  productId = MonetizationConfig.GetDeveloperProductId("coins_5000"),   iconColor = Color3.fromRGB(255, 178, 18), tag = "",           coinsAmount = 5000 },
+	{ id = "coins_10000",    name = "10,000 Fate Coins", type = "Currency", robux = 500,  productId = MonetizationConfig.GetDeveloperProductId("coins_10000"),  iconColor = Color3.fromRGB(255, 170, 24), tag = "",           coinsAmount = 10000 },
+	{ id = "coins_20000",    name = "20,000 Fate Coins", type = "Currency", robux = 600,  productId = MonetizationConfig.GetDeveloperProductId("coins_20000"),  iconColor = Color3.fromRGB(255, 160, 24), tag = "",           coinsAmount = 20000 },
+	{ id = "coins_80000",    name = "80,000 Fate Coins", type = "Currency", robux = 800,  productId = MonetizationConfig.GetDeveloperProductId("coins_80000"),  iconColor = Color3.fromRGB(255, 150, 24), tag = "",           coinsAmount = 80000 },
+	{ id = "coins_100000",   name = "100,000 Fate Coins",type = "Currency", robux = 1000, productId = MonetizationConfig.GetDeveloperProductId("coins_100000"), iconColor = Color3.fromRGB(255, 140, 24), tag = "",           coinsAmount = 100000 },
+	{ id = "coins_150000",   name = "150,000 Fate Coins",type = "Currency", robux = 1200, productId = MonetizationConfig.GetDeveloperProductId("coins_150000"), iconColor = Color3.fromRGB(255, 130, 24), tag = "",           coinsAmount = 150000 },
+	{ id = "coins_200000",   name = "200,000 Fate Coins",type = "Currency", robux = 2000, productId = MonetizationConfig.GetDeveloperProductId("coins_200000"), iconColor = Color3.fromRGB(255, 120, 24), tag = "",           coinsAmount = 200000 },
 	-- Legendary Pets (Gamepasses)
-	{ id = "pet_glitched_dragon",    name = "Glitched Dragon",    type = "ExclusivePet",   robux = 250, gamepassId = 1718832641, iconColor = Color3.fromRGB(58, 255, 128),  tag = "EXCLUSIVE", rarity = "Legendary" },
-	{ id = "pet_dark_winged_dragon", name = "Music Winged Dragon", type = "ExclusivePet",   robux = 300, gamepassId = 1717772785, iconColor = Color3.fromRGB(48, 28, 68),    tag = "EXCLUSIVE", rarity = "Legendary" },
-	{ id = "pet_pink_butterfly",     name = "Pink Butterfly",     type = "ExclusivePet",   robux = 200, gamepassId = 1716864887, iconColor = Color3.fromRGB(255, 148, 208), tag = "NEW",       rarity = "Legendary" },
-	{ id = "pet_dark_falcon",        name = "Dark Goblem",        type = "ExclusivePet",   robux = 250, gamepassId = 1716313058, iconColor = Color3.fromRGB(38, 28, 48),    tag = "EXCLUSIVE", rarity = "Legendary" },
+	{ id = "pet_glitched_dragon",    name = "Glitched Dragon",    type = "ExclusivePet",   robux = 250, gamepassId = MonetizationConfig.GetGamePassId("pet_glitched_dragon"),    iconColor = Color3.fromRGB(58, 255, 128),  tag = "EXCLUSIVE", rarity = "Legendary" },
+	{ id = "pet_dark_winged_dragon", name = "Music Winged Dragon", type = "ExclusivePet",   robux = 300, gamepassId = MonetizationConfig.GetGamePassId("pet_dark_winged_dragon"), iconColor = Color3.fromRGB(48, 28, 68),    tag = "EXCLUSIVE", rarity = "Legendary" },
+	{ id = "pet_pink_butterfly",     name = "Pink Butterfly",     type = "ExclusivePet",   robux = 200, gamepassId = MonetizationConfig.GetGamePassId("pet_pink_butterfly"),     iconColor = Color3.fromRGB(255, 148, 208), tag = "NEW",       rarity = "Legendary" },
+	{ id = "pet_dark_falcon",        name = "Dark Goblem",        type = "ExclusivePet",   robux = 250, gamepassId = MonetizationConfig.GetGamePassId("pet_dark_falcon"),        iconColor = Color3.fromRGB(38, 28, 48),    tag = "EXCLUSIVE", rarity = "Legendary" },
 	-- Animatronic Epic Pets (shop test flow)
-	{ id = "pet_freddy_fazbear",     name = "AnimatronicBear",             type = "ExclusivePet",   robux = 400, gamepassId = 1885101001, iconColor = Color3.fromRGB(165, 108, 72), tag = "NEW",       rarity = "Epic" },
-	{ id = "pet_bonnie",             name = "AnimatronicBunny",            type = "ExclusivePet",   robux = 400, gamepassId = 1885101002, iconColor = Color3.fromRGB(118, 88, 228), tag = "NEW",       rarity = "Epic" },
-	{ id = "pet_chica",              name = "AnimatronicChicken",          type = "ExclusivePet",   robux = 400, gamepassId = 1885101003, iconColor = Color3.fromRGB(238, 198, 78), tag = "NEW",       rarity = "Epic" },
-	{ id = "pet_foxy",               name = "AnimatronicFox",              type = "ExclusivePet",   robux = 400, gamepassId = 1885101004, iconColor = Color3.fromRGB(212, 78, 58),  tag = "NEW",       rarity = "Epic" },
-	{ id = "pet_golden_freddy",      name = "TheOneYouShouldntHaveKilled", type = "ExclusivePet",   robux = 400, gamepassId = 1885101005, iconColor = Color3.fromRGB(238, 188, 58), tag = "NEW",       rarity = "Epic" },
-	{ id = "pet_the_puppet",         name = "AnimatronicPuppet",           type = "ExclusivePet",   robux = 400, gamepassId = 1885101006, iconColor = Color3.fromRGB(220, 220, 220), tag = "NEW",      rarity = "Epic" },
-	{ id = "pet_cupcake",            name = "HauntedCupcake",              type = "ExclusivePet",   robux = 400, gamepassId = 1885101007, iconColor = Color3.fromRGB(255, 148, 188), tag = "NEW",      rarity = "Epic" },
+	{ id = "pet_freddy_fazbear",     name = "AnimatronicBear",             type = "ExclusivePet",   robux = 400, gamepassId = MonetizationConfig.GetGamePassId("pet_freddy_fazbear"),     iconColor = Color3.fromRGB(165, 108, 72), tag = "NEW",       rarity = "Epic" },
+	{ id = "pet_bonnie",             name = "AnimatronicBunny",            type = "ExclusivePet",   robux = 400, gamepassId = MonetizationConfig.GetGamePassId("pet_bonnie"),             iconColor = Color3.fromRGB(118, 88, 228), tag = "NEW",       rarity = "Epic" },
+	{ id = "pet_chica",              name = "AnimatronicChicken",          type = "ExclusivePet",   robux = 400, gamepassId = MonetizationConfig.GetGamePassId("pet_chica"),              iconColor = Color3.fromRGB(238, 198, 78), tag = "NEW",       rarity = "Epic" },
+	{ id = "pet_foxy",               name = "AnimatronicFox",              type = "ExclusivePet",   robux = 400, gamepassId = MonetizationConfig.GetGamePassId("pet_foxy"),               iconColor = Color3.fromRGB(212, 78, 58),  tag = "NEW",       rarity = "Epic" },
+	{ id = "pet_golden_freddy",      name = "TheOneYouShouldntHaveKilled", type = "ExclusivePet",   robux = 400, gamepassId = MonetizationConfig.GetGamePassId("pet_golden_freddy"),      iconColor = Color3.fromRGB(238, 188, 58), tag = "NEW",       rarity = "Epic" },
+	{ id = "pet_the_puppet",         name = "AnimatronicPuppet",           type = "ExclusivePet",   robux = 400, gamepassId = MonetizationConfig.GetGamePassId("pet_the_puppet"),         iconColor = Color3.fromRGB(220, 220, 220), tag = "NEW",      rarity = "Epic" },
+	{ id = "pet_cupcake",            name = "HauntedCupcake",              type = "ExclusivePet",   robux = 400, gamepassId = MonetizationConfig.GetGamePassId("pet_cupcake"),            iconColor = Color3.fromRGB(255, 148, 188), tag = "NEW",      rarity = "Epic" },
 	-- Exclusive Crowns (Gamepasses + FateCoins)
 	{ id = "crown_electric",      name = "Electric Crown",      type = "ExclusiveCrown", fateCoins = 40000, iconColor = Color3.fromRGB(48, 198, 255),  tag = "EXCLUSIVE", rarity = "Legendary" },
 	{ id = "crown_portal",        name = "Portal Crown",        type = "ExclusiveCrown", fateCoins = 75000, iconColor = Color3.fromRGB(88, 255, 200),  tag = "EXCLUSIVE", rarity = "Legendary" },
@@ -270,14 +271,14 @@ UIConfig.MockPremiumItems = {
 	{ id = "crown_6am",           name = "6AMCrown",            type = "ExclusiveCrown", fateCoins = 5000,  iconColor = Color3.fromRGB(120, 185, 255), tag = "NEW",       rarity = "Epic" },
 	{ id = "crown_ce",            name = "CE Crown",            type = "ExclusiveCrown", fateCoins = 10000, iconColor = Color3.fromRGB(235, 235, 245), tag = "NEW",       rarity = "Epic" },
 	{ id = "crown_purple_sparks", name = "PurpleSparks Crown",  type = "ExclusiveCrown", fateCoins = 7500,  iconColor = Color3.fromRGB(164, 72, 212),  tag = "NEW",       rarity = "Epic" },
-	{ id = "crown_fire_circle",   name = "Fire Circle Crown",   type = "ExclusiveCrown", robux = 450, gamepassId = 1728155288, iconColor = Color3.fromRGB(255, 90, 30),   tag = "NEW",       rarity = "Legendary" },
-	{ id = "crown_nen_x_killua",  name = "Nen X Killua Crown",  type = "ExclusiveCrown", robux = 400, gamepassId = 1728821173, iconColor = Color3.fromRGB(140, 200, 255), tag = "EXCLUSIVE", rarity = "Legendary" },
-	{ id = "crown_slashes",       name = "Slashes Crown",       type = "ExclusiveCrown", robux = 300, gamepassId = 1727051517, iconColor = Color3.fromRGB(255, 215, 255), tag = "EXCLUSIVE", rarity = "Legendary" },
-	{ id = "crown_infinite_void", name = "Infinite Void Crown", type = "ExclusiveCrown", robux = 250, gamepassId = 1717662811, iconColor = Color3.fromRGB(18, 8, 38),    tag = "LIMITED",   rarity = "Legendary" },
-	{ id = "crown_rengoku",       name = "Rengoku Crown",       type = "ExclusiveCrown", robux = 200, gamepassId = 1716918881, iconColor = Color3.fromRGB(255, 128, 28),  tag = "NEW",       rarity = "Legendary" },
-	{ id = "crown_ultra",         name = "Ultra Crown",         type = "ExclusiveCrown", robux = 300, gamepassId = 1717864767, iconColor = Color3.fromRGB(218, 48, 255),  tag = "EXCLUSIVE", rarity = "Legendary" },
+	{ id = "crown_fire_circle",   name = "Fire Circle Crown",   type = "ExclusiveCrown", robux = 450, gamepassId = MonetizationConfig.GetGamePassId("crown_fire_circle"),   iconColor = Color3.fromRGB(255, 90, 30),   tag = "NEW",       rarity = "Legendary" },
+	{ id = "crown_nen_x_killua",  name = "Nen X Killua Crown",  type = "ExclusiveCrown", robux = 400, gamepassId = MonetizationConfig.GetGamePassId("crown_nen_x_killua"),  iconColor = Color3.fromRGB(140, 200, 255), tag = "EXCLUSIVE", rarity = "Legendary" },
+	{ id = "crown_slashes",       name = "Slashes Crown",       type = "ExclusiveCrown", robux = 300, gamepassId = MonetizationConfig.GetGamePassId("crown_slashes"),       iconColor = Color3.fromRGB(255, 215, 255), tag = "EXCLUSIVE", rarity = "Legendary" },
+	{ id = "crown_infinite_void", name = "Infinite Void Crown", type = "ExclusiveCrown", robux = 250, gamepassId = MonetizationConfig.GetGamePassId("crown_infinite_void"), iconColor = Color3.fromRGB(18, 8, 38),    tag = "LIMITED",   rarity = "Legendary" },
+	{ id = "crown_rengoku",       name = "Rengoku Crown",       type = "ExclusiveCrown", robux = 200, gamepassId = MonetizationConfig.GetGamePassId("crown_rengoku"),       iconColor = Color3.fromRGB(255, 128, 28),  tag = "NEW",       rarity = "Legendary" },
+	{ id = "crown_ultra",         name = "Ultra Crown",         type = "ExclusiveCrown", robux = 300, gamepassId = MonetizationConfig.GetGamePassId("crown_ultra"),         iconColor = Color3.fromRGB(218, 48, 255),  tag = "EXCLUSIVE", rarity = "Legendary" },
 	-- Bundles
-	{ id = "bundle_vip",     name = "VIP Bundle",  type = "Bundle", robux = 500, gamepassId = 1745607323, iconColor = Color3.fromRGB(255, 215, 78), tag = "VIP",  rarity = "Legendary" },
+	{ id = "bundle_vip",     name = "VIP Bundle",  type = "Bundle", robux = 500, gamepassId = MonetizationConfig.GetGamePassId("bundle_vip"), iconColor = Color3.fromRGB(255, 215, 78), tag = "VIP",  rarity = "Legendary" },
 	{ id = "bundle_starter", name = "Starter Pack", type = "Bundle", robux = 100, iconColor = Color3.fromRGB(78, 208, 255), tag = "DEAL", rarity = "Rare" },
 }
 
@@ -365,7 +366,7 @@ UIConfig.MockCrates = {
 		prices = {
 			{ label = "1 Crate",  cost = 500, currency = "Coins" },
 			{ label = "3 Crates", cost = 800, currency = "Coins" },
-			{ label = "6 Crates", cost = 400, currency = "Robux", productId = 3539706736 },
+			{ label = "6 Crates", cost = 400, currency = "Robux", productId = MonetizationConfig.GetDeveloperProductId("crate_crown_6") },
 		},
 	},
 	{
@@ -386,7 +387,7 @@ UIConfig.MockCrates = {
 		prices = {
 			{ label = "1 Crate",  cost = 500, currency = "Coins" },
 			{ label = "3 Crates", cost = 800, currency = "Coins" },
-			{ label = "6 Crates", cost = 400, currency = "Robux", productId = 3539709447 },
+			{ label = "6 Crates", cost = 400, currency = "Robux", productId = MonetizationConfig.GetDeveloperProductId("crate_pet_common_6") },
 		},
 	},
 	{
@@ -404,7 +405,7 @@ UIConfig.MockCrates = {
 		prices = {
 			{ label = "1 Crate",  cost = 800, currency = "Coins" },
 			{ label = "3 Crates", cost = 1400, currency = "Coins" },
-			{ label = "6 Crates", cost = 400, currency = "Robux", productId = 3539710049 },
+			{ label = "6 Crates", cost = 400, currency = "Robux", productId = MonetizationConfig.GetDeveloperProductId("crate_pet_rare_6") },
 		},
 	},
 	{
@@ -429,7 +430,7 @@ UIConfig.MockCrates = {
 		prices = {
 			{ label = "1 Crate",  cost = 1400, currency = "Coins" },
 			{ label = "3 Crates", cost = 1950, currency = "Coins" },
-			{ label = "6 Crates", cost = 400, currency = "Robux", productId = 3539710471 },
+			{ label = "6 Crates", cost = 400, currency = "Robux", productId = MonetizationConfig.GetDeveloperProductId("crate_pet_epic_6") },
 		},
 	},
 }

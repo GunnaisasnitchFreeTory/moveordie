@@ -74,7 +74,7 @@ local function createAFKBillboard(character: Model)
 	billboard.Name = AFK_BILLBOARD_NAME
 	billboard.Adornee = head
 	billboard.Size = UDim2.fromOffset(100, 40)
-	billboard.StudsOffset = Vector3.new(0, 3, 0)
+	billboard.StudsOffset = Vector3.new(0, 4, 0)
 	billboard.AlwaysOnTop = true
 	billboard.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	billboard.MaxDistance = 80

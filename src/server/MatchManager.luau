@@ -2,14 +2,14 @@
 	MatchManager
 	Server-side match lifecycle controller.
 	
-	Loop: Intermission → Playing → Ending → repeat
+	Loop: Intermission -> Playing -> Ending -> repeat
 	
 	API:
-		Init()                    → Initialize the manager
-		StartLoop()               → Begin the infinite match loop
-		GetState()                → Current match state
-		GetTimeRemaining()        → Seconds left in current phase
-		GetEligiblePlayers()      → Players who can join next match
+		Init()                    -> Initialize the manager
+		StartLoop()               -> Begin the infinite match loop
+		GetState()                -> Current match state
+		GetTimeRemaining()        -> Seconds left in current phase
+		GetEligiblePlayers()      -> Players who can join next match
 ]]
 
 local Players = game:GetService("Players")
@@ -116,7 +116,7 @@ local function log(...)
 	end
 end
 
--- ── GLBS direct call (lazy require, no BindableEvent) ──
+-- GLBS direct call (lazy require, no BindableEvent)
 local _GLBS = nil
 local function getGLBS()
 	if _GLBS ~= nil then return _GLBS end
@@ -150,7 +150,7 @@ local function reportStats(userId: number, username: string, updates: { [string]
 	end
 end
 
--- ── Mode Vote helpers ──
+-- Mode Vote helpers
 
 local function getVoteCounts(): (number, number)
 	local normal, brainrot = 0, 0
@@ -295,7 +295,7 @@ local function endVote(): string
 			lockedVoteUpcomingMatchId
 		))
 	else
-		log(string.format("Mode vote ended — %s wins (Normal=%d, Brainrot=%d)", result, normal, brainrot))
+		log(string.format("Mode vote ended - %s wins (Normal=%d, Brainrot=%d)", result, normal, brainrot))
 	end
 	clearCurrentVoteLockState()
 	return result
@@ -304,18 +304,22 @@ end
 local function replicatePhaseEnd(durationSeconds: number)
 	if replicatedPhaseEnd then
 		replicatedPhaseEnd.Value = workspace:GetServerTimeNow() + durationSeconds
-		log(string.format("Replicated PhaseEndTime → +%ds (value=%.1f)", durationSeconds, replicatedPhaseEnd.Value))
+		log(string.format("Replicated PhaseEndTime -> +%ds (value=%.1f)", durationSeconds, replicatedPhaseEnd.Value))
 	else
-		log("replicatedPhaseEnd is nil — skipping replication")
+		log("replicatedPhaseEnd is nil - skipping replication")
 	end
+end
+
+local function isIntermissionCountdownActive(): boolean
+	return currentState == MatchState.States.Intermission and phaseEndTime > tick()
 end
 
 local function replicateRound(round: number)
 	if replicatedRound then
 		replicatedRound.Value = round
-		log(string.format("Replicated Round → %d", round))
+		log(string.format("Replicated Round -> %d", round))
 	else
-		log("replicatedRound is nil — skipping replication")
+		log("replicatedRound is nil - skipping replication")
 	end
 end
 
@@ -345,14 +349,14 @@ local function setMatchState(newState: string)
 	
 	local oldState = currentState
 	currentState = newState
-	log(string.format("State: %s → %s", oldState, newState))
+	log(string.format("State: %s -> %s", oldState, newState))
 
 	if replicatedState then
 		replicatedState.Value = newState
 	end
 end
 
--- ── Force-unseat: detach player from any seat before teleport ──
+-- Force-unseat: detach player from any seat before teleport
 local function forceUnseat(player: Player): boolean
 	local character = player.Character
 	if not character then return false end
@@ -785,64 +789,40 @@ local function runIntermission()
 	if replicatedVoteEndTime then
 		replicatedVoteEndTime.Value = 0
 	end
-
 	-- Reset mode to Normal at start of intermission
 	currentMode = "Normal"
 	if replicatedMode then
 		replicatedMode.Value = "Normal"
 	end
-
-	log(string.format("Intermission started (%ds)", Config.IntermissionSeconds))
-	log(string.format("[IntermissionStart] waiting=%d mode=%s", #PlayerStateService.GetPlayersInState(PlayerState.States.Waiting), tostring(currentMode)))
-
-	local knownPlayers: { [Player]: boolean } = {}
-	for _, p in ipairs(Players:GetPlayers()) do
-		knownPlayers[p] = true
-	end
+	log(string.format(
+		"[IntermissionStart] duration=%ds serverEndTick=%.1f replicatedPhaseEnd=%.1f waiting=%d mode=%s",
+		Config.IntermissionSeconds,
+		phaseEndTime,
+		replicatedPhaseEnd and replicatedPhaseEnd.Value or 0,
+		#PlayerStateService.GetPlayersInState(PlayerState.States.Waiting),
+		tostring(currentMode)
+	))
 	local lastActiveCount = 0
 	local voteStarted = false
 	local abilityWarningSent = false
-
 	while tick() < phaseEndTime do
 		setEligibleToWaiting()
-
 		local waiting = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
 		local activeCount = 0
-		local hasGenuinelyNewPlayer = false
 		for _, p in ipairs(waiting) do
 			if not PlayerStateService.IsAFK(p) then
 				activeCount = activeCount + 1
-				if not knownPlayers[p] then
-					knownPlayers[p] = true
-					hasGenuinelyNewPlayer = true
-				end
 			end
 		end
-
-		for _, p in ipairs(Players:GetPlayers()) do
-			if not knownPlayers[p] then
-				knownPlayers[p] = true
-			end
-		end
-
-		local remaining = phaseEndTime - tick()
-		local extended = false
-		if hasGenuinelyNewPlayer and remaining < Config.MinIntermissionFloor then
-			phaseEndTime = tick() + Config.MinIntermissionFloor
-			replicatePhaseEnd(Config.MinIntermissionFloor)
-			extended = true
-			abilityWarningSent = false
-		end
-
-		if activeCount ~= lastActiveCount or extended then
+		if activeCount ~= lastActiveCount then
 			log(string.format(
-				"Intermission tick: activeWaiting %d→%d  remaining=%.1fs  extended=%s  genuineNew=%s",
-				lastActiveCount, activeCount, phaseEndTime - tick(),
-				tostring(extended), tostring(hasGenuinelyNewPlayer)
+				"[IntermissionTick] activeWaiting=%d->%d remaining=%.1fs phaseEndStable=true",
+				lastActiveCount,
+				activeCount,
+				phaseEndTime - tick()
 			))
 		end
 		lastActiveCount = activeCount
-
 		local timeLeft = phaseEndTime - tick()
 		if not abilityWarningSent and timeLeft <= 5 then
 			abilityWarningSent = true
@@ -852,10 +832,8 @@ local function runIntermission()
 			voteStarted = true
 			startVote()
 		end
-		
 		task.wait(1)
 	end
-
 	log(string.format("[IntermissionEnding] waiting=%d eligible=%d mode=%s",
 		#PlayerStateService.GetPlayersInState(PlayerState.States.Waiting),
 		#MatchManager.GetEligiblePlayers(),
@@ -865,7 +843,6 @@ local function runIntermission()
 		endVote()
 	end
 	forceVoteClosedForMatchStart("IntermissionComplete")
-	
 	setEligibleToWaiting()
 end
 
@@ -1172,9 +1149,9 @@ local function runEnding()
 	local winner = RoundManager.GetWinner()
 	
 	if matchEndReason == "Winner" and winner then
-		log(string.format("Ending started (%ds) — WINNER: %s", Config.EndingSeconds, winner.Name))
+		log(string.format("Ending started (%ds) - WINNER: %s", Config.EndingSeconds, winner.Name))
 	elseif matchEndReason == "NoWinners" then
-		log(string.format("Ending started (%ds) — No winners", Config.EndingSeconds))
+		log(string.format("Ending started (%ds) - No winners", Config.EndingSeconds))
 	else
 		log(string.format("Ending started (%ds)", Config.EndingSeconds))
 	end
@@ -1338,6 +1315,23 @@ function MatchManager.Init()
 		end
 	end)
 
+	Players.PlayerAdded:Connect(function(player)
+		if not isIntermissionCountdownActive() then
+			return
+		end
+		local serverRemaining = math.max(0, phaseEndTime - tick())
+		local replicatedRemaining = if replicatedPhaseEnd
+			then math.max(0, replicatedPhaseEnd.Value - workspace:GetServerTimeNow())
+			else 0
+		log(string.format(
+			"[IntermissionJoin] player=%s currentRemaining=%.1fs replicatedRemaining=%.1fs replicatedPhaseEnd=%.1f resetBlocked=true",
+			player.Name,
+			serverRemaining,
+			replicatedRemaining,
+			replicatedPhaseEnd and replicatedPhaseEnd.Value or 0
+		))
+	end)
+
 	log("ModeVote remote created")
 
 	BrainrotModeService.Init()
@@ -1382,13 +1376,13 @@ function MatchManager.StartLoop()
 		return
 	end
 	loopRunning = true
-	log("Loop started — waiting for first eligible player before intermission")
+	log("Loop started - waiting for first eligible player before intermission")
 	
 	task.spawn(function()
 		while loopRunning do
 			local eligible = MatchManager.GetEligiblePlayers()
 			if #eligible > 0 then
-				log(string.format("First eligible player found (%s) — beginning match loop", eligible[1].Name))
+				log(string.format("First eligible player found (%s) - beginning match loop", eligible[1].Name))
 				break
 			end
 			task.wait(0.5)

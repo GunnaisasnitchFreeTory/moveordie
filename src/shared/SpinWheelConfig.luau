@@ -15,6 +15,7 @@
 ]]
 
 local SpinWheelConfig = {}
+local MonetizationConfig = require(script.Parent:WaitForChild("MonetizationConfig"))
 
 SpinWheelConfig.NUM_SEGMENTS = 8
 SpinWheelConfig.SEGMENT_ANGLE = 360 / 8 -- 45°
@@ -156,9 +157,9 @@ SpinWheelConfig.Segments = {
 -- ═══════════════════════════════════════════
 
 SpinWheelConfig.SpinPrices = {
-	{ spins = 1,  coins = 250,  robux = 10,  productId = 3539703395, label = "1 SPIN"   },
-	{ spins = 3,  coins = 450,  robux = 30,  productId = 3539705825, label = "3 SPINS"  },
-	{ spins = 10, coins = 850,  robux = 90,  productId = 3539706154, label = "10 SPINS" },
+	{ spins = 1,  coins = 250,  robux = 10,  productId = MonetizationConfig.GetDeveloperProductId("spin_1"),  label = "1 SPIN"   },
+	{ spins = 3,  coins = 450,  robux = 30,  productId = MonetizationConfig.GetDeveloperProductId("spin_3"),  label = "3 SPINS"  },
+	{ spins = 10, coins = 850,  robux = 90,  productId = MonetizationConfig.GetDeveloperProductId("spin_10"), label = "10 SPINS" },
 }
 
 -- ═══════════════════════════════════════════

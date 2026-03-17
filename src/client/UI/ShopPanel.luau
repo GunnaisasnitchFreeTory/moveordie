@@ -46,6 +46,7 @@ if not ok or not Deps then
 end
 local UIConfig = Deps.UIConfig
 local ItemCatalog = Deps.ItemCatalog
+local MonetizationConfig = Deps.MonetizationConfig or require(Shared:WaitForChild("MonetizationConfig"))
 
 local Client = script.Parent
 local AnimUtil          = require(Client:WaitForChild("AnimUtil"))
@@ -57,7 +58,7 @@ local RewardPopup       = require(Client:WaitForChild("RewardPopup"))
 local C = UIConfig.Colors
 local S = UIConfig.Sizes
 local ROBUX_ICON_IMAGE = "rbxassetid://138917867019056"
-local VIP_GAMEPASS_ID = 1745607323
+local VIP_GAMEPASS_ID = MonetizationConfig.GetGamePassId("bundle_vip") or 0
 
 local canvas: CanvasGroup = nil
 local uiScale: UIScale = nil

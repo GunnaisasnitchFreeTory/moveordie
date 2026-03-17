@@ -30,11 +30,12 @@ local Deps = {
 	ItemCatalog = nil,
 	UIConfig = nil,
 	SpinWheelConfig = nil,
+	MonetizationConfig = nil,
 	_ready = false,
 }
 
 local REQUIRED = { "ItemCatalog", "UIConfig" }
-local OPTIONAL = { "SpinWheelConfig" }
+local OPTIONAL = { "SpinWheelConfig", "MonetizationConfig" }
 
 local function safeRequire(name)
 	local mod = Shared:FindFirstChild(name)

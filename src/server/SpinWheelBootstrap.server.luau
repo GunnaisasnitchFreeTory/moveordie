@@ -63,6 +63,7 @@ local SpinWheelService = require(Server:WaitForChild("SpinWheelService"))
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local SpinWheelConfig = require(Shared:WaitForChild("SpinWheelConfig"))
 local UIConfig = require(Shared:WaitForChild("UIConfig"))
+local MonetizationConfig = require(Shared:WaitForChild("MonetizationConfig"))
 local DeveloperProductConfig = require(Shared:WaitForChild("DeveloperProductConfig"))
 local PerkCatalog = require(Shared:WaitForChild("PerkCatalog"))
 local FreezePlayerProductService = require(Server:WaitForChild("FreezePlayerProductService"))
@@ -305,15 +306,21 @@ end
 -- ProcessReceipt looks up productId here before falling back.
 -- ═══════════════════════════════════════════════════════════════════
 
-local PRODUCT_REWARD_MAP: { [number]: { type: string, [string]: any } } = {
-	-- Spins (auto-populated from SpinWheelConfig below)
+local PRODUCT_REWARD_MAP: { [number]: { type: string, [string]: any } } = {}
 
-	-- Crate Bundles (6x each, uses CrateService.RollCrateFree)
-	[3539706736] = { type = "Crate", crateId = "crate_crown",      quantity = 6, label = "6 Crown Crates" },
-	[3539709447] = { type = "Crate", crateId = "crate_pet_common", quantity = 6, label = "6 Common Pet Crates" },
-	[3539710049] = { type = "Crate", crateId = "crate_pet_rare",   quantity = 6, label = "6 Rare Pet Crates" },
-	[3539710471] = { type = "Crate", crateId = "crate_pet_epic",   quantity = 6, label = "6 Epic Pet Crates" },
-}
+local function registerConfigProductReward(configId: string, reward: { type: string, [string]: any })
+	local productId = MonetizationConfig.GetDeveloperProductId(configId)
+	if type(productId) == "number" and productId > 0 then
+		PRODUCT_REWARD_MAP[productId] = reward
+	else
+		warn(string.format("[PurchaseSystem] Missing developer product config for %s", configId))
+	end
+end
+
+registerConfigProductReward("crate_crown_6", { type = "Crate", crateId = "crate_crown",      quantity = 6, label = "6 Crown Crates" })
+registerConfigProductReward("crate_pet_common_6", { type = "Crate", crateId = "crate_pet_common", quantity = 6, label = "6 Common Pet Crates" })
+registerConfigProductReward("crate_pet_rare_6", { type = "Crate", crateId = "crate_pet_rare",   quantity = 6, label = "6 Rare Pet Crates" })
+registerConfigProductReward("crate_pet_epic_6", { type = "Crate", crateId = "crate_pet_epic",   quantity = 6, label = "6 Epic Pet Crates" })
 
 local freezeProductId = tonumber(DeveloperProductConfig.FreezePlayer.productId) or 0
 if freezeProductId > 0 then
@@ -420,75 +427,81 @@ validateConfiguredRobuxProducts()
 -- Bundles map to a list of items to grant.
 -- ═══════════════════════════════════════════════════════════════════
 
-GAMEPASS_REWARD_MAP = {
-	-- Exclusive Pets
-	[1716313058] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_falcon",        label = "Dark Goblem" },
-	[1717772785] = { type = "Pet",   category = "Pets",   itemId = "pet_dark_winged_dragon",  label = "Music Winged Dragon" },
-	[1716864887] = { type = "Pet",   category = "Pets",   itemId = "pet_pink_butterfly",      label = "Pink Butterfly" },
-	[1718832641] = { type = "Pet",   category = "Pets",   itemId = "pet_glitched_dragon",     label = "Glitched Dragon" },
-	[1885101001] = { type = "Pet",   category = "Pets",   itemId = "pet_freddy_fazbear",      label = "AnimatronicBear" },
-	[1885101002] = { type = "Pet",   category = "Pets",   itemId = "pet_bonnie",              label = "AnimatronicBunny" },
-	[1885101003] = { type = "Pet",   category = "Pets",   itemId = "pet_chica",               label = "AnimatronicChicken" },
-	[1885101004] = { type = "Pet",   category = "Pets",   itemId = "pet_foxy",                label = "AnimatronicFox" },
-	[1885101005] = { type = "Pet",   category = "Pets",   itemId = "pet_golden_freddy",       label = "TheOneYouShouldntHaveKilled" },
-	[1885101006] = { type = "Pet",   category = "Pets",   itemId = "pet_the_puppet",          label = "AnimatronicPuppet" },
-	[1885101007] = { type = "Pet",   category = "Pets",   itemId = "pet_cupcake",             label = "HauntedCupcake" },
+GAMEPASS_REWARD_MAP = {}
 
-	-- Exclusive Crowns
-	[1717864767] = { type = "Crown", category = "Crowns", itemId = "crown_ultra",             label = "Ultra Crown" },
-	[1728155288] = { type = "Crown", category = "Crowns", itemId = "crown_fire_circle",        label = "Fire Circle Crown" },
-	[1728821173] = { type = "Crown", category = "Crowns", itemId = "crown_nen_x_killua",       label = "Nen X Killua Crown" },
-	[1727051517] = { type = "Crown", category = "Crowns", itemId = "crown_slashes",            label = "Slashes Crown" },
+local function registerGamePassReward(configId: string, reward: { type: string, [string]: any })
+	local gamepassId = MonetizationConfig.GetGamePassId(configId)
+	if type(gamepassId) == "number" and gamepassId > 0 then
+		GAMEPASS_REWARD_MAP[gamepassId] = reward
+	else
+		warn(string.format("[PurchaseSystem] Missing gamepass config for %s", configId))
+	end
+end
+
+registerGamePassReward("pet_dark_falcon", { type = "Pet", category = "Pets", itemId = "pet_dark_falcon", label = "Dark Goblem" })
+registerGamePassReward("pet_dark_winged_dragon", { type = "Pet", category = "Pets", itemId = "pet_dark_winged_dragon", label = "Music Winged Dragon" })
+registerGamePassReward("pet_pink_butterfly", { type = "Pet", category = "Pets", itemId = "pet_pink_butterfly", label = "Pink Butterfly" })
+registerGamePassReward("pet_glitched_dragon", { type = "Pet", category = "Pets", itemId = "pet_glitched_dragon", label = "Glitched Dragon" })
+registerGamePassReward("pet_freddy_fazbear", { type = "Pet", category = "Pets", itemId = "pet_freddy_fazbear", label = "AnimatronicBear" })
+registerGamePassReward("pet_bonnie", { type = "Pet", category = "Pets", itemId = "pet_bonnie", label = "AnimatronicBunny" })
+registerGamePassReward("pet_chica", { type = "Pet", category = "Pets", itemId = "pet_chica", label = "AnimatronicChicken" })
+registerGamePassReward("pet_foxy", { type = "Pet", category = "Pets", itemId = "pet_foxy", label = "AnimatronicFox" })
+registerGamePassReward("pet_golden_freddy", { type = "Pet", category = "Pets", itemId = "pet_golden_freddy", label = "TheOneYouShouldntHaveKilled" })
+registerGamePassReward("pet_the_puppet", { type = "Pet", category = "Pets", itemId = "pet_the_puppet", label = "AnimatronicPuppet" })
+registerGamePassReward("pet_cupcake", { type = "Pet", category = "Pets", itemId = "pet_cupcake", label = "HauntedCupcake" })
+
+registerGamePassReward("crown_ultra", { type = "Crown", category = "Crowns", itemId = "crown_ultra", label = "Ultra Crown" })
+registerGamePassReward("crown_fire_circle", { type = "Crown", category = "Crowns", itemId = "crown_fire_circle", label = "Fire Circle Crown" })
+registerGamePassReward("crown_nen_x_killua", { type = "Crown", category = "Crowns", itemId = "crown_nen_x_killua", label = "Nen X Killua Crown" })
+registerGamePassReward("crown_slashes", { type = "Crown", category = "Crowns", itemId = "crown_slashes", label = "Slashes Crown" })
 	-- Electric Crown (1717992747) removed from migration map.
 	-- It is now purchasable with Fate Coins via ShopService. Existing holders
 	-- who joined before this change already had the crown migrated to OwnedCrowns.
 	-- Removing this entry prevents repeated re-grants when OwnedCrowns is cleared.
-	[1716918881] = { type = "Crown", category = "Crowns", itemId = "crown_rengoku",           label = "Rengoku Crown" },
-	[1717662811] = { type = "Crown", category = "Crowns", itemId = "crown_infinite_void",     label = "Infinite Void Crown" },
+registerGamePassReward("crown_rengoku", { type = "Crown", category = "Crowns", itemId = "crown_rengoku", label = "Rengoku Crown" })
+registerGamePassReward("crown_infinite_void", { type = "Crown", category = "Crowns", itemId = "crown_infinite_void", label = "Infinite Void Crown" })
 
-	-- Brainrot Bundle (grants multiple items)
-	[1714491142] = {
-		type = "Bundle",
-		bundleId = "brainrot_bundle",
-		label = "Brainrot Bundle",
-		items = {
-			{ category = "Pets",       itemId = "pet_67" },
-			{ category = "Pets",       itemId = "pet_dragon_cannelloni" },
-			{ category = "Pets",       itemId = "pet_frigo_camelo" },
-			{ category = "Pets",       itemId = "pet_tigroligre_frutonni" },
-			{ category = "Pets",       itemId = "pet_trenostruzzo_turbo_3000" },
-			{ category = "Crowns",     itemId = "crown_67" },
-			{ category = "IconImages", itemId = "icon_67_kid" },
-			{ category = "IconImages", itemId = "icon_steve_harrington" },
-		},
+registerGamePassReward("brainrot_bundle", {
+	type = "Bundle",
+	bundleId = "brainrot_bundle",
+	label = "Brainrot Bundle",
+	items = {
+		{ category = "Pets",       itemId = "pet_67" },
+		{ category = "Pets",       itemId = "pet_dragon_cannelloni" },
+		{ category = "Pets",       itemId = "pet_frigo_camelo" },
+		{ category = "Pets",       itemId = "pet_tigroligre_frutonni" },
+		{ category = "Pets",       itemId = "pet_trenostruzzo_turbo_3000" },
+		{ category = "Crowns",     itemId = "crown_67" },
+		{ category = "IconImages", itemId = "icon_67_kid" },
+		{ category = "IconImages", itemId = "icon_steve_harrington" },
 	},
-	[1732407562] = {
-		type = "Bundle",
-		bundleId = "FNAF_PETS_BUNDLE",
-		label = "Animatronic Pets Bundle",
-		items = {
-			{ category = "Pets", itemId = "pet_freddy_fazbear" },
-			{ category = "Pets", itemId = "pet_bonnie" },
-			{ category = "Pets", itemId = "pet_chica" },
-			{ category = "Pets", itemId = "pet_foxy" },
-			{ category = "Pets", itemId = "pet_golden_freddy" },
-			{ category = "Pets", itemId = "pet_the_puppet" },
-			{ category = "Pets", itemId = "pet_cupcake" },
-		},
+})
+registerGamePassReward("fnaf_pets_bundle", {
+	type = "Bundle",
+	bundleId = "FNAF_PETS_BUNDLE",
+	label = "Animatronic Pets Bundle",
+	items = {
+		{ category = "Pets", itemId = "pet_freddy_fazbear" },
+		{ category = "Pets", itemId = "pet_bonnie" },
+		{ category = "Pets", itemId = "pet_chica" },
+		{ category = "Pets", itemId = "pet_foxy" },
+		{ category = "Pets", itemId = "pet_golden_freddy" },
+		{ category = "Pets", itemId = "pet_the_puppet" },
+		{ category = "Pets", itemId = "pet_cupcake" },
 	},
-	[1745607323] = {
-		type = "Bundle",
-		bundleId = "bundle_vip",
-		label = "VIP Bundle",
-		items = {
-			{ category = "Crowns", itemId = "crown_vip" },
-			{ category = "Crowns", itemId = "crown_whiteeyed" },
-			{ category = "IconImages", itemId = "icon_flights_laugh" },
-			{ category = "Pets", itemId = "pet_all_knowing_eye" },
-			{ type = "Currency", amount = 8000, label = "8000 Fate Coins", popupImageOverride = "rbxassetid://81959864063463", imageAssetId = "rbxassetid://81959864063463" },
-		},
+})
+registerGamePassReward("bundle_vip", {
+	type = "Bundle",
+	bundleId = "bundle_vip",
+	label = "VIP Bundle",
+	items = {
+		{ category = "Crowns", itemId = "crown_vip" },
+		{ category = "Crowns", itemId = "crown_whiteeyed" },
+		{ category = "IconImages", itemId = "icon_flights_laugh" },
+		{ category = "Pets", itemId = "pet_all_knowing_eye" },
+		{ type = "Currency", amount = 8000, label = "8000 Fate Coins", popupImageOverride = "rbxassetid://81959864063463", imageAssetId = "rbxassetid://81959864063463" },
 	},
-}
+})
 
 -- ═══════════════════════════════════════════════════════════════════
 -- GAMEPASS GRANT LOGIC

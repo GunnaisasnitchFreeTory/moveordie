@@ -17,11 +17,14 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local UIConfig = require(Shared:WaitForChild("UIConfig"))
 
 local C = UIConfig.Colors
+local DEBUG_LOGS = RunService:IsStudio() and UIConfig.DebugLogs == true
 
 local KillFeed = {}
 
@@ -32,29 +35,39 @@ local MAX_MESSAGES = 5
 local MESSAGE_LIFETIME = 2.6
 local SLIDE_DURATION = 0.25
 local FADE_DURATION = 0.4
-local FEED_WIDTH = 320
-local FEED_ENTRY_HEIGHT = 32
+local FEED_MIN_WIDTH = 340
+local FEED_MAX_WIDTH = 440
+local FEED_WIDTH_RATIO = 0.52
+local FEED_ENTRY_HEIGHT = 36
 local FEED_ENTRY_GAP = 6
 local FEED_RIGHT_MARGIN = 16
 local FEED_FALLBACK_TOP_OFFSET = 240
 local RIGHT_SAFE_AREA_NAME = "HUDRightSafeArea"
+local FEED_TEXT_PADDING = 12
+local FEED_MAX_TEXT_SIZE = 15
+local FEED_MIN_TEXT_SIZE = 10
 
 local REASON_MAP = {
-	Beam           = "a Beam",
-	OOB            = "the Barrier",
-	Disconnect     = "Disconnecting",
+	Beam           = "Beam",
+	OOB            = "Barrier",
+	Barrier        = "Barrier",
+	Disconnect     = "Disconnect",
+	InactiveNoMove = "Inactivity",
+	Sword          = "Sword",
 	TungTungSahur  = "TungTungSahur",
+	Unknown        = "Unknown",
 }
 
 -- Color override per reason key (nil = default white)
 local REASON_COLOR = {
 	Beam          = Color3.fromRGB(255, 165, 0),  -- orange
 	OOB           = Color3.fromRGB(220, 50, 50),  -- red
+	Barrier       = Color3.fromRGB(220, 50, 50),  -- red
 	TungTungSahur = Color3.fromRGB(255, 60, 180), -- hot pink
 }
 
-local function getReasonText(reason)
-	return REASON_MAP[reason] or reason
+local function trim(s: string): string
+	return (string.gsub(string.gsub(s, "^%s+", ""), "%s+$", ""))
 end
 
 local function normalizeReasonKey(rawReason: any): string
@@ -62,24 +75,33 @@ local function normalizeReasonKey(rawReason: any): string
 		return tostring(rawReason or "")
 	end
 
-	local reason = rawReason
+	local reason = trim(rawReason)
 	local lowered = string.lower(reason)
 	local compact = string.gsub(lowered, "[^%a%d]", "")
 
-	-- Normalize all Tung variants to one canonical key for mapping/color.
-	if string.find(compact, "tungtungsahur", 1, true)
-		or string.find(compact, "tungtung", 1, true)
-		or compact == "sahur"
-		or compact == "tts"
-	then
+	if compact == "beam" then
+		return "Beam"
+	end
+	if compact == "oob" or compact == "barrier" or compact == "outofbounds" then
+		return "OOB"
+	end
+	if compact == "disconnect" or compact == "disconnected" then
+		return "Disconnect"
+	end
+	if compact == "inactivenomove" or compact == "inactive" then
+		return "InactiveNoMove"
+	end
+	if compact == "sword" then
+		return "Sword"
+	end
+	if compact == "tungtungsahur" or compact == "tungtung" or compact == "sahur" or compact == "tts" then
 		return "TungTungSahur"
+	end
+	if compact == "unknown" then
+		return "Unknown"
 	end
 
 	return reason
-end
-
-local function trim(s: string): string
-	return (string.gsub(string.gsub(s, "^%s+", ""), "%s+$", ""))
 end
 
 local function resolvePlayerKillerName(rawReason: any): string?
@@ -111,6 +133,54 @@ local function resolvePlayerKillerName(rawReason: any): string?
 	return reason
 end
 
+local function getViewportWidth(): number
+	local camera = Workspace.CurrentCamera
+	if camera then
+		return camera.ViewportSize.X
+	end
+	return FEED_MIN_WIDTH
+end
+
+local function getResolvedFeedWidth(): number
+	return math.clamp(math.floor(getViewportWidth() * FEED_WIDTH_RATIO), FEED_MIN_WIDTH, FEED_MAX_WIDTH)
+end
+
+local function debugLogKillFeed(sourceLabel: string, text: string)
+	if not DEBUG_LOGS then
+		return
+	end
+	print(string.format("[KillFeed] source=%s text=%s", sourceLabel, text))
+end
+
+local function formatKillFeedMessage(playerName: any, rawReason: any): (string, string, string)
+	local victimName = tostring(playerName or "Unknown")
+	local reason = normalizeReasonKey(rawReason)
+	local killerName = resolvePlayerKillerName(rawReason)
+	if killerName then
+		return string.format("%s eliminated %s", tostring(killerName), victimName), reason, "Player"
+	end
+
+	local sourceName = REASON_MAP[reason]
+	if sourceName == nil or sourceName == "" then
+		sourceName = "Unknown"
+	end
+
+	return string.format("%s eliminated %s", sourceName, victimName), reason, sourceName
+end
+
+local function resizeFeedContainer()
+	if not feedContainer then
+		return
+	end
+
+	feedContainer.Size = UDim2.new(
+		0,
+		getResolvedFeedWidth(),
+		0,
+		(FEED_ENTRY_HEIGHT * MAX_MESSAGES) + (FEED_ENTRY_GAP * math.max(MAX_MESSAGES - 1, 0))
+	)
+end
+
 local function repositionFeedContainer()
 	if not feedContainer then
 		return
@@ -127,6 +197,33 @@ local function repositionFeedContainer()
 
 	feedContainer.AnchorPoint = Vector2.new(1, 0)
 	feedContainer.Position = UDim2.new(1, -FEED_RIGHT_MARGIN, 0, math.floor(topOffset))
+end
+
+local function bindViewportResize()
+	local cameraConn: RBXScriptConnection? = nil
+
+	local function attachCamera(camera: Camera?)
+		if cameraConn then
+			cameraConn:Disconnect()
+			cameraConn = nil
+		end
+
+		if camera then
+			cameraConn = camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+				resizeFeedContainer()
+				repositionFeedContainer()
+			end)
+		end
+
+		resizeFeedContainer()
+		repositionFeedContainer()
+	end
+
+	Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+		attachCamera(Workspace.CurrentCamera)
+	end)
+
+	attachCamera(Workspace.CurrentCamera)
 end
 
 local function bindSafeArea(frame: GuiObject)
@@ -174,6 +271,7 @@ local function createFeedEntry(text, color)
 	entry.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	entry.BackgroundTransparency = 0.45
 	entry.BorderSizePixel = 0
+	entry.ClipsDescendants = false
 	entry.ZIndex = 2
 	entry.Parent = feedContainer
 
@@ -181,17 +279,25 @@ local function createFeedEntry(text, color)
 
 	local label = Instance.new("TextLabel")
 	label.Name = "Text"
-	label.Size = UDim2.new(1, -16, 1, 0)
-	label.Position = UDim2.fromOffset(8, 0)
+	label.Size = UDim2.new(1, -(FEED_TEXT_PADDING * 2), 1, 0)
+	label.Position = UDim2.fromOffset(FEED_TEXT_PADDING, 0)
 	label.BackgroundTransparency = 1
 	label.Font = Enum.Font.GothamBold
 	label.TextColor3 = color
-	label.TextSize = 15
+	label.TextSize = FEED_MAX_TEXT_SIZE
+	label.TextScaled = true
 	label.Text = text
+	label.TextWrapped = false
 	label.TextXAlignment = Enum.TextXAlignment.Right
-	label.TextTruncate = Enum.TextTruncate.AtEnd
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.TextTruncate = Enum.TextTruncate.None
 	label.ZIndex = 3
 	label.Parent = entry
+
+	local textSizeConstraint = Instance.new("UITextSizeConstraint")
+	textSizeConstraint.MaxTextSize = FEED_MAX_TEXT_SIZE
+	textSizeConstraint.MinTextSize = FEED_MIN_TEXT_SIZE
+	textSizeConstraint.Parent = label
 
 	local ls = Instance.new("UIStroke")
 	ls.Color = Color3.fromRGB(0, 0, 0)
@@ -233,17 +339,15 @@ function KillFeed.Init(screenGui)
 
 	feedContainer = Instance.new("Frame")
 	feedContainer.Name = "KillFeedContainer"
-	feedContainer.Size = UDim2.new(
-		0,
-		FEED_WIDTH,
-		0,
-		(FEED_ENTRY_HEIGHT * MAX_MESSAGES) + (FEED_ENTRY_GAP * math.max(MAX_MESSAGES - 1, 0))
-	)
+	feedContainer.Size = UDim2.new(0, 0, 0, 0)
 	feedContainer.BackgroundTransparency = 1
 	feedContainer.BorderSizePixel = 0
+	feedContainer.ClipsDescendants = false
 	feedContainer.ZIndex = 2
 	feedContainer.Parent = screenGui
 
+	bindViewportResize()
+	resizeFeedContainer()
 	repositionFeedContainer()
 	observeSafeArea(screenGui)
 
@@ -261,26 +365,8 @@ function KillFeed.Init(screenGui)
 		local killFeedEvent = remotes:WaitForChild("KillFeedEvent", 10)
 		if killFeedEvent then
 			killFeedEvent.OnClientEvent:Connect(function(playerName, rawReason)
-				local reason = normalizeReasonKey(rawReason)
-				local reasonText = getReasonText(reason)
-				local killerName = resolvePlayerKillerName(rawReason)
-				local text
-				if killerName then
-					text = tostring(killerName) .. " eliminated " .. tostring(playerName)
-					print(string.format("[KillfeedPlayer] victim=%s killerRefType=%s", tostring(playerName), typeof(rawReason)))
-					print(string.format("[KillfeedPlayer] resolvedKillerName=%s", tostring(killerName)))
-					print("[KillfeedPlayer] fallbackUsed=false")
-				elseif reason == "TungTungSahur" then
-					-- Keep cause visible on narrow/mobile layouts by placing it first.
-					text = reasonText .. " eliminated " .. tostring(playerName)
-					print(string.format("[KillfeedCause] rawCause=%s", tostring(rawReason)))
-					print(string.format("[KillfeedCause] resolvedDisplayName=%s", reasonText))
-				else
-					if reasonText == nil or tostring(reasonText) == "" or tostring(reasonText) == "..." then
-						reasonText = "Unknown"
-					end
-					text = tostring(playerName) .. " was eliminated by " .. tostring(reasonText)
-				end
+				local text, reason, sourceLabel = formatKillFeedMessage(playerName, rawReason)
+				debugLogKillFeed(sourceLabel, text)
 				local color = REASON_COLOR[reason] or C.TextWhite
 				createFeedEntry(text, color)
 			end)

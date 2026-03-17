@@ -264,8 +264,8 @@ function GrantService.GrantItem(player: Player, itemType: string, itemIdOrAmount
 				local applyVipMultiplier = meta.applyVipMultiplier == true
 				local rewardSource = tostring(meta.rewardSource or ("GrantService:" .. tostring(source)))
 				local awardOk, finalAmount
-				if applyVipMultiplier and type(econ.AwardRewardCoins) == "function" then
-					awardOk, finalAmount = econ.AwardRewardCoins(player, amount, rewardSource)
+				if applyVipMultiplier and type(econ.AwardVipOnlyCoins) == "function" then
+					awardOk, finalAmount = econ.AwardVipOnlyCoins(player, amount, rewardSource)
 				else
 					awardOk, finalAmount = econ.AwardCoins(player, amount, rewardSource, true)
 				end

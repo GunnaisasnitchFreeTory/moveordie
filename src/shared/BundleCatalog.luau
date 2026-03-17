@@ -22,6 +22,7 @@
 ]]
 
 local BundleCatalog = {}
+local MonetizationConfig = require(script.Parent:WaitForChild("MonetizationConfig"))
 
 local COIN_PRICING_DEFAULTS = {
 	-- Keep this in the requested 10%-40% cap range.
@@ -43,7 +44,7 @@ local _bundles = {
 			maxDiscountPercent = COIN_PRICING_DEFAULTS.maxDiscountPercent,
 		},
 		priceRobux   = 500,
-		gamepassId   = 1732407562,
+		gamepassId   = MonetizationConfig.GetGamePassId("fnaf_pets_bundle"),
 		productId    = nil,
 		tag          = "NEW",
 		rarity       = "Epic",
@@ -69,7 +70,7 @@ local _bundles = {
 			maxDiscountPercent = COIN_PRICING_DEFAULTS.maxDiscountPercent,
 		},
 		priceRobux   = 800,
-		gamepassId   = 1714491142,
+		gamepassId   = MonetizationConfig.GetGamePassId("brainrot_bundle"),
 		productId    = nil,
 		tag          = "NEW",
 		rarity       = "Legendary",
@@ -91,7 +92,7 @@ local _bundles = {
 		isAvailable  = true,
 		isLimited    = false,
 		priceRobux   = 500,
-		gamepassId   = 1745607323,
+		gamepassId   = MonetizationConfig.GetGamePassId("bundle_vip"),
 		productId    = nil,
 		tag          = "VIP",
 		rarity       = "Legendary",

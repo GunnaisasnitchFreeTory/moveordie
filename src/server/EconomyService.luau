@@ -47,6 +47,16 @@ local VIP_COIN_MULTIPLIER_FALLBACK = 1.5
 
 local ACHIEVED_DEBUG = true
 
+type CoinAwardPolicy = "exact" | "vip_only" | "full_stat"
+type CoinAwardBreakdown = {
+	appliedPolicy: CoinAwardPolicy,
+	baseAmount: number,
+	statMultiplier: number,
+	vipMultiplier: number,
+	effectiveMultiplier: number,
+	finalAmount: number,
+}
+
 local function log(...)
 	if CoinConfig.DebugLog then
 		print("[EconomyService]", ...)
@@ -203,41 +213,138 @@ local function resolveVipRewardMultiplier(player: Player): number
 	return resolveVipOwned(player) and VIP_COIN_MULTIPLIER_FALLBACK or 1
 end
 
-function EconomyService.GetMultipliedAmount(player: Player, baseAmount: number): number
-	return math.floor(baseAmount * resolveCoinMultiplier(player))
+local function resolveCoinAwardBreakdown(player: Player, amount: number, policy: CoinAwardPolicy): CoinAwardBreakdown
+	local baseAmount = math.max(0, math.floor(amount))
+	local statMultiplier = resolveCoinMultiplier(player)
+	local vipMultiplier = resolveVipRewardMultiplier(player)
+	local effectiveMultiplier = 1
+
+	if policy == "full_stat" then
+		effectiveMultiplier = statMultiplier
+	elseif policy == "vip_only" then
+		effectiveMultiplier = vipMultiplier
+	end
+
+	return {
+		appliedPolicy = policy,
+		baseAmount = baseAmount,
+		statMultiplier = statMultiplier,
+		vipMultiplier = vipMultiplier,
+		effectiveMultiplier = effectiveMultiplier,
+		finalAmount = math.floor(baseAmount * effectiveMultiplier),
+	}
 end
 
-function EconomyService.AwardRewardCoins(player: Player, amount: number, source: string?): (boolean, number)
-	return EconomyService.AwardCoins(player, amount, source, false)
+local function emitCoinGrantAudit(
+	player: Player,
+	source: string,
+	breakdown: CoinAwardBreakdown,
+	actualAmount: number,
+	oldBalance: number,
+	newBalance: number,
+	storageMode: string
+)
+	warn(string.format(
+		"[CoinGrantAudit] player=%s userId=%d source=%s policy=%s base=%d statMultiplier=%.4f vipMultiplier=%.4f effectiveMultiplier=%.4f final=%d actual=%d old=%d new=%d storage=%s t=%d",
+		player.Name,
+		player.UserId,
+		source,
+		breakdown.appliedPolicy,
+		breakdown.baseAmount,
+		breakdown.statMultiplier,
+		breakdown.vipMultiplier,
+		breakdown.effectiveMultiplier,
+		breakdown.finalAmount,
+		actualAmount,
+		oldBalance,
+		newBalance,
+		storageMode,
+		os.time()
+	))
 end
 
-function EconomyService.AwardDailyRewardCoins(player: Player, amount: number, source: string?): (boolean, number)
+local function awardCoinsWithPolicy(player: Player, amount: number, reason: string?, policy: CoinAwardPolicy): (boolean, number)
 	if amount <= 0 then
 		return true, 0
 	end
 
-	local baseAmount = math.floor(amount)
-	local vipOwned = resolveVipOwned(player)
-	local vipMultiplier = resolveVipRewardMultiplier(player)
-	local statMultiplier = resolveCoinMultiplier(player)
-	local finalAmount = math.floor(baseAmount * vipMultiplier)
+	local source = tostring(reason or "unknown")
+	if not player.Parent then
+		log(string.format("Skipped award for %s (left game) - %d coins (%s)",
+			player.Name, amount, source))
+		return false, 0
+	end
 
-	warn(string.format(
-		"[DailyCoinRewardDebug] player=%s source=%s base=%d vipOwned=%s vipMultiplier=%.2f statMultiplier=%.2f final=%d",
-		player.Name,
-		tostring(source or "DailyReward"),
-		baseAmount,
-		tostring(vipOwned),
-		vipMultiplier,
-		statMultiplier,
-		finalAmount
-	))
+	local breakdown = resolveCoinAwardBreakdown(player, amount, policy)
+	if breakdown.finalAmount <= 0 then
+		return true, 0
+	end
 
-	local ok, actual = EconomyService.AwardCoins(player, finalAmount, source or "DailyReward", true)
-	return ok, actual
+	local PDS = getPDS()
+	if PDS then
+		local data = PDS.GetData(player)
+		if data then
+			local oldCoins = data.Coins or 0
+			local newTotal = oldCoins + breakdown.finalAmount
+			PDS.SetField(player, "Coins", newTotal)
+
+			local oldLifetime = data.LifetimeCoinsAchieved or 0
+			local oldWeekly = data.WeeklyCoinsAchieved or 0
+			local lifetimeEarned = oldLifetime + breakdown.finalAmount
+			local weeklyEarned = oldWeekly + breakdown.finalAmount
+
+			PDS.SetField(player, "LifetimeCoinsAchieved", lifetimeEarned)
+			PDS.SetField(player, "WeeklyCoinsAchieved", weeklyEarned)
+
+			emitCoinGrantAudit(player, source, breakdown, breakdown.finalAmount, oldCoins, newTotal, "datastore")
+
+			reportStats(player.UserId, player.Name, {
+				WeeklyCoins = weeklyEarned,
+				LifetimeCoins = lifetimeEarned,
+			})
+
+			return true, breakdown.finalAmount
+		end
+
+		achievedLog(string.format(
+			"%s PDS.GetData returned nil - using attribute fallback (achieved stats SKIPPED)",
+			player.Name
+		))
+	else
+		achievedLog(string.format(
+			"%s PDS not available - using attribute fallback (achieved stats SKIPPED)",
+			player.Name
+		))
+	end
+
+	local current = player:GetAttribute(ATTRIBUTE_NAME) or 0
+	local newTotal = current + breakdown.finalAmount
+	player:SetAttribute(ATTRIBUTE_NAME, newTotal)
+	emitCoinGrantAudit(player, source, breakdown, breakdown.finalAmount, current, newTotal, "attribute")
+	return true, breakdown.finalAmount
+end
+
+function EconomyService.GetMultipliedAmount(player: Player, baseAmount: number): number
+	return resolveCoinAwardBreakdown(player, baseAmount, "full_stat").finalAmount
+end
+
+function EconomyService.AwardRewardCoins(player: Player, amount: number, source: string?): (boolean, number)
+	return awardCoinsWithPolicy(player, amount, source or "Reward", "full_stat")
+end
+
+function EconomyService.AwardVipOnlyCoins(player: Player, amount: number, source: string?): (boolean, number)
+	return awardCoinsWithPolicy(player, amount, source or "VipOnlyReward", "vip_only")
+end
+
+function EconomyService.AwardDailyRewardCoins(player: Player, amount: number, source: string?): (boolean, number)
+	return EconomyService.AwardVipOnlyCoins(player, amount, source or "DailyReward")
 end
 
 function EconomyService.AwardCoins(player: Player, amount: number, reason: string?, skipMultiplier: boolean?): (boolean, number)
+	local policy: CoinAwardPolicy = if skipMultiplier then "exact" else "full_stat"
+	return awardCoinsWithPolicy(player, amount, reason, policy)
+
+	--[[ Legacy implementation retained below for patch safety.
 	if amount <= 0 then return true, 0 end
 
 	if not player.Parent then
@@ -317,6 +424,7 @@ function EconomyService.AwardCoins(player: Player, amount: number, reason: strin
 		current, newTotal, os.time()
 	))
 	return true, finalAmount
+	]]
 end
 
 function EconomyService.DeductCoins(player: Player, amount: number, reason: string?): boolean
