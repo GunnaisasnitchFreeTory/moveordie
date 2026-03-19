@@ -167,7 +167,6 @@ end
 ]]
 function PlayerStateService.RegisterPlayer(player: Player)
 	if playerStates[player] then
-		warn("[PlayerStateService] Player already registered:", player.Name)
 		return
 	end
 	
@@ -234,4 +233,3 @@ function PlayerStateService.GetStateCounts(): { [string]: number }
 end
 
 return PlayerStateService
-

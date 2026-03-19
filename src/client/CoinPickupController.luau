@@ -17,6 +17,9 @@ local RunService = game:GetService("RunService")
 local Workspace  = game:GetService("Workspace")
 
 local SoundUtil = require(script.Parent:WaitForChild("UI"):WaitForChild("SoundUtil"))
+local AnnouncementController = require(script.Parent:WaitForChild("AnnouncementController"))
+local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
+local FeedbackConfig = require(Shared:WaitForChild("FeedbackConfig", 10))
 
 local CoinPickupController = {}
 
@@ -30,6 +33,27 @@ local ROTATION_SPEED  = 25
 
 local activeAnimations = {}
 local collectRemoteConnected = false
+
+local function queueCoinPickupAnnouncement(payload: any)
+	local coinType = type(payload) == "table" and tostring(payload.coinType or "") or ""
+	local amount = type(payload) == "table" and tonumber(payload.baseCoinValue or payload.coinValue) or nil
+	if coinType == "More Fate Coin" then
+		amount = 50
+	elseif coinType == "Fate Coin" then
+		amount = 20
+	end
+	if not amount then
+		return
+	end
+
+	AnnouncementController.QueueLocal({
+		text = string.format("+%d coins", amount),
+		style = "Reward",
+		priority = FeedbackConfig.Announcements.Priorities.Reward,
+		durationSeconds = 1.2,
+		requiresInMatch = true,
+	})
+end
 
 local function startAnimation(model)
 	if activeAnimations[model] then return end
@@ -134,8 +158,9 @@ local function connectCollectRemote()
 	end
 
 	collectRemoteConnected = true
-	remote.OnClientEvent:Connect(function()
+	remote.OnClientEvent:Connect(function(payload)
 		SoundUtil.CoinCollectPrimary()
+		queueCoinPickupAnnouncement(payload)
 	end)
 	print("[CoinPickupController] Connected pickup audio remote")
 end
@@ -144,6 +169,7 @@ function CoinPickupController.Init()
 	if initialized then return end
 	initialized = true
 	SoundUtil.Init()
+	AnnouncementController.Init()
 
 	task.spawn(function()
 		connectCollectRemote()

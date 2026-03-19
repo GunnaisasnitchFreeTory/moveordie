@@ -221,9 +221,39 @@ else
 	warn(string.format("[UIBoot] t=%s UIController FAILED: %s", ts(), tostring(uiErr)))
 end
 
+local announcementOk, announcementErr = pcall(function()
+	local AnnouncementController = require(Client:WaitForChild("AnnouncementController"))
+	AnnouncementController.Init()
+end)
+if announcementOk then
+	print("[Client] AnnouncementController loaded OK")
+else
+	warn("[Client] AnnouncementController FAILED:", announcementErr)
+end
+
+local nextGoalOk, nextGoalErr = pcall(function()
+	local NextGoalPopupController = require(Client:WaitForChild("NextGoalPopupController"))
+	NextGoalPopupController.Init()
+end)
+if nextGoalOk then
+	print("[Client] NextGoalPopupController loaded OK")
+else
+	warn("[Client] NextGoalPopupController FAILED:", nextGoalErr)
+end
+
 -- Dismiss loading screen now that the HUD and all panels are built.
 -- The 0.35s fade reveals the fully-styled UI instead of the grey-box flash.
 dismissLoadingScreen()
+
+local questFeedbackOk, questFeedbackErr = pcall(function()
+	local QuestFeedbackController = require(Client:WaitForChild("QuestFeedbackController"))
+	QuestFeedbackController.Init()
+end)
+if questFeedbackOk then
+	print("[Client] QuestFeedbackController loaded OK")
+else
+	warn("[Client] QuestFeedbackController FAILED:", questFeedbackErr)
+end
 
 -- Safety net: if bootstrap is interrupted before normal cleanup, never leave screen black.
 task.delay(8, function()
@@ -290,6 +320,17 @@ if matchAudioOk then
 	print("[Client] MatchAudioController loaded OK")
 else
 	warn("[Client] MatchAudioController FAILED:", matchAudioErr)
+end
+
+-- 6b. EffectsController (camera shake, flash, elimination bursts, round text)
+local effectsOk, effectsErr = pcall(function()
+	local EffectsController = require(Client:WaitForChild("EffectsController"))
+	EffectsController.Init()
+end)
+if effectsOk then
+	print("[Client] EffectsController loaded OK")
+else
+	warn("[Client] EffectsController FAILED:", effectsErr)
 end
 
 -- 6. WorldIndicators (floating labels above SpinWheel + CrateShop)
@@ -444,6 +485,17 @@ if abilityWarningOk then
 	print("[Client] AbilityActivationWarningController loaded OK")
 else
 	warn("[Client] AbilityActivationWarningController FAILED:", abilityWarningErr)
+end
+
+-- 15c. CrownUnlockReminderController (nudge if crown unlocked but UI not checked)
+local crownReminderOk, crownReminderErr = pcall(function()
+	local CrownUnlockReminderController = require(Client:WaitForChild("CrownUnlockReminderController"))
+	CrownUnlockReminderController.Init()
+end)
+if crownReminderOk then
+	print("[Client] CrownUnlockReminderController loaded OK")
+else
+	warn("[Client] CrownUnlockReminderController FAILED:", crownReminderErr)
 end
 
 -- 15b. AbilitySellerLabelController (rainbow billboard text)

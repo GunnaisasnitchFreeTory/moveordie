@@ -8,7 +8,7 @@
 	- Pickup is a hovering world model (client handles animation).
 	- On collection: clone ClassicSword from ServerStorage into Backpack.
 	- First kill with sword: +50 coins, sword removed immediately.
-	- Swords auto-removed after 2 rounds or at round 8+.
+	- Swords auto-removed after 3 rounds or at round 8+.
 	- All swords cleaned up on match end.
 
 	Works in BOTH Normal and Brainrot modes.
@@ -30,17 +30,19 @@ local Server = ServerScriptService:WaitForChild("Server")
 local MapManager = require(Server:WaitForChild("MapManager"))
 local EconomyService = require(Server:WaitForChild("EconomyService"))
 local StatService = require(Server:WaitForChild("StatService"))
+local RoundConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("RoundConfig"))
 local PlayerState = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("PlayerState"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local EliminationTracker = require(Server:WaitForChild("EliminationTracker"))
 
 local MIN_SPAWN_ROUND = 2
 local MAX_SPAWN_ROUND = 7
-local SWORD_LIFESPAN_ROUNDS = 2
+local SWORD_LIFESPAN_ROUNDS = 3
+local PICKUP_CARRYOVER_ROUNDS = 1 -- Keep unpicked swords through one full round, then half of next round.
 local KILL_BONUS = 50
 local SOUND_ID = "rbxassetid://93965767748928"
 local SWORD_WALKSPEED_OVERRIDE_KEY = "SwordHold"
-local SWORD_WALKSPEED = 15
+local SWORD_WALKSPEED = 17
 
 -- Spawn frequency: one attempt every SPAWN_INTERVAL_MIN–MAX seconds while a round is active
 local SPAWN_INTERVAL_MIN = 16
@@ -74,6 +76,14 @@ local function getDQS()
 	return _DQS
 end
 
+local _Feedback = nil
+local function getFeedback()
+	if _Feedback ~= nil then return _Feedback end
+	local ok, mod = pcall(require, Server:FindFirstChild("MatchFeedbackService"))
+	if ok and mod then _Feedback = mod else _Feedback = false end
+	return _Feedback
+end
+
 local _PerkMatchEffectService = nil
 local function getPerkMatchEffectService()
 	if _PerkMatchEffectService ~= nil then
@@ -94,7 +104,7 @@ local initialized = false
 local pickupsFolder: Folder? = nil
 local touchConnections: { RBXScriptConnection } = {}
 
-local activePickups: { { model: Model, spawnRound: number } } = {}
+local activePickups: { { model: Model, spawnRound: number, halfExpiryScheduledRound: number? } } = {}
 local swordHolders: { [Player]: { tool: Tool, spawnRound: number, deathConn: RBXScriptConnection?, unequippedConn: RBXScriptConnection? } } = {}
 
 local swordSpawnedRemote: RemoteEvent? = nil
@@ -321,6 +331,10 @@ local function onSwordKill(killer: Player, victim: Player)
 	removeSwordFromPlayer(killer)
 	local dqs = getDQS()
 	if dqs and dqs.OnSwordKill then pcall(dqs.OnSwordKill, killer) end
+	local feedback = getFeedback()
+	if feedback and feedback.OnSwordElimination then
+		pcall(feedback.OnSwordElimination, killer, victim)
+	end
 end
 
 local function giveSwordToPlayer(player: Player, spawnRound: number)
@@ -551,10 +565,10 @@ end
 local function cleanupExpiredSwords(currentRound: number)
 	local remaining = {}
 	for _, entry in ipairs(activePickups) do
-		if currentRound >= entry.spawnRound + SWORD_LIFESPAN_ROUNDS then
+		if currentRound >= entry.spawnRound + PICKUP_CARRYOVER_ROUNDS + 1 then
 			if entry.model and entry.model.Parent then
 				entry.model:Destroy()
-				log(string.format("Expired pickup from round %d (now round %d)", entry.spawnRound, currentRound))
+				log(string.format("Expired pickup fallback cleanup from round %d (now round %d)", entry.spawnRound, currentRound))
 			end
 		else
 			table.insert(remaining, entry)
@@ -569,6 +583,57 @@ local function cleanupExpiredSwords(currentRound: number)
 				player.Name, data.spawnRound, currentRound
 			))
 			removeSwordFromPlayer(player)
+		end
+	end
+end
+
+local function getRoundTotalDurationSeconds(roundNumber: number): number
+	local timings = RoundConfig.GetTimingsForRound(roundNumber)
+	if type(timings) ~= "table" then
+		return 6
+	end
+	local total = (tonumber(timings.FreeMoveSeconds) or 0)
+		+ (tonumber(timings.TelegraphGraceSeconds) or 0)
+		+ (tonumber(timings.TelegraphSeconds) or 0)
+		+ (tonumber(timings.FreezeSeconds) or 0)
+		+ (tonumber(timings.StrikeSeconds) or 0)
+		+ (tonumber(timings.RecoverySeconds) or 0)
+	return math.max(1, total)
+end
+
+local function scheduleCarryoverPickupHalfRoundExpiry(currentRound: number)
+	local halfRoundSeconds = getRoundTotalDurationSeconds(currentRound) * 0.5
+	for _, entry in ipairs(activePickups) do
+		if entry.spawnRound == (currentRound - PICKUP_CARRYOVER_ROUNDS) and entry.halfExpiryScheduledRound ~= currentRound then
+			entry.halfExpiryScheduledRound = currentRound
+			local trackedModel = entry.model
+			task.delay(halfRoundSeconds, function()
+				if _currentRound ~= currentRound then
+					return
+				end
+				for i = #activePickups, 1, -1 do
+					local tracked = activePickups[i]
+					if tracked.model == trackedModel then
+						if tracked.model and tracked.model.Parent then
+							tracked.model:Destroy()
+							log(string.format(
+								"Carryover pickup expired mid-round (spawned round %d, expired round %d @ %.2fs)",
+								tracked.spawnRound,
+								currentRound,
+								halfRoundSeconds
+							))
+						end
+						table.remove(activePickups, i)
+						break
+					end
+				end
+			end)
+			log(string.format(
+				"Scheduled carryover pickup half-round expiry (spawned round %d, round %d in %.2fs)",
+				entry.spawnRound,
+				currentRound,
+				halfRoundSeconds
+			))
 		end
 	end
 end
@@ -633,6 +698,10 @@ fireSwordSpawnMatchAlert = function()
 		"[MatchAlert] type=SwordSpawn recipients=%s",
 		(#recipientNames > 0) and table.concat(recipientNames, ",") or "none"
 	))
+	local feedback = getFeedback()
+	if feedback and feedback.OnSwordSpawn then
+		pcall(feedback.OnSwordSpawn, recipients)
+	end
 end
 
 function SwordSpawnService.Init()
@@ -697,6 +766,7 @@ function SwordSpawnService.OnRoundStart(roundNumber: number)
 	_spawnLoopActive = false
 	_currentRound = roundNumber
 	_swordsSpawnedThisRound = 0
+	scheduleCarryoverPickupHalfRoundExpiry(roundNumber)
 
 	if not isSpawnRoundAllowed(roundNumber) then
 		if roundNumber < MIN_SPAWN_ROUND then
@@ -742,13 +812,19 @@ end
 
 function SwordSpawnService.OnRoundEnd()
 	_spawnLoopActive = false
+	local endingRound = _currentRound
+	local remaining = {}
 	for _, entry in ipairs(activePickups) do
 		if entry.model and entry.model.Parent then
-			entry.model:Destroy()
-			log(string.format("Round ended — despawned unpicked sword from round %d", entry.spawnRound))
+			if entry.spawnRound >= endingRound then
+				table.insert(remaining, entry)
+			else
+				entry.model:Destroy()
+				log(string.format("Round ended — despawned stale unpicked sword from round %d", entry.spawnRound))
+			end
 		end
 	end
-	activePickups = {}
+	activePickups = remaining
 end
 
 function SwordSpawnService.OnMatchEnd()

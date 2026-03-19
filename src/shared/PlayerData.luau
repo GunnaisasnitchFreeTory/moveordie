@@ -9,11 +9,16 @@
 	  2 -- Added: LifetimeCoinsAchieved, WeeklyWins, WeeklyCoinsAchieved, WeeklyResetId
 	  3 -- Added: LifetimeDeaths, TimePlayedSeconds
 	  6 -- Added: VIPBundleOwned persistent ability flag
+	  7 -- Added: TutorialCompleted onboarding flag
+	  8 -- Added: LifetimeMatchesCompleted
+	  9 -- Added: StarterQuestState onboarding quest persistence
+	  10 -- Added: FirstMatchTipsShown queued-announcement onboarding guard
+	  11 -- Added: FirstMatchTipMatchesServed (max onboarding-tip matches)
 ]]
 
 local PlayerData = {}
 
-PlayerData.VERSION = 6
+PlayerData.VERSION = 11
 
 -- DataStore key — Studio uses a separate namespace to prevent leaking test data into production
 local RunService = game:GetService("RunService")
@@ -43,6 +48,7 @@ PlayerData.Attributes = {
 	LifetimeDeaths        = "LifetimeDeaths",
 	TimePlayedSeconds     = "TimePlayedSeconds",
 	DailyQuestData        = "DailyQuestData",
+	TutorialCompleted     = "TutorialCompleted",
 }
 
 --- Compute current UTC week identifier.
@@ -75,6 +81,11 @@ function PlayerData.GetDefaults(): { [string]: any }
 		LifetimeDeaths        = 0,
 		TimePlayedSeconds     = 0,
 		DailyQuestData        = "",
+		TutorialCompleted     = false,
+		LifetimeMatchesCompleted = 0,
+		StarterQuestState     = "Unclassified",
+		FirstMatchTipsShown   = false,
+		FirstMatchTipMatchesServed = 0,
 		PendingForceNextModeIntent = nil,
 		ProcessedReceipts     = {},
 		ProcessedGrants       = {},
@@ -109,6 +120,21 @@ function PlayerData.Validate(data: { [string]: any }): { [string]: any }
 	if type(data.LifetimeDeaths) ~= "number" then data.LifetimeDeaths = 0 end
 	if type(data.TimePlayedSeconds) ~= "number" then data.TimePlayedSeconds = 0 end
 	if type(data.DailyQuestData) ~= "string" then data.DailyQuestData = "" end
+	if type(data.TutorialCompleted) ~= "boolean" then data.TutorialCompleted = false end
+	if type(data.LifetimeMatchesCompleted) ~= "number" then data.LifetimeMatchesCompleted = 0 end
+	if type(data.StarterQuestState) ~= "string" then data.StarterQuestState = "Unclassified" end
+	if type(data.FirstMatchTipsShown) ~= "boolean" then data.FirstMatchTipsShown = false end
+	if type(data.FirstMatchTipMatchesServed) ~= "number" then
+		data.FirstMatchTipMatchesServed = if data.FirstMatchTipsShown == true then 2 else 0
+	end
+	data.FirstMatchTipMatchesServed = math.max(0, math.floor(data.FirstMatchTipMatchesServed))
+	if data.StarterQuestState ~= "Unclassified"
+		and data.StarterQuestState ~= "Eligible"
+		and data.StarterQuestState ~= "Ineligible"
+		and data.StarterQuestState ~= "Completed"
+	then
+		data.StarterQuestState = "Unclassified"
+	end
 	if data.PendingForceNextModeIntent ~= nil then
 		local pending = data.PendingForceNextModeIntent
 		if type(pending) ~= "table"

@@ -28,6 +28,7 @@ local CrateService        = require(Server:WaitForChild("CrateService"))
 local LevelCrownService   = require(Server:WaitForChild("LevelCrownService"))
 local CrownAttachService  = require(Server:WaitForChild("CrownAttachService"))
 local DailyRewardService  = require(Server:WaitForChild("DailyRewardService"))
+local TutorialService     = require(Server:WaitForChild("TutorialService"))
 
 local PlayerStateService  = require(Server:WaitForChild("PlayerStateService"))
 
@@ -146,6 +147,7 @@ CrateService.Init()
 LevelCrownService.Init()
 CrownAttachService.Init()
 DailyRewardService.Init()
+TutorialService.Init()
 stripFNAFRigging()
 
 -- =====================================================================
@@ -482,6 +484,7 @@ local function onPlayerAdded(player: Player)
 		print(string.format("[DEBUG] All stats RESET to 0 for %s (Studio clean testing)", player.Name))
 	end
 
+	TutorialService.ApplyLoadedState(player)
 	StatService.RecalculateStats(player)
 
 	task.spawn(function()
@@ -754,4 +757,4 @@ for _, player in ipairs(Players:GetPlayers()) do
 	end)
 end
 
-print("[PlayerDataBootstrap] Persistence + equip + crate + level crowns + daily rewards + leaderboard seed + stats tracking + admin commands ready")
+print("[PlayerDataBootstrap] Persistence + equip + crate + level crowns + daily rewards + tutorial onboarding + leaderboard seed + stats tracking + admin commands ready")

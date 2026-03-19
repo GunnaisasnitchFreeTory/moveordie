@@ -26,6 +26,19 @@ local Server = ServerScriptService:WaitForChild("Server")
 
 local EconomyService = require(Server:WaitForChild("EconomyService"))
 local MapManager     = require(Server:WaitForChild("MapManager"))
+local _Feedback = nil
+local function getFeedback()
+	if _Feedback ~= nil then
+		return _Feedback
+	end
+	local ok, mod = pcall(require, Server:FindFirstChild("MatchFeedbackService"))
+	if ok and mod then
+		_Feedback = mod
+	else
+		_Feedback = false
+	end
+	return _Feedback
+end
 
 local COIN_FOLDER_NAME = "RoundCoins"
 local SPAWN_Y_OFFSET   = 3.0
@@ -262,6 +275,10 @@ local function spawnCoin(coinName: string)
 						baseCoinValue = coinValue,
 						coinValue = awardedAmount or coinValue,
 					})
+				end
+				local feedback = getFeedback()
+				if feedback and feedback.OnCoinCollected then
+					pcall(feedback.OnCoinCollected, player, coinName, coinValue)
 				end
 			end
 

@@ -37,6 +37,7 @@ local voteRemote: RemoteEvent? = nil
 local reopenBtn: TextButton? = nil
 local voteLockedValue: BoolValue? = nil
 local voteLockedModeValue: StringValue? = nil
+local voteActiveValue: BoolValue? = nil
 local matchStateValue: StringValue? = nil
 
 local currentVote: string? = nil
@@ -65,6 +66,20 @@ local updateSelection
 local function isPlayerAFK(): boolean
 	local state = player:GetAttribute("PlayerState")
 	return state == "AFK"
+end
+
+local function isTutorialBlocked(): boolean
+	if player:GetAttribute("TutorialCompleted") ~= true then
+		return true
+	end
+	return player:GetAttribute("PlayerState") == "TutorialLocked"
+end
+
+local function getReplicatedVotePayload()
+	return {
+		locked = voteLockedValue and voteLockedValue.Value or false,
+		forcedMode = voteLockedModeValue and voteLockedModeValue.Value or nil,
+	}
 end
 
 local function setGuiPreferredEnabled(enabled: boolean)
@@ -444,6 +459,10 @@ local function createGui()
 	reopenTextStroke.Parent = reopenBtn
 
 	reopenBtn.MouseButton1Click:Connect(function()
+		if isTutorialBlocked() then
+			print("[ModeVote] Reopen blocked -- tutorial incomplete")
+			return
+		end
 		if panelFrame and voteWindowOpen then
 			panelFrame.BackgroundTransparency = 0.04
 			panelFrame.Visible = true
@@ -513,11 +532,22 @@ local function showPanel(data)
 		print("[ModeVote] Skipping show -- player is AFK")
 		return
 	end
+	if isTutorialBlocked() then
+		print("[ModeVote] Skipping show -- tutorial incomplete")
+		return
+	end
 
 	if not gui then
 		createGui()
 	end
 	if not gui or not panelFrame then
+		return
+	end
+
+	if voteWindowOpen then
+		setVoteLockState(data and data.locked == true, data and data.forcedMode or nil)
+		updateSelection()
+		print("[ModeVote] Show ignored -- already open")
 		return
 	end
 
@@ -674,6 +704,10 @@ function ModeVotePanel.Init()
 		local lockedVal = matchStatus:WaitForChild("ModeVoteLocked", 5)
 		local lockedModeVal = matchStatus:WaitForChild("ModeVoteLockedMode", 5)
 
+		if voteActiveVal and voteActiveVal:IsA("BoolValue") then
+			voteActiveValue = voteActiveVal
+		end
+
 		if lockedVal and lockedVal:IsA("BoolValue") then
 			voteLockedValue = lockedVal
 		end
@@ -684,20 +718,14 @@ function ModeVotePanel.Init()
 		if voteActiveVal then
 			if voteActiveVal.Value == true and not voteWindowOpen then
 				print("[ModeVote] Replicated active detected on init - showing UI")
-				showPanel({
-					locked = voteLockedValue and voteLockedValue.Value or false,
-					forcedMode = voteLockedModeValue and voteLockedModeValue.Value or nil,
-				})
+				showPanel(getReplicatedVotePayload())
 			end
 
 			voteActiveVal.Changed:Connect(function(newVal)
 				print("[ModeVote] ModeVoteActive changed to:", tostring(newVal))
 				if newVal == true and not voteWindowOpen then
 					print("[ModeVote] Replicated active detected - showing UI")
-					showPanel({
-						locked = voteLockedValue and voteLockedValue.Value or false,
-						forcedMode = voteLockedModeValue and voteLockedModeValue.Value or nil,
-					})
+					showPanel(getReplicatedVotePayload())
 				elseif newVal == false and voteWindowOpen then
 					print("[ModeVote] Replicated inactive detected - force hiding UI")
 					hidePanel()
@@ -736,6 +764,32 @@ function ModeVotePanel.Init()
 				end
 			end)
 		end
+
+		player:GetAttributeChangedSignal("TutorialCompleted"):Connect(function()
+			local completed = player:GetAttribute("TutorialCompleted") == true
+			print("[ModeVote] TutorialCompleted changed to:", tostring(completed))
+			if not completed and voteWindowOpen then
+				hidePanel()
+				return
+			end
+			if completed and voteActiveValue and voteActiveValue.Value == true and not voteWindowOpen then
+				showPanel(getReplicatedVotePayload())
+			end
+		end)
+
+		player:GetAttributeChangedSignal("PlayerState"):Connect(function()
+			local state = tostring(player:GetAttribute("PlayerState"))
+			print("[ModeVote] PlayerState changed to:", state)
+			if isTutorialBlocked() then
+				if voteWindowOpen then
+					hidePanel()
+				end
+				return
+			end
+			if voteActiveValue and voteActiveValue.Value == true and not voteWindowOpen then
+				showPanel(getReplicatedVotePayload())
+			end
+		end)
 	end)
 
 	print("[ModeVote] Initialized")

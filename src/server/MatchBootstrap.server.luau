@@ -19,6 +19,7 @@ local EXPECTED_BOOTSTRAP_TARGETS = {
 	{ name = "FreezeIndicator", source = "RoundManager.Init" },
 	{ name = "PaidFreezeNotice", source = "RoundManager.Init" },
 	{ name = "RoundCoinCollected", source = "RoundCoinService.Init" },
+	{ name = "PlayerAnnouncement", source = "MatchFeedbackService.Init" },
 }
 
 local function getSortedChildNames(parent: Instance?): { string }
@@ -154,6 +155,7 @@ logRemoteBootstrap(
 -- Initialize supporting services after core remotes/match status are live.
 safeInit("GlobalLeaderboardService", safeRequire("GlobalLeaderboardService"))
 safeInit("DailyQuestService", safeRequire("DailyQuestService"))
+safeInit("MatchFeedbackService", safeRequire("MatchFeedbackService"))
 safeInit("ShopService", safeRequire("ShopService"))
 
 local startOk, startErr = xpcall(function()

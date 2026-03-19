@@ -20,7 +20,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Server = ServerScriptService:WaitForChild("Server")
 
 local MatchState = require(Shared:WaitForChild("MatchState"))
+local MatchConfig = require(Shared:WaitForChild("MatchConfig"))
 local PlayerState = require(Shared:WaitForChild("PlayerState"))
+local ProgressionGoalResolver = require(Shared:WaitForChild("ProgressionGoalResolver"))
 local SpawnConfig = require(Shared:WaitForChild("SpawnConfig"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
 local MapManager = require(Server:WaitForChild("MapManager"))
@@ -33,6 +35,7 @@ local RoundCoinService       = require(Server:WaitForChild("RoundCoinService"))
 local SwordSpawnService      = require(Server:WaitForChild("SwordSpawnService"))
 local TungTungSahurService   = require(Server:WaitForChild("TungTungSahurService"))
 local ModeLightingService    = require(Server:WaitForChild("ModeLightingService"))
+local CharacterShadowService = require(Server:WaitForChild("CharacterShadowService"))
 local FreezePlayerProductService = require(Server:WaitForChild("FreezePlayerProductService"))
 local ForceNextModeProductService = require(Server:WaitForChild("ForceNextModeProductService"))
 local PerkMatchEffectService = require(Server:WaitForChild("PerkMatchEffectService"))
@@ -45,16 +48,22 @@ local function getDQS()
 	return _DQS
 end
 
+local _Feedback = nil
+local function getFeedback()
+	if _Feedback ~= nil then return _Feedback end
+	local ok, mod = pcall(require, Server:FindFirstChild("MatchFeedbackService"))
+	if ok and mod then _Feedback = mod else _Feedback = false end
+	return _Feedback
+end
+
 --[[ CONFIGURATION ]]
 local Config = {
-	IntermissionSeconds = 18,
-	PlayingSeconds = 20,
 	EndingSeconds = 7,
 	MinPlayersToStart = 1,
-	MinIntermissionFloor = 10,
-	VoteShowAtRemaining = 12,
 	DebugLog = true,
 }
+local FIRST_MATCH_BONUS_COINS = 100
+local MATCH_RESULTS_PRESENTATION_DELAY_SECONDS = 1.5
 
 --[[ INTERNAL STATE ]]
 local currentState: string = MatchState.States.Intermission
@@ -116,6 +125,10 @@ local function log(...)
 	end
 end
 
+local function getServerTime(): number
+	return workspace:GetServerTimeNow()
+end
+
 -- GLBS direct call (lazy require, no BindableEvent)
 local _GLBS = nil
 local function getGLBS()
@@ -150,13 +163,16 @@ local function reportStats(userId: number, username: string, updates: { [string]
 	end
 end
 
+local function isCanonicalMatchEndReason(reason: string?): boolean
+	return reason == "Winner" or reason == "NoWinners" or reason == "CapReached"
+end
+
 -- Mode Vote helpers
 
 local function getVoteCounts(): (number, number)
 	local normal, brainrot = 0, 0
 	for voter, choice in pairs(votes) do
-		-- Exclude AFK players from tally
-		if voter and voter.Parent and not PlayerStateService.IsAFK(voter) then
+		if voter and voter.Parent and voter:GetAttribute("TutorialCompleted") == true and not PlayerStateService.IsAFK(voter) then
 			if choice == "Normal" then
 				normal = normal + 1
 			elseif choice == "Brainrot" then
@@ -170,7 +186,7 @@ end
 local function broadcastVoteCounts()
 	if not voteRemote then return end
 	local normal, brainrot = getVoteCounts()
-	for _, player in ipairs(Players:GetPlayers()) do
+	for _, player in ipairs(MatchManager.GetEligiblePlayers()) do
 		voteRemote:FireClient(player, "Update", { normal = normal, brainrot = brainrot })
 	end
 end
@@ -213,17 +229,15 @@ local function startVote()
 		replicatedVoteActive.Value = true
 	end
 	if replicatedVoteEndTime then
-		replicatedVoteEndTime.Value = workspace:GetServerTimeNow() + math.max(0, phaseEndTime - tick())
+		replicatedVoteEndTime.Value = phaseEndTime
 	end
 
 	if voteRemote then
-		for _, player in ipairs(Players:GetPlayers()) do
-			if not PlayerStateService.IsAFK(player) then
-				voteRemote:FireClient(player, "Start", {
-					locked = voteLocked,
-					forcedMode = lockedVoteMode,
-				})
-			end
+		for _, player in ipairs(MatchManager.GetEligiblePlayers()) do
+			voteRemote:FireClient(player, "Start", {
+				locked = voteLocked,
+				forcedMode = lockedVoteMode,
+			})
 		end
 	end
 
@@ -301,17 +315,17 @@ local function endVote(): string
 	return result
 end
 
-local function replicatePhaseEnd(durationSeconds: number)
+local function replicatePhaseEnd(absoluteServerTime: number)
 	if replicatedPhaseEnd then
-		replicatedPhaseEnd.Value = workspace:GetServerTimeNow() + durationSeconds
-		log(string.format("Replicated PhaseEndTime -> +%ds (value=%.1f)", durationSeconds, replicatedPhaseEnd.Value))
+		replicatedPhaseEnd.Value = absoluteServerTime
+		log(string.format("Replicated PhaseEndTime -> %.3f", replicatedPhaseEnd.Value))
 	else
 		log("replicatedPhaseEnd is nil - skipping replication")
 	end
 end
 
 local function isIntermissionCountdownActive(): boolean
-	return currentState == MatchState.States.Intermission and phaseEndTime > tick()
+	return currentState == MatchState.States.Intermission and phaseEndTime > getServerTime()
 end
 
 local function replicateRound(round: number)
@@ -502,6 +516,9 @@ end
 local function getParticipantRejectReason(player: Player): string?
 	if not player or not player.Parent then
 		return "unknown"
+	end
+	if player:GetAttribute("TutorialCompleted") ~= true then
+		return "tutorial incomplete"
 	end
 	if PlayerStateService.IsAFK(player) then
 		return "AFK"
@@ -737,8 +754,9 @@ function MatchManager.GetEligiblePlayers(): { Player }
 	for _, player in ipairs(Players:GetPlayers()) do
 		local state = PlayerStateService.GetState(player)
 		local isAFK = PlayerStateService.IsAFK(player)
+		local tutorialCompleted = player:GetAttribute("TutorialCompleted") == true
 		
-		if not isAFK and (state == PlayerState.States.Lobby or state == PlayerState.States.Waiting) then
+		if tutorialCompleted and not isAFK and (state == PlayerState.States.Lobby or state == PlayerState.States.Waiting) then
 			table.insert(eligible, player)
 		end
 	end
@@ -779,8 +797,8 @@ end
 local function runIntermission()
 	restoreEnvironment("IntermissionStart")
 	setMatchState(MatchState.States.Intermission)
-	phaseEndTime = tick() + Config.IntermissionSeconds
-	replicatePhaseEnd(Config.IntermissionSeconds)
+	phaseEndTime = getServerTime() + MatchConfig.IntermissionSeconds
+	replicatePhaseEnd(phaseEndTime)
 	replicateRound(0)
 	clearCurrentVoteLockState()
 	if replicatedVoteActive then
@@ -795,17 +813,16 @@ local function runIntermission()
 		replicatedMode.Value = "Normal"
 	end
 	log(string.format(
-		"[IntermissionStart] duration=%ds serverEndTick=%.1f replicatedPhaseEnd=%.1f waiting=%d mode=%s",
-		Config.IntermissionSeconds,
+		"[IntermissionStart] duration=%.1fs phaseEnd=%.3f waiting=%d mode=%s",
+		MatchConfig.IntermissionSeconds,
 		phaseEndTime,
-		replicatedPhaseEnd and replicatedPhaseEnd.Value or 0,
 		#PlayerStateService.GetPlayersInState(PlayerState.States.Waiting),
 		tostring(currentMode)
 	))
 	local lastActiveCount = 0
 	local voteStarted = false
 	local abilityWarningSent = false
-	while tick() < phaseEndTime do
+	while getServerTime() < phaseEndTime do
 		setEligibleToWaiting()
 		local waiting = PlayerStateService.GetPlayersInState(PlayerState.States.Waiting)
 		local activeCount = 0
@@ -819,20 +836,26 @@ local function runIntermission()
 				"[IntermissionTick] activeWaiting=%d->%d remaining=%.1fs phaseEndStable=true",
 				lastActiveCount,
 				activeCount,
-				phaseEndTime - tick()
+				phaseEndTime - getServerTime()
 			))
 		end
 		lastActiveCount = activeCount
-		local timeLeft = phaseEndTime - tick()
-		if not abilityWarningSent and timeLeft <= 5 then
+		local timeLeft = phaseEndTime - getServerTime()
+		if not abilityWarningSent and timeLeft <= MatchConfig.AbilityWarningRemainingSeconds then
 			abilityWarningSent = true
 			fireAbilityActivationWarnings(MatchManager.GetEligiblePlayers())
 		end
-		if not voteStarted and timeLeft <= Config.VoteShowAtRemaining then
+		if not voteStarted and timeLeft <= MatchConfig.VoteRevealRemainingSeconds then
 			voteStarted = true
+			log(string.format(
+				"[VoteReveal] remaining=%.2fs revealAt=%.2fs phaseEnd=%.3f",
+				timeLeft,
+				MatchConfig.VoteRevealRemainingSeconds,
+				phaseEndTime
+			))
 			startVote()
 		end
-		task.wait(1)
+		task.wait(MatchConfig.IntermissionTickSeconds)
 	end
 	log(string.format("[IntermissionEnding] waiting=%d eligible=%d mode=%s",
 		#PlayerStateService.GetPlayersInState(PlayerState.States.Waiting),
@@ -930,6 +953,12 @@ local function runPlaying()
 				pcall(dqs.OnMatchStart, matchPlayers)
 			end
 		end
+		do
+			local feedback = getFeedback()
+			if feedback and feedback.OnMatchStart then
+				pcall(feedback.OnMatchStart, matchPlayers, currentMode)
+			end
+		end
 
 		if currentMode == "Brainrot" then
 			BrainrotModeService.OnMatchStart()
@@ -955,11 +984,25 @@ local function runPlaying()
 		end
 
 		local endReason = RoundManager.GetMatchEndReason()
-		log(string.format("[BeamPhaseComplete] reason=%s", endReason or "unknown"))
+		local canonicalEnd = isCanonicalMatchEndReason(endReason)
+		local remainingInMatch = #PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+		log(string.format(
+			"[BeamPhaseComplete] reason=%s canonical=%s remainingInMatch=%d finalRound=%d",
+			endReason or "unknown",
+			tostring(canonicalEnd),
+			remainingInMatch,
+			RoundManager.GetCurrentRound()
+		))
 		do
 			local dqs = getDQS()
 			if dqs and dqs.OnMatchEnd then
 				pcall(dqs.OnMatchEnd)
+			end
+		end
+		do
+			local feedback = getFeedback()
+			if feedback and feedback.OnMatchEnd then
+				pcall(feedback.OnMatchEnd)
 			end
 		end
 
@@ -971,7 +1014,19 @@ local function runPlaying()
 		SwordSpawnService.OnMatchEnd()
 		TungTungSahurService.OnMatchEnd()
 		MapManager.OnMatchEnd()
-		played = true
+		if canonicalEnd then
+			played = true
+		else
+			log(string.format(
+				"[MatchLoopGuard] canonicalEnd=false reason=%s remainingInMatch=%d action=reset_to_lobby_without_results questProgressDispatch=blocked",
+				tostring(endReason),
+				remainingInMatch
+			))
+			if endReason == "Cancelled" then
+				log("[MatchLoopGuard] cancelled_round_detected downstream_survival_credit=disabled")
+			end
+			setMatchPlayersToLobby()
+		end
 	end, debug.traceback)
 
 	if not ok then
@@ -988,6 +1043,12 @@ local function runPlaying()
 			local dqs = getDQS()
 			if dqs and dqs.OnMatchEnd then
 				pcall(dqs.OnMatchEnd)
+			end
+		end
+		do
+			local feedback = getFeedback()
+			if feedback and feedback.OnMatchEnd then
+				pcall(feedback.OnMatchEnd)
 			end
 		end
 		pcall(function()
@@ -1034,14 +1095,29 @@ local function resolveRankingsAndReward()
 	
 	local crownGrants: { [number]: string } = {}
 	local placementAwards: { [number]: number } = {}
+	local firstMatchBonusAwards: { [number]: number } = {}
+	local currentCoinsAfterRewards: { [number]: number } = {}
+	local nextGoalsByPlayer: { [number]: any } = {}
+	local replayMessagesByPlayer: { [number]: string } = {}
+
+	local function resolveReplayMessage(nextGoal: any): string
+		if not nextGoal then
+			return "Next match starts soon - go for another win."
+		end
+		if (nextGoal.remainingCoins or 0) > 0 then
+			return string.format("Earn %d more coins for %s.", nextGoal.remainingCoins, nextGoal.name)
+		end
+		return string.format("You can unlock %s now.", nextGoal.name)
+	end
 	
 	for _, group in ipairs(rankings) do
 		for _, entry in ipairs(group.players) do
 			if entry.player and entry.player.Parent then
+				local player = entry.player
 				local awardedCoins = 0
 				if group.coins > 0 then
 					local awardOk, finalAward = EconomyService.AwardCoins(
-						entry.player,
+						player,
 						group.coins,
 						string.format("Match#%d Place#%d", matchId, group.placement)
 					)
@@ -1051,21 +1127,50 @@ local function resolveRankingsAndReward()
 					end
 				end
 				placementAwards[entry.playerId] = awardedCoins
+
+				local firstMatchBonusCoins = 0
+				if PDS then
+					local lifetimeMatchesCompleted = PDS.GetField(player, "LifetimeMatchesCompleted") or 0
+					if lifetimeMatchesCompleted <= 0 then
+						local bonusOk, finalBonus = EconomyService.AwardCoins(
+							player,
+							FIRST_MATCH_BONUS_COINS,
+							string.format("Match#%d FirstMatchBonus", matchId),
+							true
+						)
+						if bonusOk then
+							firstMatchBonusCoins = finalBonus or FIRST_MATCH_BONUS_COINS
+							totalAwarded = totalAwarded + firstMatchBonusCoins
+							PDS.SetField(player, "LifetimeMatchesCompleted", 1)
+							log(string.format(
+								"[FirstMatchBonus] player=%s matchId=%d amount=%d",
+								player.Name,
+								matchId,
+								firstMatchBonusCoins
+							))
+						else
+							warn(string.format("[MatchManager] First match bonus failed for %s matchId=%d", player.Name, matchId))
+						end
+					else
+						PDS.SetField(player, "LifetimeMatchesCompleted", lifetimeMatchesCompleted + 1)
+					end
+				end
+				firstMatchBonusAwards[entry.playerId] = firstMatchBonusCoins
 				
 				if group.placement == 1 and PDS then
-					local lifetimeWins = (PDS.GetField(entry.player, "LifetimeWins") or 0) + 1
-					PDS.SetField(entry.player, "LifetimeWins", lifetimeWins)
+					local lifetimeWins = (PDS.GetField(player, "LifetimeWins") or 0) + 1
+					PDS.SetField(player, "LifetimeWins", lifetimeWins)
 
-					local weeklyWins = (PDS.GetField(entry.player, "WeeklyWins") or 0) + 1
-					PDS.SetField(entry.player, "WeeklyWins", weeklyWins)
+					local weeklyWins = (PDS.GetField(player, "WeeklyWins") or 0) + 1
+					PDS.SetField(player, "WeeklyWins", weeklyWins)
 
 					local dqs = getDQS()
-					if dqs and dqs.OnPlayerWon then pcall(dqs.OnPlayerWon, entry.player) end
+					if dqs and dqs.OnPlayerWon then pcall(dqs.OnPlayerWon, player) end
 
 					log(string.format("%s won! LifetimeWins=%d WeeklyWins=%d",
-						entry.player.Name, lifetimeWins, weeklyWins))
+						player.Name, lifetimeWins, weeklyWins))
 
-					reportStats(entry.player.UserId, entry.player.Name, {
+					reportStats(player.UserId, player.Name, {
 						LifetimeWins = lifetimeWins,
 						WeeklyWins   = weeklyWins,
 					})
@@ -1075,6 +1180,41 @@ local function resolveRankingsAndReward()
 						crownGrants[entry.playerId] = nextM.crownId
 					end
 				end
+
+				local playerData = if PDS then PDS.GetData(player) else nil
+				local currentCoins = EconomyService.GetCoins(player)
+				currentCoinsAfterRewards[entry.playerId] = currentCoins
+				local nextGoal = ProgressionGoalResolver.Resolve({
+					coins = currentCoins,
+					ownedCrowns = playerData and playerData.OwnedCrowns or {},
+					ownedPets = playerData and playerData.OwnedPets or {},
+				})
+				nextGoalsByPlayer[entry.playerId] = nextGoal
+				replayMessagesByPlayer[entry.playerId] = resolveReplayMessage(nextGoal)
+				if nextGoal then
+					log(string.format(
+						"[NextGoalResolved] player=%s goalId=%s price=%d remaining=%d",
+						player.Name,
+						nextGoal.id,
+						nextGoal.price,
+						nextGoal.remainingCoins
+					))
+				else
+					log(string.format("[NextGoalResolved] player=%s goalId=<none>", player.Name))
+				end
+
+				local matchCoinsCollected = EconomyService.GetMatchCoins(player)
+				local totalCoinsEarned = awardedCoins + matchCoinsCollected + firstMatchBonusCoins
+				log(string.format(
+					"[RewardSummary] player=%s placement=%d placementCoins=%d matchCoins=%d firstMatchBonus=%d total=%d balance=%d",
+					player.Name,
+					group.placement,
+					awardedCoins,
+					matchCoinsCollected,
+					firstMatchBonusCoins,
+					totalCoinsEarned,
+					currentCoins
+				))
 			end
 		end
 	end
@@ -1082,6 +1222,7 @@ local function resolveRankingsAndReward()
 	log(string.format("Awarded %d total coins across %d placement groups", totalAwarded, #rankings))
 	
 	if matchResultsEvent then
+		local deliveries = {}
 		local flatRankings = {}
 		for _, group in ipairs(rankings) do
 			for _, entry in ipairs(group.players) do
@@ -1097,34 +1238,68 @@ local function resolveRankingsAndReward()
 		for _, group in ipairs(rankings) do
 			for _, entry in ipairs(group.players) do
 				if entry.player and entry.player.Parent then
+					local player = entry.player
 					local lifetimeWins = 0
 					if PDS then
-						lifetimeWins = PDS.GetField(entry.player, "LifetimeWins") or 0
+						lifetimeWins = PDS.GetField(player, "LifetimeWins") or 0
 					end
 					local prevM, nextM = getMilestoneContext(lifetimeWins)
+					local matchCoinsCollected = EconomyService.GetMatchCoins(player)
+					local placementCoins = placementAwards[entry.playerId] or 0
+					local firstMatchBonusCoins = firstMatchBonusAwards[entry.playerId] or 0
+					local totalCoinsEarned = placementCoins + matchCoinsCollected + firstMatchBonusCoins
 					
 					local payload = {
 						yourPlacement = group.placement,
-						yourCoins = placementAwards[entry.playerId] or 0,
+						yourCoins = placementCoins,
+						placementCoins = placementCoins,
 						yourXP = 0,
-						matchCoinsCollected = EconomyService.GetMatchCoins(entry.player),
+						matchCoinsCollected = matchCoinsCollected,
+						firstMatchBonusCoins = firstMatchBonusCoins,
+						firstMatchBonusGranted = firstMatchBonusCoins > 0,
+						totalCoinsEarned = totalCoinsEarned,
+						currentCoinsAfterRewards = currentCoinsAfterRewards[entry.playerId] or EconomyService.GetCoins(player),
+						replayMessage = replayMessagesByPlayer[entry.playerId] or "Next match starts soon - go for another win.",
+						nextGoal = nextGoalsByPlayer[entry.playerId],
 						rankings = flatRankings,
 						lifetimeWins = lifetimeWins,
 						crownGranted = crownGrants[entry.playerId] or nil,
 						nextMilestone = nextM,
 						prevMilestone = prevM,
 					}
-					
-					local fireOk, fireErr = pcall(function()
-						matchResultsEvent:FireClient(entry.player, payload)
-					end)
-					if not fireOk then
-						warn("[MatchManager] Failed to fire results to", entry.playerName, fireErr)
-					end
+					log(string.format(
+						"[RewardPresentation] player=%s placement=%d totalCoinsEarned=%d firstMatchBonus=%d",
+						player.Name,
+						group.placement,
+						totalCoinsEarned,
+						firstMatchBonusCoins
+					))
+					table.insert(deliveries, {
+						player = player,
+						playerName = entry.playerName,
+						payload = payload,
+					})
 				end
 			end
 		end
-		log("Fired MatchResultsEvent to all match participants")
+		log(string.format(
+			"[MatchResultsDelay] scheduled delay=%.1fs recipients=%d",
+			MATCH_RESULTS_PRESENTATION_DELAY_SECONDS,
+			#deliveries
+		))
+		task.delay(MATCH_RESULTS_PRESENTATION_DELAY_SECONDS, function()
+			for _, delivery in ipairs(deliveries) do
+				if delivery.player and delivery.player.Parent then
+					local fireOk, fireErr = pcall(function()
+						matchResultsEvent:FireClient(delivery.player, delivery.payload)
+					end)
+					if not fireOk then
+						warn("[MatchManager] Failed to fire results to", delivery.playerName, fireErr)
+					end
+				end
+			end
+			log("Fired MatchResultsEvent to all match participants")
+		end)
 
 		log("[MatchManager] Results -> triggering fireworks (always)")
 		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -1142,8 +1317,8 @@ end
 
 local function runEnding()
 	setMatchState(MatchState.States.Ending)
-	phaseEndTime = tick() + Config.EndingSeconds
-	replicatePhaseEnd(Config.EndingSeconds)
+	phaseEndTime = getServerTime() + Config.EndingSeconds
+	replicatePhaseEnd(phaseEndTime)
 	
 	local matchEndReason = RoundManager.GetMatchEndReason()
 	local winner = RoundManager.GetWinner()
@@ -1167,8 +1342,8 @@ local function runEnding()
 	resolveRankingsAndReward()
 	setMatchPlayersToLobby()
 	
-	while tick() < phaseEndTime do
-		task.wait(1)
+	while getServerTime() < phaseEndTime do
+		task.wait(MatchConfig.IntermissionTickSeconds)
 	end
 end
 
@@ -1299,6 +1474,14 @@ function MatchManager.Init()
 				return
 			end
 			if PlayerStateService.IsAFK(player) then return end
+			if player:GetAttribute("TutorialCompleted") ~= true then
+				log(string.format("[ModeVoteRejectedTutorial] player=%s attempted=%s", player.Name, data))
+				return
+			end
+			local state = PlayerStateService.GetState(player)
+			if state ~= PlayerState.States.Lobby and state ~= PlayerState.States.Waiting then
+				return
+			end
 			if data == "Normal" or data == "Brainrot" then
 				votes[player] = data
 				broadcastVoteCounts()
@@ -1319,9 +1502,9 @@ function MatchManager.Init()
 		if not isIntermissionCountdownActive() then
 			return
 		end
-		local serverRemaining = math.max(0, phaseEndTime - tick())
+		local serverRemaining = math.max(0, phaseEndTime - getServerTime())
 		local replicatedRemaining = if replicatedPhaseEnd
-			then math.max(0, replicatedPhaseEnd.Value - workspace:GetServerTimeNow())
+			then math.max(0, replicatedPhaseEnd.Value - getServerTime())
 			else 0
 		log(string.format(
 			"[IntermissionJoin] player=%s currentRemaining=%.1fs replicatedRemaining=%.1fs replicatedPhaseEnd=%.1f resetBlocked=true",
@@ -1336,6 +1519,7 @@ function MatchManager.Init()
 
 	BrainrotModeService.Init()
 	ModeLightingService.Init()
+	CharacterShadowService.Init()
 	FreezePlayerProductService.Init()
 	ForceNextModeProductService.Init()
 	RoundCoinService.Init()
@@ -1366,7 +1550,7 @@ function MatchManager.GetState(): string
 end
 
 function MatchManager.GetTimeRemaining(): number
-	local remaining = phaseEndTime - tick()
+	local remaining = phaseEndTime - getServerTime()
 	return math.max(0, math.floor(remaining))
 end
 

@@ -38,12 +38,14 @@ local SPAWN_BOTTOM_BUFFER = 0.5
 
 local COINS_NEW_PET = 50
 local COINS_DUPLICATE = 90
+local MAX_BRAINROT_SPAWN_ROUND = 8
 
 local BrainrotModeService = {}
 
 local initialized = false
 local active = false
 local availablePool: { string } = {}
+local allBrainrotPool: { string } = {}
 local spawnedThisMatch: { string } = {}
 local pickupsFolder: Folder? = nil
 local collectRemote: RemoteEvent? = nil
@@ -376,6 +378,7 @@ function BrainrotModeService.OnMatchStart()
 	spawnedThisMatch = {}
 
 	local allIds = getBrainrotPetIds()
+	allBrainrotPool = table.clone(allIds)
 	shuffleArray(allIds)
 	availablePool = allIds
 
@@ -384,31 +387,44 @@ end
 
 function BrainrotModeService.OnRoundStart(roundNumber: number)
 	if not active then return end
+	if roundNumber > MAX_BRAINROT_SPAWN_ROUND then
+		log(string.format("Round %d: Brainrot spawn cutoff reached (max=%d)", roundNumber, MAX_BRAINROT_SPAWN_ROUND))
+		return
+	end
 
 	clearPickupsFolder()
 	disconnectPrompts()
 
-	if #availablePool < 2 then
-		if #availablePool == 1 then
-			local id = table.remove(availablePool)
-			table.insert(spawnedThisMatch, id)
-			spawnBrainrot(id)
-			log(string.format("Round %d: Only 1 brainrot left in pool — spawned 1", roundNumber))
-		else
-			log(string.format("Round %d: Pool exhausted — no brainrots to spawn", roundNumber))
-		end
+	if #allBrainrotPool == 0 then
+		log(string.format("Round %d: No brainrot pets available in catalog", roundNumber))
 		return
 	end
 
-	for _ = 1, 2 do
-		local id = table.remove(availablePool)
-		if id then
-			table.insert(spawnedThisMatch, id)
-			spawnBrainrot(id)
+	local spawnedCount = 0
+	local refilled = false
+	while spawnedCount < 2 do
+		if #availablePool == 0 then
+			availablePool = table.clone(allBrainrotPool)
+			shuffleArray(availablePool)
+			refilled = true
 		end
+
+		local id = table.remove(availablePool)
+		if not id then
+			break
+		end
+		table.insert(spawnedThisMatch, id)
+		spawnBrainrot(id)
+		spawnedCount += 1
 	end
 
-	log(string.format("Round %d: Spawned 2 brainrots (%d remaining in pool)", roundNumber, #availablePool))
+	log(string.format(
+		"Round %d: Spawned %d brainrots (%d remaining in pool, poolRefilled=%s)",
+		roundNumber,
+		spawnedCount,
+		#availablePool,
+		tostring(refilled)
+	))
 end
 
 function BrainrotModeService.OnRoundEnd()
@@ -423,6 +439,7 @@ function BrainrotModeService.OnMatchEnd()
 	clearPickupsFolder()
 	disconnectPrompts()
 	availablePool = {}
+	allBrainrotPool = {}
 	spawnedThisMatch = {}
 	log("Match cleanup complete — pool reset")
 end

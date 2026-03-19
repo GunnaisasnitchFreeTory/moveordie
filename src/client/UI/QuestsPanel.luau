@@ -33,6 +33,16 @@ end
 
 local UIConfig = Deps.UIConfig
 
+local okDQC, DailyQuestConfig = pcall(require, Shared:WaitForChild("DailyQuestConfig", 10))
+if not okDQC or not DailyQuestConfig then
+	warn("[QuestsPanel] DailyQuestConfig failed:", DailyQuestConfig)
+	DailyQuestConfig = {
+		StarterQuest = {
+			id = "starter_survive_1_round",
+		},
+	}
+end
+
 local okIC, ItemCatalog = pcall(require, Shared:WaitForChild("ItemCatalog", 10))
 if not okIC or not ItemCatalog then
 	ItemCatalog = { Pets = {}, Crowns = {}, CoinImage = "" }
@@ -48,6 +58,7 @@ local SoundUtil         = require(Client:WaitForChild("SoundUtil"))
 local Components        = require(Client:WaitForChild("Components"))
 local ThumbnailRenderer = require(Client:WaitForChild("ThumbnailRenderer"))
 local RewardPopup       = require(Client:WaitForChild("RewardPopup"))
+local STARTER_QUEST_ID = tostring(DailyQuestConfig.StarterQuest and DailyQuestConfig.StarterQuest.id or "starter_survive_1_round")
 
 -- THEME
 
@@ -83,6 +94,180 @@ local _status      = nil
 local _getStatusFunc = nil
 local _claimFunc     = nil
 local _updateRemote  = nil
+local _lastLoggedQuestPayloadSignature = nil
+local _visibilityWatchConnected = false
+
+local function log(message: string)
+	print("[QuestsPanel] " .. message)
+end
+
+local function logStatusPayload(status, reason: string)
+	if type(status) ~= "table" or type(status.quests) ~= "table" then
+		return
+	end
+
+	local entries = table.create(#status.quests)
+	local starterPresent = false
+	for _, quest in ipairs(status.quests) do
+		local questId = tostring(quest.id or "")
+		local questLabel = tostring(quest.label or questId)
+		if questId == STARTER_QUEST_ID then
+			starterPresent = true
+		end
+		table.insert(entries, questId .. ":" .. questLabel)
+	end
+
+	local payloadSignature = tostring(#status.quests) .. "::" .. table.concat(entries, "|")
+	if _lastLoggedQuestPayloadSignature == payloadSignature then
+		return
+	end
+	_lastLoggedQuestPayloadSignature = payloadSignature
+
+	log(string.format(
+		"authoritative_status_received reason=%s activeQuestCount=%d starterPresent=%s quests=%s",
+		reason,
+		#status.quests,
+		tostring(starterPresent),
+		table.concat(entries, ",")
+	))
+	log(string.format(
+		"ui_received_quest quest=%s visibleInPayload=%s source=authoritative_status",
+		STARTER_QUEST_ID,
+		tostring(starterPresent)
+	))
+end
+
+local function formatVector2(value: Vector2?): string
+	if typeof(value) ~= "Vector2" then
+		return "nil"
+	end
+	return string.format("(%.1f, %.1f)", value.X, value.Y)
+end
+
+local function formatUDim2(value: UDim2?): string
+	if typeof(value) ~= "UDim2" then
+		return "nil"
+	end
+	return string.format(
+		"(%0.3f,%d,%0.3f,%d)",
+		value.X.Scale,
+		value.X.Offset,
+		value.Y.Scale,
+		value.Y.Offset
+	)
+end
+
+local function getQuestScreenGui(): ScreenGui?
+	local current = canvas
+	while current do
+		if current:IsA("ScreenGui") then
+			return current
+		end
+		current = current.Parent
+	end
+	return nil
+end
+
+local function getAncestorVisibilityChain(instance: Instance?): string
+	if not instance then
+		return "nil"
+	end
+
+	local entries = {}
+	local current = instance
+	while current do
+		if current:IsA("ScreenGui") then
+			table.insert(entries, string.format("%s(ScreenGui Enabled=%s)", current.Name, tostring(current.Enabled)))
+		elseif current:IsA("GuiObject") then
+			table.insert(entries, string.format("%s(%s Visible=%s)", current.Name, current.ClassName, tostring(current.Visible)))
+		else
+			table.insert(entries, string.format("%s(%s)", current.Name, current.ClassName))
+		end
+		current = current.Parent
+	end
+
+	return table.concat(entries, " <- ")
+end
+
+local function getVisibilityDiagnostics()
+	local screenGui = getQuestScreenGui()
+	local absoluteSize = canvas and canvas.AbsoluteSize or Vector2.zero
+	local absolutePosition = canvas and canvas.AbsolutePosition or Vector2.zero
+	local questListPath = scrollFrame and scrollFrame:GetFullName() or "nil"
+
+	return {
+		targetPath = canvas and canvas:GetFullName() or "nil",
+		trueVisibleRoot = canvas and canvas:GetFullName() or "nil",
+		screenGuiPath = screenGui and screenGui:GetFullName() or "nil",
+		screenGuiEnabled = screenGui ~= nil and screenGui.Enabled == true or false,
+		canvasVisible = canvas ~= nil and canvas.Visible == true or false,
+		contentVisible = scrollFrame ~= nil and scrollFrame.Visible == true or false,
+		overlayVisible = overlay ~= nil and overlay.Visible == true or false,
+		groupTransparency = canvas and canvas.GroupTransparency or 1,
+		absolutePositionText = formatVector2(absolutePosition),
+		absoluteSizeText = formatVector2(absoluteSize),
+		absoluteSize = absoluteSize,
+		zIndex = canvas and canvas.ZIndex or -1,
+		positionText = canvas and formatUDim2(canvas.Position) or "nil",
+		anchorPointText = canvas and formatVector2(canvas.AnchorPoint) or "nil",
+		ancestorChain = getAncestorVisibilityChain(canvas),
+		contentPath = questListPath,
+	}
+end
+
+local function logVisibilityDiagnostics(reason: string)
+	local diagnostics = getVisibilityDiagnostics()
+	log(string.format(
+		"visibility_check reason=%s target=%s trueVisibleRoot=%s screenGui=%s screenGuiEnabled=%s canvasVisible=%s contentVisible=%s overlayVisible=%s groupTransparency=%.2f absPos=%s absSize=%s zIndex=%d position=%s anchorPoint=%s contentPath=%s ancestors=%s",
+		reason,
+		diagnostics.targetPath,
+		diagnostics.trueVisibleRoot,
+		diagnostics.screenGuiPath,
+		tostring(diagnostics.screenGuiEnabled),
+		tostring(diagnostics.canvasVisible),
+		tostring(diagnostics.contentVisible),
+		tostring(diagnostics.overlayVisible),
+		diagnostics.groupTransparency,
+		diagnostics.absolutePositionText,
+		diagnostics.absoluteSizeText,
+		diagnostics.zIndex,
+		diagnostics.positionText,
+		diagnostics.anchorPointText,
+		diagnostics.contentPath,
+		diagnostics.ancestorChain
+	))
+end
+
+local function connectVisibilityWatchers()
+	if _visibilityWatchConnected or not canvas then
+		return
+	end
+
+	_visibilityWatchConnected = true
+
+	canvas:GetPropertyChangedSignal("Visible"):Connect(function()
+		if visible and canvas and not canvas.Visible then
+			logVisibilityDiagnostics("external_hide_canvas_visible_false")
+		end
+	end)
+
+	if scrollFrame then
+		scrollFrame:GetPropertyChangedSignal("Visible"):Connect(function()
+			if visible and scrollFrame and not scrollFrame.Visible then
+				logVisibilityDiagnostics("external_hide_quest_list_hidden")
+			end
+		end)
+	end
+
+	local screenGui = getQuestScreenGui()
+	if screenGui then
+		screenGui:GetPropertyChangedSignal("Enabled"):Connect(function()
+			if visible and screenGui.Enabled == false then
+				logVisibilityDiagnostics("external_hide_screen_gui_disabled")
+			end
+		end)
+	end
+end
 
 -- REMOTE HELPERS
 
@@ -598,6 +783,7 @@ end
 local function refreshUI()
 	local status = fetchStatus()
 	if not status or not status.quests or not status.dataLoaded then return end
+	logStatusPayload(status, "fetch_status")
 	_status = status
 
 	if shouldRebuildRows(status) then
@@ -820,14 +1006,29 @@ end
 function QuestsPanel.Show()
 	if not canvas then return end
 	visible = true
+	local screenGui = getQuestScreenGui()
+	if screenGui then
+		screenGui.Enabled = true
+	end
 	canvas.Visible = true
+	canvas.GroupTransparency = 0.12
+	if scrollFrame then
+		scrollFrame.Visible = true
+	end
+	log(string.format(
+		"show_called target=%s canvasVisible=%s overlayTarget=%s",
+		canvas:GetFullName(),
+		tostring(canvas.Visible),
+		overlay and overlay:GetFullName() or "nil"
+	))
+	logVisibilityDiagnostics("show_start")
 
 	if overlay then
 		overlay.Visible = true
 		TweenService:Create(overlay, TweenInfo.new(0.18), { BackgroundTransparency = 0.55 }):Play()
 	end
 
-	uiScale.Scale = 0.88
+	uiScale.Scale = 0.96
 	TweenService:Create(canvas,  TweenInfo.new(0.18), { GroupTransparency = 0 }):Play()
 	TweenService:Create(uiScale, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 
@@ -840,11 +1041,18 @@ function QuestsPanel.Show()
 			if lbl and next(_questRows) ~= nil then lbl.Visible = false end
 		end
 	end)
+	task.delay(0.05, function()
+		if visible and canvas then
+			logVisibilityDiagnostics("show_post_open")
+		end
+	end)
+	log(string.format("show_completed target=%s finalVisible=%s", canvas:GetFullName(), tostring(QuestsPanel.IsVisible())))
 end
 
 function QuestsPanel.Hide()
 	if not canvas then return end
 	visible = false
+	log(string.format("hide_called target=%s", canvas:GetFullName()))
 
 	TweenService:Create(canvas,  TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { GroupTransparency = 1 }):Play()
 	TweenService:Create(uiScale, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.92 }):Play()
@@ -857,6 +1065,7 @@ function QuestsPanel.Hide()
 		if not visible and canvas then
 			canvas.Visible = false
 			if overlay then overlay.Visible = false end
+			log(string.format("hide_completed target=%s finalVisible=%s", canvas:GetFullName(), tostring(visible)))
 		end
 	end)
 
@@ -864,7 +1073,25 @@ function QuestsPanel.Hide()
 end
 
 function QuestsPanel.IsVisible()
-	return visible
+	if not visible or not canvas or not canvas.Visible then
+		return false
+	end
+
+	local screenGui = getQuestScreenGui()
+	if screenGui and screenGui.Enabled == false then
+		return false
+	end
+
+	local absoluteSize = canvas.AbsoluteSize
+	if absoluteSize.X <= 0 or absoluteSize.Y <= 0 then
+		return false
+	end
+
+	return true
+end
+
+function QuestsPanel.GetVisibilityDiagnostics()
+	return getVisibilityDiagnostics()
 end
 
 function QuestsPanel.Toggle()
@@ -877,6 +1104,7 @@ function QuestsPanel.Init(screenGui, onClose)
 	closeCallback = onClose
 
 	buildPanel(screenGui)
+	connectVisibilityWatchers()
 
 	task.spawn(function()
 		ensureRemotes()
@@ -892,6 +1120,7 @@ function QuestsPanel.Init(screenGui, onClose)
 			_updateRemote.OnClientEvent:Connect(function(status)
 				_status = status
 				if not status or not status.quests then return end
+				logStatusPayload(status, "remote_update")
 				if shouldRebuildRows(status) then
 					clearQuestRows()
 					buildQuestRows(status.quests, status.day)

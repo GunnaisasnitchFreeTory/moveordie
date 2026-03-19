@@ -5,7 +5,7 @@
 	Used by: PlayerStateService, MatchManager (future), UI (future)
 ]]
 
-export type State = "Lobby" | "Waiting" | "InMatch" | "Spectating" | "AFK"
+export type State = "Lobby" | "Waiting" | "InMatch" | "Spectating" | "AFK" | "TutorialLocked"
 
 local PlayerState = {}
 
@@ -16,6 +16,7 @@ PlayerState.States = {
 	InMatch = "InMatch",     -- Currently playing in a match
 	Spectating = "Spectating", -- Eliminated or observing
 	AFK = "AFK",             -- Away from keyboard, skip for matchmaking
+	TutorialLocked = "TutorialLocked", -- Must finish tutorial before movement/match participation
 }
 
 -- Default state for new players
@@ -28,8 +29,7 @@ end
 
 -- Get all state names as array
 function PlayerState.GetAll(): { State }
-	return { "Lobby", "Waiting", "InMatch", "Spectating", "AFK" }
+	return { "Lobby", "Waiting", "InMatch", "Spectating", "AFK", "TutorialLocked" }
 end
 
 return PlayerState
-

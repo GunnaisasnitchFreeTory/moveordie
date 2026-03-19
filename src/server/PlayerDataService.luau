@@ -133,6 +133,7 @@ local function replicateToClient(player: Player, data: { [string]: any })
 
 	player:SetAttribute(A.LifetimeDeaths,    data.LifetimeDeaths or 0)
 	player:SetAttribute(A.TimePlayedSeconds, data.TimePlayedSeconds or 0)
+	player:SetAttribute(A.TutorialCompleted, data.TutorialCompleted == true)
 end
 
 local function replicateField(player: Player, key: string, value: any)
@@ -172,6 +173,8 @@ local function replicateField(player: Player, key: string, value: any)
 		player:SetAttribute(A.LifetimeDeaths, value or 0)
 	elseif key == "TimePlayedSeconds" then
 		player:SetAttribute(A.TimePlayedSeconds, value or 0)
+	elseif key == "TutorialCompleted" then
+		player:SetAttribute(A.TutorialCompleted, value == true)
 	end
 end
 

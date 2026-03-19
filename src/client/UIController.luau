@@ -67,6 +67,7 @@ local HUDPanel          = require(UI:WaitForChild("HUDPanel"))
 local PANEL_STUB = {
 	Init = function() end, Show = function() end, Hide = function() end,
 	IsVisible = function() return false end, Toggle = function() end,
+	SetBusy = function() end, TryAutoShow = function() end,
 }
 
 local _failedPanels = {}
@@ -115,6 +116,7 @@ local SpinWheelPanel    = safeRequire("SpinWheelPanel")
 local KillFeed          = safeRequire("KillFeed")
 local MatchResultsPanel = safeRequire("MatchResultsPanel")
 local DailyRewardsPanel = safeRequire("DailyRewardsPanel")
+local TutorialPanel = safeRequire("TutorialPanel")
 local StatsPanel        = safeRequire("StatsPanel")
 local ModeVotePanel     = safeRequire("ModeVotePanel")
 local QuestsPanel       = safeRequire("QuestsPanel")
@@ -130,6 +132,20 @@ local LocalPlayer = Players.LocalPlayer
 local initialized = false
 local currentPanel: string? = nil
 local matchLocked = false
+local tutorialStatusRemote: RemoteFunction? = nil
+local tutorialAcknowledgeRemote: RemoteFunction? = nil
+local dailyQuestActionRemote: RemoteEvent? = nil
+
+local onboardingState = {
+	tutorialStatusResolved = false,
+	tutorialCompleted = false,
+	tutorialPending = false,
+	tutorialSaving = false,
+	dailyAllowed = false,
+	dailyAutoShowQueued = false,
+	dailyAutoShowStarted = false,
+	releaseDailyAfterTutorialClose = false,
+}
 
 local MATCH_LOCKED_PANELS = {
 	Shop = true,
@@ -157,6 +173,10 @@ local function log(...)
 	if UIConfig.DebugLog then
 		print("[UIController]", ...)
 	end
+end
+
+local function onboardingLog(message: string)
+	print("[OnboardingFlow] " .. message)
 end
 
 local function applyLuckiestGuyFontToInstance(instance: Instance)
@@ -198,6 +218,10 @@ local function applyLuckiestGuyToBillboardText(root: Instance)
 end
 
 local function closeCurrentPanel()
+	if currentPanel == "Tutorial" and TutorialPanel.IsVisible() then
+		return
+	end
+
 	if currentPanel == "Shop" and ShopPanel.IsVisible() then
 		ShopPanel.Hide()
 	elseif currentPanel == "Crowns" and FateCrownsPanel.IsVisible() then
@@ -218,6 +242,8 @@ local function closeCurrentPanel()
 		SpinWheelPanel.Hide()
 	elseif currentPanel == "Daily" and DailyRewardsPanel.IsVisible() then
 		DailyRewardsPanel.Hide()
+	elseif currentPanel == "Tutorial" and TutorialPanel.IsVisible() then
+		TutorialPanel.Hide()
 	elseif currentPanel == "Stats" and StatsPanel.IsVisible() then
 		StatsPanel.Hide()
 	elseif currentPanel == "Quests" and QuestsPanel.IsVisible() then
@@ -242,12 +268,99 @@ end
 
 UIController.CloseAllPanels = closeCurrentPanel
 
+local function isPanelVisible(name: string): boolean
+	if name == "Shop" then
+		return ShopPanel.IsVisible()
+	elseif name == "Crowns" then
+		return FateCrownsPanel.IsVisible()
+	elseif name == "Pets" then
+		return PetsPanel.IsVisible()
+	elseif name == "Index" then
+		return IndexPanel.IsVisible()
+	elseif name == "CrateShop" then
+		return CrateShopPanel.IsVisible()
+	elseif name == "Spectate" then
+		return SpectatePanel.IsVisible()
+	elseif name == "Settings" then
+		return SettingsPanel.IsVisible()
+	elseif name == "Icons" then
+		return IconImagesPanel.IsVisible()
+	elseif name == "SpinWheel" then
+		return SpinWheelPanel.IsVisible()
+	elseif name == "Daily" then
+		return DailyRewardsPanel.IsVisible()
+	elseif name == "Tutorial" then
+		return TutorialPanel.IsVisible()
+	elseif name == "Stats" then
+		return StatsPanel.IsVisible()
+	elseif name == "Quests" then
+		return QuestsPanel.IsVisible()
+	elseif name == "ForceNextMode" then
+		return ForceNextModePanel.IsVisible()
+	elseif name == "CustomSwordComingSoon" then
+		return CustomSwordComingSoonPanel.IsVisible()
+	elseif name == "NpcDialogue" then
+		return NpcDialoguePanel.IsVisible()
+	elseif name == "ToolboxDialogue" then
+		return ToolboxDialoguePanel.IsVisible()
+	elseif name == "EmoteShop" then
+		return EmoteShopPanel.IsVisible()
+	elseif name == "PerkShop" or name == "AbilityShop" then
+		return AbilityShopPanel.IsVisible()
+	end
+
+	return false
+end
+
+local function shouldHideMatchHudForPanel(name: string): boolean
+	return name ~= "Quests"
+end
+
 local function openPanel(name: string, payload: any?)
+	if TutorialPanel.IsVisible() and name ~= "Tutorial" then
+		if name == "Daily" then
+			onboardingState.dailyAutoShowQueued = true
+			onboardingLog("Daily Rewards blocked because tutorial is pending (modal_active)")
+		end
+		return
+	end
+
+	if name == "Daily" and not onboardingState.dailyAllowed then
+		onboardingState.dailyAutoShowQueued = true
+		onboardingLog("Daily Rewards blocked because tutorial is pending (open_request)")
+		return
+	end
+
 	if matchLocked and MATCH_LOCKED_PANELS[name] then
 		log("Blocked opening " .. name .. " -- player is InMatch")
 		return
 	end
 
+	if name == "Tutorial" and TutorialPanel.IsVisible() then
+		return
+	end
+
+	if currentPanel == name then
+		local panelVisible = isPanelVisible(name)
+		if name == "Quests" then
+			log(string.format(
+				"[QuestsClick] action=toggle_check path=UIController.openPanel currentPanel=%s panelVisible=%s",
+				tostring(currentPanel),
+				tostring(panelVisible)
+			))
+		end
+		if not panelVisible then
+			log(string.format(
+				"[UIController] staleCurrentPanelDetected panel=%s currentPanel=%s visible=false reopening=true",
+				name,
+				tostring(currentPanel)
+			))
+			currentPanel = nil
+		else
+			closeCurrentPanel()
+			return
+		end
+	end
 	if currentPanel == name then
 		closeCurrentPanel()
 		return
@@ -275,9 +388,12 @@ local function openPanel(name: string, payload: any?)
 		SpinWheelPanel.Show()
 	elseif name == "Daily" then
 		DailyRewardsPanel.Show()
+	elseif name == "Tutorial" then
+		TutorialPanel.Show()
 	elseif name == "Stats" then
 		StatsPanel.Show()
 	elseif name == "Quests" then
+		log("[QuestsClick] action=open path=UIController.openPanel target=PanelGui.QuestsPanel")
 		QuestsPanel.Show()
 	elseif name == "ForceNextMode" then
 		ForceNextModePanel.Show()
@@ -293,9 +409,150 @@ local function openPanel(name: string, payload: any?)
 		AbilityShopPanel.Show()
 	end
 
-	HUDPanel.SetBannerOverrideHidden(true)
+	local hideMatchHud = shouldHideMatchHudForPanel(name)
+	if name == "Quests" then
+		local diagnostics = QuestsPanel.GetVisibilityDiagnostics and QuestsPanel.GetVisibilityDiagnostics() or nil
+		if diagnostics then
+			log(string.format(
+				"[QuestsClick] action=post_open path=UIController.openPanel target=%s trueVisibleRoot=%s screenGui=%s screenGuiEnabled=%s panelVisible=%s contentVisible=%s absPos=%s absSize=%s zIndex=%s hideMatchHud=%s",
+				tostring(diagnostics.targetPath),
+				tostring(diagnostics.trueVisibleRoot),
+				tostring(diagnostics.screenGuiPath),
+				tostring(diagnostics.screenGuiEnabled),
+				tostring(QuestsPanel.IsVisible()),
+				tostring(diagnostics.contentVisible),
+				tostring(diagnostics.absolutePositionText),
+				tostring(diagnostics.absoluteSizeText),
+				tostring(diagnostics.zIndex),
+				tostring(hideMatchHud)
+			))
+		else
+			log(string.format(
+				"[QuestsClick] action=post_open path=UIController.openPanel target=PanelGui.QuestsPanel panelVisible=%s hideMatchHud=%s diagnostics=unavailable",
+				tostring(QuestsPanel.IsVisible()),
+				tostring(hideMatchHud)
+			))
+		end
+		if hideMatchHud then
+			log("[QuestsClick] touched_match_hud_target=HUDPanel.SetBannerOverrideHidden(true)")
+		else
+			log("[QuestsClick] touched_match_hud_target=none")
+		end
+	end
+	HUDPanel.SetBannerOverrideHidden(hideMatchHud)
 
 	log("Opened:", name)
+end
+
+local function getTutorialStatusRemote(): RemoteFunction?
+	if tutorialStatusRemote and tutorialStatusRemote.Parent then
+		return tutorialStatusRemote
+	end
+
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:WaitForChild("Remotes", 10)
+	if not remotes then
+		warn("[OnboardingFlow] Remotes folder missing while resolving tutorial status")
+		return nil
+	end
+
+	local remote = remotes:FindFirstChild("Tutorial_GetStatus") or remotes:WaitForChild("Tutorial_GetStatus", 10)
+	if remote and remote:IsA("RemoteFunction") then
+		tutorialStatusRemote = remote
+		return tutorialStatusRemote
+	end
+
+	warn("[OnboardingFlow] Tutorial_GetStatus remote missing")
+	return nil
+end
+
+local function getTutorialAcknowledgeRemote(): RemoteFunction?
+	if tutorialAcknowledgeRemote and tutorialAcknowledgeRemote.Parent then
+		return tutorialAcknowledgeRemote
+	end
+
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:WaitForChild("Remotes", 10)
+	if not remotes then
+		warn("[OnboardingFlow] Remotes folder missing while acknowledging tutorial")
+		return nil
+	end
+
+	local remote = remotes:FindFirstChild("Tutorial_Acknowledge") or remotes:WaitForChild("Tutorial_Acknowledge", 10)
+	if remote and remote:IsA("RemoteFunction") then
+		tutorialAcknowledgeRemote = remote
+		return tutorialAcknowledgeRemote
+	end
+
+	warn("[OnboardingFlow] Tutorial_Acknowledge remote missing")
+	return nil
+end
+
+local function getDailyQuestActionRemote(): RemoteEvent?
+	if dailyQuestActionRemote and dailyQuestActionRemote.Parent then
+		return dailyQuestActionRemote
+	end
+
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:WaitForChild("Remotes", 10)
+	if not remotes then
+		warn("[UIController] Remotes folder missing while resolving DailyQuest_Action")
+		return nil
+	end
+
+	local remote = remotes:FindFirstChild("DailyQuest_Action") or remotes:WaitForChild("DailyQuest_Action", 10)
+	if remote and remote:IsA("RemoteEvent") then
+		dailyQuestActionRemote = remote
+		return dailyQuestActionRemote
+	end
+
+	warn("[UIController] DailyQuest_Action remote missing")
+	return nil
+end
+
+local function reportIndexOpenedForQuest()
+	local remote = getDailyQuestActionRemote()
+	if not remote then
+		return
+	end
+	remote:FireServer("IndexOpened")
+	print("[UIController] quest_action=IndexOpened fired")
+end
+
+local function startDailyRewardsAutoShow(reason: string)
+	if onboardingState.dailyAutoShowStarted then
+		return
+	end
+	onboardingState.dailyAutoShowStarted = true
+	onboardingLog("Starting Daily Rewards auto-show (" .. reason .. ")")
+
+	if DailyRewardsPanel and DailyRewardsPanel.TryAutoShow then
+		DailyRewardsPanel.TryAutoShow(function()
+			openPanel("Daily")
+		end)
+	end
+end
+
+local function allowDailyRewards(reason: string)
+	local wasAllowed = onboardingState.dailyAllowed
+	onboardingState.dailyAllowed = true
+	if not wasAllowed then
+		onboardingLog("Daily Rewards allowed (" .. reason .. ")")
+	end
+
+	if onboardingState.dailyAutoShowQueued then
+		startDailyRewardsAutoShow(reason)
+	end
+end
+
+local function requestDailyRewardsAutoShow(reason: string)
+	onboardingState.dailyAutoShowQueued = true
+	if onboardingState.dailyAllowed then
+		startDailyRewardsAutoShow(reason)
+	else
+		onboardingLog("Daily Rewards blocked because tutorial is pending (" .. reason .. ")")
+	end
+end
+
+local function tutorialPanelAvailable(): boolean
+	return not table.find(_failedPanels, "TutorialPanel")
 end
 
 local function getInstancePosition(instance: Instance): Vector3?
@@ -360,13 +617,16 @@ function UIController.Init()
 		return
 	end
 	local panelGui = Components.CreateScreenGui("PanelGui", 10)
+	local tutorialGui = Components.CreateScreenGui("TutorialGui", 200)
 
 	Components.SetupResponsiveScale(hudGui)
 	Components.SetupResponsiveScale(panelGui)
+	Components.SetupResponsiveScale(tutorialGui)
 
 	-- Global UI typography override: force Luckiest Guy for every text object.
 	applyLuckiestGuyFontRecursively(hudGui)
 	applyLuckiestGuyFontRecursively(panelGui)
+	applyLuckiestGuyFontRecursively(tutorialGui)
 
 	local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
 	if playerGui then
@@ -395,6 +655,86 @@ function UIController.Init()
 		HUDPanel.SetBannerOverrideHidden(false)
 	end
 
+	local function onTutorialClosed()
+		currentPanel = nil
+		HUDPanel.SetBannerOverrideHidden(false)
+		onboardingState.tutorialPending = false
+		onboardingState.tutorialSaving = false
+		TutorialPanel.SetBusy(false)
+		onboardingLog("Tutorial closed")
+
+		if onboardingState.releaseDailyAfterTutorialClose then
+			onboardingState.releaseDailyAfterTutorialClose = false
+			allowDailyRewards("tutorial_completion")
+		end
+	end
+
+	local function onTutorialAcknowledge()
+		if onboardingState.tutorialSaving then
+			return
+		end
+
+		onboardingState.tutorialSaving = true
+		TutorialPanel.SetBusy(true)
+		onboardingLog("Tutorial acknowledge requested")
+
+		task.spawn(function()
+			local remote = getTutorialAcknowledgeRemote()
+			if not remote then
+				onboardingState.tutorialSaving = false
+				TutorialPanel.SetBusy(false)
+				return
+			end
+
+			local ok, result = pcall(remote.InvokeServer, remote)
+			if not ok or type(result) ~= "table" or result.success ~= true then
+				onboardingState.tutorialSaving = false
+				TutorialPanel.SetBusy(false)
+				warn("[OnboardingFlow] Tutorial completion save failed:", ok and result.reason or tostring(result))
+				return
+			end
+
+			onboardingState.tutorialCompleted = true
+			onboardingState.releaseDailyAfterTutorialClose = true
+			onboardingLog(string.format(
+				"Tutorial completion acknowledged persisted=%s alreadyCompleted=%s",
+				tostring(result.persisted ~= false),
+				tostring(result.alreadyCompleted == true)
+			))
+			TutorialPanel.Hide()
+		end)
+	end
+
+	local function reconcileTutorialFromAttribute(reason: string)
+		local completed = LocalPlayer:GetAttribute("TutorialCompleted") == true
+		onboardingState.tutorialCompleted = completed
+
+		if completed then
+			onboardingLog("Replicated tutorial state is complete (" .. reason .. ")")
+
+			if onboardingState.tutorialPending then
+				onboardingState.releaseDailyAfterTutorialClose = true
+				if TutorialPanel.IsVisible() then
+					onboardingLog("Closing tutorial because replicated completion arrived (" .. reason .. ")")
+					TutorialPanel.Hide()
+					return
+				end
+
+				onboardingState.tutorialPending = false
+				onboardingState.tutorialSaving = false
+				onboardingState.releaseDailyAfterTutorialClose = false
+			end
+
+			allowDailyRewards(reason)
+			return
+		end
+
+		onboardingState.dailyAllowed = false
+		if onboardingState.tutorialStatusResolved then
+			onboardingLog("Replicated tutorial state is incomplete (" .. reason .. ")")
+		end
+	end
+
 	local function safeInit(name, fn, ...)
 		local args = {...}
 		local ok, err = pcall(function()
@@ -418,6 +758,10 @@ function UIController.Init()
 	safeInit("IconImagesPanel", IconImagesPanel.Init, panelGui, onPanelClosed)
 	safeInit("SpinWheelPanel", SpinWheelPanel.Init, panelGui, onPanelClosed)
 	safeInit("DailyRewardsPanel", DailyRewardsPanel.Init, panelGui, onPanelClosed)
+	safeInit("TutorialPanel", TutorialPanel.Init, tutorialGui, {
+		onAcknowledge = onTutorialAcknowledge,
+		onClosed = onTutorialClosed,
+	})
 	safeInit("StatsPanel", StatsPanel.Init, panelGui, onPanelClosed)
 	safeInit("QuestsPanel", QuestsPanel.Init, panelGui, onPanelClosed)
 	safeInit("CustomSwordComingSoonPanel", CustomSwordComingSoonPanel.Init, panelGui, onPanelClosed)
@@ -474,7 +818,10 @@ function UIController.Init()
 			onIcons    = function() openPanel("Icons") end,
 			onDaily    = function() openPanel("Daily") end,
 			onStats    = function() openPanel("Stats") end,
-			onQuests   = function() openPanel("Quests") end,
+			onQuests   = function()
+				log("[QuestsClick] action=clicked path=HUDPanel.onQuests")
+				openPanel("Quests")
+			end,
 			onForceNextMode = function() openPanel("ForceNextMode") end,
 			onAFK      = function()
 				task.spawn(function()
@@ -520,6 +867,9 @@ function UIController.Init()
 	end
 	onPlayerStateChanged()
 	LocalPlayer:GetAttributeChangedSignal("PlayerState"):Connect(onPlayerStateChanged)
+	LocalPlayer:GetAttributeChangedSignal("TutorialCompleted"):Connect(function()
+		reconcileTutorialFromAttribute("attribute_changed")
+	end)
 
 	task.spawn(function()
 		local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
@@ -1634,11 +1984,79 @@ function UIController.Init()
 		print("[UIController] READY")
 	end
 
-	if DailyRewardsPanel and DailyRewardsPanel.TryAutoShow then
-		DailyRewardsPanel.TryAutoShow(function()
-			openPanel("Daily")
-		end)
-	end
+	task.spawn(function()
+		local MAX_ATTEMPTS = 20
+		local RETRY_WAIT = 0.5
+
+		for attempt = 1, MAX_ATTEMPTS do
+			local remote = getTutorialStatusRemote()
+			if remote then
+				local ok, status = pcall(remote.InvokeServer, remote)
+				if ok and type(status) == "table" then
+					if status.dataLoaded == true then
+						onboardingState.tutorialStatusResolved = true
+						onboardingState.tutorialCompleted = status.tutorialCompleted == true
+						onboardingLog(string.format(
+							"Join classification tutorialNeeded=%s tutorialCompleted=%s attempt=%d",
+							tostring(not onboardingState.tutorialCompleted),
+							tostring(onboardingState.tutorialCompleted),
+							attempt
+						))
+
+						if onboardingState.tutorialCompleted then
+							allowDailyRewards("tutorial_already_complete")
+							requestDailyRewardsAutoShow("startup_join")
+						else
+							if not tutorialPanelAvailable() then
+								warn("[OnboardingFlow] TutorialPanel unavailable -- allowing Daily Rewards fallback")
+								allowDailyRewards("tutorial_panel_unavailable")
+								requestDailyRewardsAutoShow("startup_join_fallback")
+								return
+							end
+
+							onboardingState.tutorialPending = true
+							requestDailyRewardsAutoShow("startup_join")
+							onboardingLog("Tutorial opened")
+							openPanel("Tutorial")
+						end
+						return
+					end
+
+					if attempt == 1 or attempt == MAX_ATTEMPTS then
+						onboardingLog(string.format(
+							"Waiting for tutorial status dataLoaded=false attempt=%d/%d",
+							attempt,
+							MAX_ATTEMPTS
+						))
+					end
+
+					if LocalPlayer:GetAttribute("TutorialCompleted") == true then
+						reconcileTutorialFromAttribute("attribute_ready_before_remote")
+						return
+					end
+				elseif attempt == 1 or attempt == MAX_ATTEMPTS then
+					warn("[OnboardingFlow] Tutorial status invoke failed:", ok and "invalid status payload" or tostring(status))
+				end
+			end
+
+			task.wait(RETRY_WAIT)
+		end
+
+		onboardingState.tutorialStatusResolved = true
+		onboardingState.tutorialCompleted = false
+		if not tutorialPanelAvailable() then
+			warn("[OnboardingFlow] TutorialPanel unavailable after timeout -- allowing Daily Rewards fallback")
+			allowDailyRewards("tutorial_panel_unavailable")
+			requestDailyRewardsAutoShow("startup_timeout_fallback")
+			return
+		end
+
+		onboardingState.tutorialPending = true
+		onboardingLog("Join classification timed out -- defaulting to tutorial-needed")
+		requestDailyRewardsAutoShow("startup_timeout")
+		onboardingLog("Tutorial opened")
+		openPanel("Tutorial")
+	end)
 
 	task.spawn(function()
 		local ContentProvider = game:GetService("ContentProvider")

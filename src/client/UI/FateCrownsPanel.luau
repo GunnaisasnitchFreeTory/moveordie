@@ -77,6 +77,8 @@ local closeCallback: (() -> ())? = nil
 local equippedId: string? = nil
 
 local FateCrownsPanel = {}
+local CROWNS_PANEL_OPEN_ATTR = "CrownsPanelOpen"
+local CROWNS_PANEL_VIEWED_TOKEN_ATTR = "CrownsPanelViewedToken"
 
 local function getOwnedCrownSet(): { [string]: boolean }
 	local json = player:GetAttribute("OwnedCrowns") or "[]"
@@ -235,6 +237,9 @@ end
 function FateCrownsPanel.Show()
 	if visible then return end
 	visible = true
+	player:SetAttribute(CROWNS_PANEL_OPEN_ATTR, true)
+	local viewedToken = tonumber(player:GetAttribute(CROWNS_PANEL_VIEWED_TOKEN_ATTR)) or 0
+	player:SetAttribute(CROWNS_PANEL_VIEWED_TOKEN_ATTR, viewedToken + 1)
 	overlay.Visible = true
 	refresh()
 	SoundUtil.Open()
@@ -244,6 +249,7 @@ end
 function FateCrownsPanel.Hide()
 	if not visible then return end
 	visible = false
+	player:SetAttribute(CROWNS_PANEL_OPEN_ATTR, false)
 	overlay.Visible = false
 	local t = AnimUtil.ClosePanel(canvas, uiScale)
 	task.spawn(function()

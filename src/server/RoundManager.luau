@@ -37,6 +37,7 @@ local TungTungSahurService   = require(Server:WaitForChild("TungTungSahurService
 
 --[[ PHASE CONSTANTS ]]
 local Phase = {
+	Interaction = "Interaction",
 	FreeMove = "FreeMove",
 	Telegraph = "Telegraph",
 	BeamWarning = "BeamWarning",
@@ -64,6 +65,16 @@ local winner: Player? = nil
 local matchStartTime: number = 0
 local initialAliveCount: number = 0
 local matchMode: string = "Normal"
+type RoundTimings = {
+	InteractionWindowSeconds: number,
+	FreeMoveSeconds: number,
+	TelegraphGraceSeconds: number,
+	TelegraphSeconds: number,
+	FreezeSeconds: number,
+	StrikeSeconds: number,
+	RecoverySeconds: number,
+}
+local currentRoundTimings: RoundTimings = RoundConfig.GetTimingsForRound(0)
 
 -- Freeze state storage with independent freeze reasons.
 type FreezeSnapshot = { WalkSpeed: number, JumpPower: number, JumpHeight: number }
@@ -95,6 +106,14 @@ local function getDQS()
 	local ok, mod = pcall(require, Server:FindFirstChild("DailyQuestService"))
 	if ok and mod then _DQS = mod else _DQS = false end
 	return _DQS
+end
+
+local _Feedback = nil
+local function getFeedback()
+	if _Feedback ~= nil then return _Feedback end
+	local ok, mod = pcall(require, Server:FindFirstChild("MatchFeedbackService"))
+	if ok and mod then _Feedback = mod else _Feedback = false end
+	return _Feedback
 end
 
 --[[ HELPERS ]]
@@ -145,6 +164,32 @@ end
 ]]
 local function getInMatchPlayers(): { Player }
 	return PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+end
+
+local function formatAlivePlayerNames(players: { Player }): string
+	if #players == 0 then
+		return "none"
+	end
+
+	local names = table.create(#players)
+	for _, player in ipairs(players) do
+		table.insert(names, player.Name)
+	end
+	return table.concat(names, ",")
+end
+
+local function logAliveSnapshot(context: string, extra: string?): number
+	local players = getInMatchPlayers()
+	log(string.format(
+		"[RoundAliveSnapshot] context=%s round=%d phase=%s alive=%d players=%s extra=%s",
+		context,
+		currentRound,
+		tostring(currentPhase),
+		#players,
+		formatAlivePlayerNames(players),
+		tostring(extra or "")
+	))
+	return #players
 end
 
 local function isRoundFreezeLocked(player: Player): boolean
@@ -404,16 +449,26 @@ end
 --[[
 	Freeze all InMatch players.
 ]]
-local function freezeAllPlayers()
+local function freezeAllPlayers(freezeDuration: number, scheduledFreezeAt: number?)
 	setMovementCountdownHudState(false, 0, "FreezeAllPlayers")
 	local players = getInMatchPlayers()
-	log(string.format("[GameplayFreezeStart] round=%d players=%d", currentRound, #players))
+	local actualFreezeAt = workspace:GetServerTimeNow()
+	local freezeDrift = if scheduledFreezeAt then actualFreezeAt - scheduledFreezeAt else 0
+	log(string.format(
+		"[FreezeExecution] round=%d players=%d scheduled=%.3f actual=%.3f drift=%.3f duration=%.2f",
+		currentRound,
+		#players,
+		scheduledFreezeAt or 0,
+		actualFreezeAt,
+		freezeDrift,
+		freezeDuration
+	))
 	for _, player in ipairs(players) do
 		addFreezeReason(player, FREEZE_REASON_GAMEPLAY)
 	end
 	if freezeRemote then
 		for _, player in ipairs(players) do
-			freezeRemote:FireClient(player, "Freeze", RoundConfig.FreezeSeconds)
+			freezeRemote:FireClient(player, "Freeze", freezeDuration)
 		end
 	end
 	log(string.format("Froze %d players", #players))
@@ -580,16 +635,17 @@ end
 	Check if match should end based on alive player count or limits.
 	Returns true if match should end, sets matchEndReason and winner.
 ]]
-local function checkMatchEnd(): boolean
+local function checkMatchEnd(context: string?): boolean
 	local alivePlayers = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
 	local aliveCount = #alivePlayers
+	local sourceContext = if type(context) == "string" and context ~= "" then context else "Unknown"
 	
 	-- No one survived
 	if aliveCount == 0 then
 		winner = nil
 		matchEndReason = MatchEndReason.NoWinners
 		log("No winners - all players eliminated")
-		logMatchEndTrigger(MatchEndReason.NoWinners, aliveCount, "all eliminated")
+		logMatchEndTrigger(MatchEndReason.NoWinners, aliveCount, string.format("context=%s all eliminated", sourceContext))
 		return true
 	end
 	
@@ -601,7 +657,7 @@ local function checkMatchEnd(): boolean
 		logMatchEndTrigger(
 			MatchEndReason.Winner,
 			aliveCount,
-			string.format("winner=%s", winner.Name)
+			string.format("context=%s winner=%s", sourceContext, winner.Name)
 		)
 		return true
 	end
@@ -619,7 +675,7 @@ local function checkMatchEnd(): boolean
 		logMatchEndTrigger(
 			MatchEndReason.CapReached,
 			aliveCount,
-			string.format("capType=MaxRounds currentRound=%d", currentRound)
+			string.format("context=%s capType=MaxRounds currentRound=%d", sourceContext, currentRound)
 		)
 		return true
 	end
@@ -637,7 +693,7 @@ local function checkMatchEnd(): boolean
 		logMatchEndTrigger(
 			MatchEndReason.CapReached,
 			aliveCount,
-			string.format("capType=MaxTime elapsed=%.1f", tick() - matchStartTime)
+			string.format("context=%s capType=MaxTime elapsed=%.1f", sourceContext, tick() - matchStartTime)
 		)
 		return true
 	end
@@ -665,8 +721,14 @@ local function safeWait(seconds: number): boolean
 		sampleMovementParticipation()
 		
 		-- Check if match should end mid-phase (e.g., solo player OOB-eliminated)
-		if checkMatchEnd() then
+		if checkMatchEnd("MidPhase:" .. tostring(currentPhase or "Unknown")) then
 			running = false
+			log(string.format(
+				"[RoundLoopStop] source=SafeWait round=%d phase=%s matchEndReason=%s",
+				currentRound,
+				tostring(currentPhase),
+				tostring(matchEndReason)
+			))
 			log("Match end detected mid-phase — aborting immediately")
 			return false
 		end
@@ -717,8 +779,43 @@ end
 	Every failure path calls HazardManager.Cleanup() so nothing lingers.
 ]]
 local function runRoundCycle(): boolean
+	local nextRound = currentRound + 1
+	log(string.format("[RoundLoop] NextRoundStarting round=%d", nextRound))
 	currentRound = currentRound + 1
 	log(string.format("=== Round %d starting ===", currentRound))
+	currentRoundTimings = RoundConfig.GetTimingsForRound(currentRound)
+	local pacingTier = if type(RoundConfig.GetPacingTier) == "function"
+		then RoundConfig.GetPacingTier(currentRound)
+		else (RoundConfig.IsEarlyOverrideRound(currentRound) and "EarlyRounds" or "Base")
+	local interactionWindow = math.max(0, math.min(currentRoundTimings.InteractionWindowSeconds or 0, currentRoundTimings.FreeMoveSeconds))
+	local freeMoveRemainder = math.max(0, currentRoundTimings.FreeMoveSeconds - interactionWindow)
+	local beamWarningDuration = math.max(0, currentRoundTimings.FreezeSeconds - currentRoundTimings.TelegraphSeconds)
+	log(string.format(
+		"[RoundPacing] round=%d tier=%s interaction=%.2f freeTotal=%.2f freeRemainder=%.2f grace=%.2f telegraph=%.2f beamWarning=%.2f strike=%.2f recovery=%.2f",
+		currentRound,
+		tostring(pacingTier),
+		interactionWindow,
+		currentRoundTimings.FreeMoveSeconds,
+		freeMoveRemainder,
+		currentRoundTimings.TelegraphGraceSeconds,
+		currentRoundTimings.TelegraphSeconds,
+		beamWarningDuration,
+		currentRoundTimings.StrikeSeconds,
+		currentRoundTimings.RecoverySeconds
+	))
+	log(string.format(
+		"[RoundTiming] round=%d pacingTier=%s interaction=%.2f freeTotal=%.2f freeRemainder=%.2f grace=%.2f telegraph=%.2f freeze=%.2f strike=%.2f recovery=%.2f",
+		currentRound,
+		tostring(pacingTier),
+		interactionWindow,
+		currentRoundTimings.FreeMoveSeconds,
+		freeMoveRemainder,
+		currentRoundTimings.TelegraphGraceSeconds,
+		currentRoundTimings.TelegraphSeconds,
+		currentRoundTimings.FreezeSeconds,
+		currentRoundTimings.StrikeSeconds,
+		currentRoundTimings.RecoverySeconds
+	))
 
 	-- Replicate round number for client UI
 	local matchStatus = ReplicatedStorage:FindFirstChild("MatchStatus")
@@ -746,19 +843,62 @@ local function runRoundCycle(): boolean
 
 	-- Sword spawns (both modes, rounds 2-7 only)
 	SwordSpawnService.OnRoundStart(currentRound)
+	local swordsSpawnedAt = workspace:GetServerTimeNow()
+	log(string.format(
+		"[SwordTimingCheckpoint] round=%d phase=RoundStart pacingTier=%s swordSpawnAt=%.3f",
+		currentRound,
+		tostring(pacingTier),
+		swordsSpawnedAt
+	))
+	do
+		local feedback = getFeedback()
+		if feedback and feedback.OnRoundStart then
+			pcall(feedback.OnRoundStart, currentRound, matchMode)
+		end
+	end
 	
 	-- Check caps before round starts
-	if checkMatchEnd() then
+	logAliveSnapshot("RoundStartBeforeCapCheck")
+	if checkMatchEnd("RoundStart") then
 		setMovementCountdownHudState(false, 0, "RoundStartCapReached")
 		cleanupModeRound()
 		running = false
 		return false
 	end
 	
-	-- Phase 1: FreeMove (players can reposition)
-	local freeMoveWindow = math.max(0, (RoundConfig.FreeMoveSeconds or 0) + (RoundConfig.TelegraphGraceSeconds or 0))
+	-- Phase 1A: Interaction window (sword pickup / first action opportunity)
+	local freeMoveWindow = math.max(0, freeMoveRemainder + currentRoundTimings.TelegraphGraceSeconds + interactionWindow)
+	local scheduledFreezeAt = workspace:GetServerTimeNow() + freeMoveWindow
 	setMovementCountdownHudState(true, freeMoveWindow, string.format("FreeMoveStart_%d", currentRound))
-	if not runPhase(Phase.FreeMove, RoundConfig.FreeMoveSeconds) then
+	log(string.format(
+		"[InteractionWindowStart] round=%d duration=%.2f swordSpawnAt=%.3f beamPrepStartsIn=%.2f",
+		currentRound,
+		interactionWindow,
+		swordsSpawnedAt,
+		freeMoveWindow
+	))
+	if interactionWindow > 0 and not runPhase(Phase.Interaction, interactionWindow) then
+		setMovementCountdownHudState(false, 0, "RoundCancelledInteraction")
+		clearRoundLockedFreezes(currentRound, "RoundCancelledInteraction")
+		HazardManager.Cleanup()
+		cleanupModeRound()
+		return false
+	end
+	log(string.format(
+		"[InteractionWindowEnd] round=%d duration=%.2f swordsToBeamDelta=%.2f",
+		currentRound,
+		interactionWindow,
+		math.max(0, workspace:GetServerTimeNow() - swordsSpawnedAt)
+	))
+
+	-- Phase 1B: FreeMove remainder (players can keep repositioning)
+	log(string.format(
+		"[FreezeWarningSchedule] round=%d deadline=%.3f countdownDuration=%.2f",
+		currentRound,
+		scheduledFreezeAt,
+		freeMoveWindow
+	))
+	if freeMoveRemainder > 0 and not runPhase(Phase.FreeMove, freeMoveRemainder) then
 		setMovementCountdownHudState(false, 0, "RoundCancelledFreeMove")
 		clearRoundLockedFreezes(currentRound, "RoundCancelledFreeMove")
 		HazardManager.Cleanup()
@@ -772,9 +912,15 @@ local function runRoundCycle(): boolean
 	log(string.format("[BeamPhasePrep] round=%d unsafeZones=%d", currentRound, #HazardManager.GetUnsafeZones()))
 	log(string.format("[BeamPhasePrep] round=%d step=ShowTelegraph", currentRound))
 	HazardManager.ShowTelegraph()
+	do
+		local feedback = getFeedback()
+		if feedback and feedback.OnTelegraphShown then
+			pcall(feedback.OnTelegraphShown, currentRound)
+		end
+	end
 
 	-- Grace window: telegraph is visible but players can still move
-	local graceTime = RoundConfig.TelegraphGraceSeconds or 0
+	local graceTime = currentRoundTimings.TelegraphGraceSeconds
 	if graceTime > 0 then
 		log(string.format("Round %d: Telegraph grace window (%.2fs — players can still move)", currentRound, graceTime))
 		if not safeWait(graceTime) then
@@ -788,11 +934,11 @@ local function runRoundCycle(): boolean
 	end
 
 	-- Freeze players after grace ends
-	freezeAllPlayers()
+	freezeAllPlayers(currentRoundTimings.FreezeSeconds, scheduledFreezeAt)
 	log(string.format("Round %d: Grace ended — players frozen", currentRound))
 	
 	-- Phase 2: Telegraph remainder (tile warnings continue — NO beams yet)
-	local remainingTelegraph = math.max(0, RoundConfig.TelegraphSeconds - graceTime)
+	local remainingTelegraph = math.max(0, currentRoundTimings.TelegraphSeconds - graceTime)
 	if not runPhase(Phase.Telegraph, remainingTelegraph) then
 		setMovementCountdownHudState(false, 0, "RoundCancelledTelegraph")
 		clearRoundLockedFreezes(currentRound, "RoundCancelledTelegraph")
@@ -803,6 +949,13 @@ local function runRoundCycle(): boolean
 	end
 	
 	-- Phase 3: BeamWarning (tile warnings vanish instantly, beams appear)
+	log(string.format(
+		"[SwordToBeamTiming] round=%d swordSpawnAt=%.3f beamStartAt=%.3f delta=%.2f",
+		currentRound,
+		swordsSpawnedAt,
+		workspace:GetServerTimeNow(),
+		math.max(0, workspace:GetServerTimeNow() - swordsSpawnedAt)
+	))
 	log(string.format("[BeamPhaseStart] round=%d step=HideTelegraph", currentRound))
 	HazardManager.HideTelegraph()
 	log(string.format("[BeamPhaseStart] round=%d step=SpawnBeams", currentRound))
@@ -820,7 +973,7 @@ local function runRoundCycle(): boolean
 		running = false
 		return false
 	end
-	local beamWarningTime = math.max(0, RoundConfig.FreezeSeconds - RoundConfig.TelegraphSeconds)
+	local beamWarningTime = math.max(0, currentRoundTimings.FreezeSeconds - currentRoundTimings.TelegraphSeconds)
 	if not runPhase(Phase.BeamWarning, beamWarningTime) then
 		setMovementCountdownHudState(false, 0, "RoundCancelledBeamWarning")
 		clearRoundLockedFreezes(currentRound, "RoundCancelledBeamWarning")
@@ -837,6 +990,11 @@ local function runRoundCycle(): boolean
 	end)
 	if not strikeOk then
 		warn(string.format("[RoundManager] Strike failed round=%d err=%s", currentRound, tostring(strikeErr)))
+		log(string.format(
+			"[RoundCancellation] round=%d phase=%s reason=StrikeError action=AbortRoundAndSkipSurvivorDispatch",
+			currentRound,
+			tostring(currentPhase)
+		))
 		matchEndReason = MatchEndReason.Cancelled
 		setMovementCountdownHudState(false, 0, "RoundCancelledStrikeError")
 		clearRoundLockedFreezes(currentRound, "RoundCancelledStrikeError")
@@ -846,7 +1004,7 @@ local function runRoundCycle(): boolean
 		running = false
 		return false
 	end
-	if not runPhase(Phase.Strike, RoundConfig.StrikeSeconds) then
+	if not runPhase(Phase.Strike, currentRoundTimings.StrikeSeconds) then
 		setMovementCountdownHudState(false, 0, "RoundCancelledStrike")
 		clearRoundLockedFreezes(currentRound, "RoundCancelledStrike")
 		unfreezeAllPlayers()
@@ -855,9 +1013,16 @@ local function runRoundCycle(): boolean
 		return false
 	end
 	unfreezeAllPlayers()
+	logAliveSnapshot("PostStrikeBeforeWinCheck")
+	do
+		local feedback = getFeedback()
+		if feedback and feedback.FlushPostStrikeAnnouncements then
+			pcall(feedback.FlushPostStrikeAnnouncements, currentRound)
+		end
+	end
 	
 	-- Check for winner after Strike
-	if checkMatchEnd() then
+	if checkMatchEnd("AfterStrike") then
 		setMovementCountdownHudState(false, 0, "MatchEndedAfterStrike")
 		HazardManager.Cleanup()
 		cleanupModeRound()
@@ -867,7 +1032,7 @@ local function runRoundCycle(): boolean
 	
 	-- Phase 5: Recovery (brief pause, cleanup beams)
 	HazardManager.ClearBeams()
-	if not runPhase(Phase.Recovery, RoundConfig.RecoverySeconds) then
+	if not runPhase(Phase.Recovery, currentRoundTimings.RecoverySeconds) then
 		setMovementCountdownHudState(false, 0, "RoundCancelledRecovery")
 		clearRoundLockedFreezes(currentRound, "RoundCancelledRecovery")
 		HazardManager.Cleanup()
@@ -876,15 +1041,37 @@ local function runRoundCycle(): boolean
 	end
 
 	cleanupModeRound()
+	logAliveSnapshot("PostRecovery")
 
 	-- Notify DailyQuestService: all still-alive (InMatch) players survived this round
 	local dqs = getDQS()
+	local survivors = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+	log(string.format(
+		"[RoundCompletionDispatch] round=%d survivors=%d services=%s status=RoundCompletedSuccess",
+		currentRound,
+		#survivors,
+		"DailyQuestService,MatchFeedbackService"
+	))
 	if dqs and dqs.OnRoundSurvived then
-		local survivors = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
 		for _, p in ipairs(survivors) do
 			pcall(dqs.OnRoundSurvived, p, currentRound)
 		end
 	end
+	do
+		local feedback = getFeedback()
+		if feedback and feedback.OnRoundSurvived then
+			for _, p in ipairs(survivors) do
+				pcall(feedback.OnRoundSurvived, p, currentRound)
+			end
+		end
+	end
+
+	log(string.format(
+		"[RoundCompleted] round=%d survivedPlayers=%d nextRound=%d winCheckResult=continue",
+		currentRound,
+		#survivors,
+		currentRound + 1
+	))
 
 	return true
 end
@@ -1030,6 +1217,7 @@ function RoundManager.StartRoundLoop(mode: string?)
 	running = true
 	currentRound = 0
 	currentPhase = nil
+	currentRoundTimings = RoundConfig.GetTimingsForRound(0)
 	setReplicatedRoundPhase(nil)
 	matchEndReason = nil
 	winner = nil
@@ -1048,15 +1236,16 @@ function RoundManager.StartRoundLoop(mode: string?)
 	log(string.format("Round loop started with %d players", initialAliveCount))
 	setMovementCountdownHudState(false, 0, "StartRoundLoop")
 	log(string.format(
-		"[RoundLoopConfig] mode=%s maxRounds=%d maxSeconds=%d free=%.2f telegraph=%.2f freeze=%.2f strike=%.2f recovery=%.2f",
+		"[RoundLoopConfig] mode=%s maxRounds=%d maxSeconds=%d baseFree=%.2f baseGrace=%.2f baseTelegraph=%.2f baseFreeze=%.2f baseStrike=%.2f baseRecovery=%.2f pacingConfig=RoundPacingConfig",
 		tostring(matchMode),
 		tonumber(RoundConfig.MaxRoundsPerMatch) or -1,
 		tonumber(RoundConfig.MaxMatchSeconds) or -1,
-		tonumber(RoundConfig.FreeMoveSeconds) or 0,
-		tonumber(RoundConfig.TelegraphSeconds) or 0,
-		tonumber(RoundConfig.FreezeSeconds) or 0,
-		tonumber(RoundConfig.StrikeSeconds) or 0,
-		tonumber(RoundConfig.RecoverySeconds) or 0
+		tonumber(RoundConfig.BaseTimings.FreeMoveSeconds) or 0,
+		tonumber(RoundConfig.BaseTimings.TelegraphGraceSeconds) or 0,
+		tonumber(RoundConfig.BaseTimings.TelegraphSeconds) or 0,
+		tonumber(RoundConfig.BaseTimings.FreezeSeconds) or 0,
+		tonumber(RoundConfig.BaseTimings.StrikeSeconds) or 0,
+		tonumber(RoundConfig.BaseTimings.RecoverySeconds) or 0
 	))
 	
 	task.spawn(function()
@@ -1078,6 +1267,7 @@ function RoundManager.StartRoundLoop(mode: string?)
 		unfreezeAllPlayers(true)
 		HazardManager.Cleanup()
 		currentPhase = nil
+		currentRoundTimings = RoundConfig.GetTimingsForRound(0)
 		setReplicatedRoundPhase(nil)
 		movementParticipationByPlayer = {}
 		setMovementCountdownHudState(false, 0, "RoundLoopEnded")
@@ -1094,6 +1284,7 @@ function RoundManager.StopRoundLoop()
 	log("Stopping round loop...")
 	running = false
 	currentPhase = nil
+	currentRoundTimings = RoundConfig.GetTimingsForRound(0)
 	setReplicatedRoundPhase(nil)
 	setMovementCountdownHudState(false, 0, "StopRoundLoop")
 	-- The loop will detect this and exit on next safeWait check

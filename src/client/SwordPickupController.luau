@@ -17,6 +17,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local PlayerState = require(Shared:WaitForChild("PlayerState"))
+local FeedbackConfig = require(Shared:WaitForChild("FeedbackConfig"))
+local AnnouncementController = require(script.Parent:WaitForChild("AnnouncementController"))
 
 local SwordPickupController = {}
 
@@ -26,8 +28,14 @@ local FOLDER_NAME = "SwordPickups"
 local BOB_AMPLITUDE = 0.4
 local BOB_SPEED = 2.5
 local ROTATION_SPEED = 25
+local PROXIMITY_THRESHOLD_STUDS = 22
+local PROXIMITY_RETRIGGER_SECONDS = 10
+local PROXIMITY_SAMPLE_SECONDS = 0.35
 
 local activeAnimations = {}
+local tipTriggerRemote: RemoteEvent? = nil
+local lastProximityTriggerToken = ""
+local lastProximityTriggerAt = 0
 
 local function startAnimation(model)
 	if activeAnimations[model] then return end
@@ -117,53 +125,17 @@ local function watchFolder(folder)
 end
 
 local function showAnnouncement(data)
-	local player = Players.LocalPlayer
-	local playerGui = player:FindFirstChild("PlayerGui")
-	if not playerGui then return end
-
-	local sound = Instance.new("Sound")
-	sound.SoundId = data.soundId or ""
-	sound.Volume = 0.4
-	sound.PlayOnRemove = false
-	sound.Parent = playerGui
-	sound:Play()
-	task.delay(5, function()
-		if sound and sound.Parent then sound:Destroy() end
-	end)
-
-	local sg = Instance.new("ScreenGui")
-	sg.Name = "SwordAnnouncement"
-	sg.ResetOnSpawn = false
-	sg.DisplayOrder = 50
-	sg.IgnoreGuiInset = true
-	sg.Parent = playerGui
-
-	local label = Instance.new("TextLabel")
-	label.Name = "AnnouncementLabel"
-	label.Size = UDim2.new(1, 0, 0, 40)
-	label.Position = UDim2.new(0.5, 0, 0, 150)
-	label.AnchorPoint = Vector2.new(0.5, 0)
-	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 22
-	label.TextColor3 = Color3.fromRGB(255, 80, 80)
-	label.TextStrokeColor3 = Color3.fromRGB(50, 0, 0)
-	label.TextStrokeTransparency = 0.3
-	label.Text = "A SWORD HAS RANDOMLY SPAWNED"
-	label.TextTransparency = 0
-	label.Parent = sg
-
-	task.delay(2, function()
-		if not label or not label.Parent then return end
-		local tween = TweenService:Create(
-			label,
-			TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-			{ TextTransparency = 1, TextStrokeTransparency = 1 }
-		)
-		tween:Play()
-		tween.Completed:Wait()
-		if sg and sg.Parent then sg:Destroy() end
-	end)
+	AnnouncementController.QueueImmediate({
+		text = "A SWORD HAS RANDOMLY SPAWNED",
+		style = "Sword",
+		priority = FeedbackConfig.Announcements.Priorities.Sword,
+		durationSeconds = FeedbackConfig.Announcements.DisplayDurationSeconds,
+		dedupeKey = "sword_spawn_announcement",
+		cooldownSeconds = 1,
+		requiresInMatch = data.matchOnly == true,
+		soundId = data.soundId,
+		yPosition = FeedbackConfig.Announcements.YPosition,
+	})
 end
 
 local function isLocalPlayerInMatch(): boolean
@@ -171,47 +143,115 @@ local function isLocalPlayerInMatch(): boolean
 end
 
 local function showDeniedMessage()
+	AnnouncementController.QueueLocal({
+		text = "You already have a sword!",
+		style = "Reward",
+		priority = FeedbackConfig.Announcements.Priorities.Reward,
+		durationSeconds = 1.35,
+		dedupeKey = "sword_denied",
+		cooldownSeconds = 1.25,
+		requiresInMatch = true,
+	})
+end
+
+local function getModelWorldPosition(model: Instance): Vector3?
+	if model:IsA("Model") then
+		local primary = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+		return primary and primary.Position or nil
+	elseif model:IsA("BasePart") then
+		return model.Position
+	end
+	return nil
+end
+
+local function getLocalRootPosition(): Vector3?
 	local player = Players.LocalPlayer
-	local playerGui = player:FindFirstChild("PlayerGui")
-	if not playerGui then return end
+	local character = player and player.Character
+	if not character then
+		return nil
+	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if root and root:IsA("BasePart") then
+		return root.Position
+	end
+	return nil
+end
 
-	local sg = Instance.new("ScreenGui")
-	sg.Name = "SwordDenied"
-	sg.ResetOnSpawn = false
-	sg.DisplayOrder = 50
-	sg.IgnoreGuiInset = true
-	sg.Parent = playerGui
+local function buildSwordProximityToken(swordModel: Instance, position: Vector3): string
+	local spawnRound = tostring(swordModel:GetAttribute("SpawnRound") or "")
+	return string.format(
+		"sr%s_x%d_y%d_z%d",
+		spawnRound,
+		math.floor(position.X + 0.5),
+		math.floor(position.Y + 0.5),
+		math.floor(position.Z + 0.5)
+	)
+end
 
-	local lbl = Instance.new("TextLabel")
-	lbl.Name = "DeniedLabel"
-	lbl.Size = UDim2.new(1, 0, 0, 30)
-	lbl.Position = UDim2.new(0.5, 0, 0, 150)
-	lbl.AnchorPoint = Vector2.new(0.5, 0)
-	lbl.BackgroundTransparency = 1
-	lbl.Font = Enum.Font.GothamBold
-	lbl.TextSize = 16
-	lbl.TextColor3 = Color3.fromRGB(255, 200, 80)
-	lbl.TextStrokeColor3 = Color3.fromRGB(50, 30, 0)
-	lbl.TextStrokeTransparency = 0.3
-	lbl.Text = "You already have a sword!"
-	lbl.Parent = sg
+local function startSwordProximityWatcher()
+	local elapsed = 0
+	RunService.Heartbeat:Connect(function(dt)
+		elapsed += dt
+		if elapsed < PROXIMITY_SAMPLE_SECONDS then
+			return
+		end
+		elapsed = 0
 
-	task.delay(1.5, function()
-		if not lbl or not lbl.Parent then return end
-		local tween = TweenService:Create(
-			lbl,
-			TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-			{ TextTransparency = 1, TextStrokeTransparency = 1 }
-		)
-		tween:Play()
-		tween.Completed:Wait()
-		if sg and sg.Parent then sg:Destroy() end
+		if not tipTriggerRemote then
+			return
+		end
+		if not isLocalPlayerInMatch() then
+			return
+		end
+
+		local rootPos = getLocalRootPosition()
+		if not rootPos then
+			return
+		end
+
+		local folder = Workspace:FindFirstChild(FOLDER_NAME)
+		if not folder then
+			return
+		end
+
+		local bestDistance = math.huge
+		local bestToken = ""
+		for _, swordModel in ipairs(folder:GetChildren()) do
+			if swordModel:GetAttribute("SwordPickup") == true then
+				local worldPos = getModelWorldPosition(swordModel)
+				if worldPos then
+					local dist = (worldPos - rootPos).Magnitude
+					if dist < bestDistance then
+						bestDistance = dist
+						bestToken = buildSwordProximityToken(swordModel, worldPos)
+					end
+				end
+			end
+		end
+
+		if bestToken == "" or bestDistance > PROXIMITY_THRESHOLD_STUDS then
+			return
+		end
+
+		local now = os.clock()
+		if bestToken == lastProximityTriggerToken and (now - lastProximityTriggerAt) < PROXIMITY_RETRIGGER_SECONDS then
+			return
+		end
+
+		lastProximityTriggerToken = bestToken
+		lastProximityTriggerAt = now
+		tipTriggerRemote:FireServer({
+			type = "SwordProximity",
+			token = bestToken,
+			distance = math.floor(bestDistance + 0.5),
+		})
 	end)
 end
 
 function SwordPickupController.Init()
 	if initialized then return end
 	initialized = true
+	AnnouncementController.Init()
 
 	task.spawn(function()
 		local folder = Workspace:FindFirstChild(FOLDER_NAME)
@@ -231,6 +271,10 @@ function SwordPickupController.Init()
 		if not remotes then return end
 		local remote = remotes:WaitForChild("SwordSpawned", 15)
 		if not remote then return end
+		local triggerRemote = remotes:WaitForChild("FirstMatchTipTrigger", 15)
+		if triggerRemote and triggerRemote:IsA("RemoteEvent") then
+			tipTriggerRemote = triggerRemote
+		end
 
 		remote.OnClientEvent:Connect(function(data)
 			if type(data) == "table" then
@@ -245,6 +289,8 @@ function SwordPickupController.Init()
 			end
 		end)
 	end)
+
+	startSwordProximityWatcher()
 
 	print("[SwordPickupController] Initialized")
 end

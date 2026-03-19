@@ -121,6 +121,44 @@ local function formatCoins(n: number): string
 end
 
 local function setPreferredVisible(guiObject: GuiObject?, visible: boolean)
+	local rawValue = LocalPlayer:GetAttribute(attributeName)
+	if type(rawValue) ~= "string" or rawValue == "" then
+		return {}
+	end
+	local ok, decoded = pcall(HttpService.JSONDecode, HttpService, rawValue)
+	if ok and type(decoded) == "table" then
+		return decoded
+	end
+	return {}
+end
+
+local function updateNextGoal()
+	if not nextGoalTitleLabel or not nextGoalDetailLabel then
+		return
+	end
+
+	local goal = ProgressionGoalResolver.Resolve({
+		coins = LocalPlayer:GetAttribute("Coins") or 0,
+		ownedCrowns = decodeOwnedList("OwnedCrowns"),
+		ownedPets = decodeOwnedList("OwnedPets"),
+	})
+
+	if goal then
+		nextGoalTitleLabel.Text = "Next Goal: " .. goal.name
+		nextGoalDetailLabel.Text = string.format(
+			"%s F • You have %s",
+			formatCoins(goal.price),
+			formatCoins(goal.currentCoins)
+		)
+		nextGoalDetailLabel.TextColor3 = if goal.remainingCoins > 0 then NEXT_GOAL_ACCENT else NEXT_GOAL_UNLOCKED
+	else
+		nextGoalTitleLabel.Text = "All coin goals unlocked"
+		nextGoalDetailLabel.Text = "Nothing left to buy with Fate Coins"
+		nextGoalDetailLabel.TextColor3 = NEXT_GOAL_UNLOCKED
+	end
+end
+
+local function setPreferredVisible(guiObject: GuiObject?, visible: boolean)
 	if not guiObject then
 		return
 	end
@@ -663,7 +701,7 @@ function HUDPanel.Init(screenGui: ScreenGui, callbacks: {
 	)
 
 	-- TOP-RIGHT: Daily Quests button
-	createTopRightPill(
+	local questsBtn = createTopRightPill(
 		"QuestsBtn", 184,
 		"Quests",
 		Color3.fromRGB(180, 30, 30),

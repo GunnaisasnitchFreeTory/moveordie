@@ -81,6 +81,16 @@ local function ordinal(n: number): string
 	return tostring(n) .. (s or "th")
 end
 
+local function formatCoinText(n: number): string
+	if n >= 1000000 then
+		return string.format("%.1fM", n / 1000000)
+	end
+	if n >= 10000 then
+		return string.format("%.1fK", n / 1000)
+	end
+	return tostring(math.floor(n))
+end
+
 local PLACEMENT_COLORS = {
 	[1] = Color3.fromRGB(255, 215, 0),   -- gold
 	[2] = Color3.fromRGB(200, 200, 210),  -- silver
@@ -319,62 +329,58 @@ function MatchResultsPanel.Show(data)
 	ps.Parent = placeLbl
 	yOffset += 36
 
+	local placementCoins = tonumber(data.placementCoins or data.yourCoins) or 0
+	local matchCoins = tonumber(data.matchCoinsCollected) or 0
+	local firstMatchBonusCoins = tonumber(data.firstMatchBonusCoins) or 0
+	local totalEarned = tonumber(data.totalCoinsEarned) or (placementCoins + matchCoins + firstMatchBonusCoins)
+	local currentCoinsAfterRewards = tonumber(data.currentCoinsAfterRewards) or 0
 	local rewardLabelText = if data.yourPlacement == 1 then "Win Bonus" else "Placement Bonus"
-	local coinLbl = Instance.new("TextLabel")
-	coinLbl.AnchorPoint = Vector2.new(0.5, 0)
-	coinLbl.Position = UDim2.new(0.5, 0, 0, yOffset)
-	coinLbl.Size = UDim2.new(1, -20, 0, 20)
-	coinLbl.BackgroundTransparency = 1
-	coinLbl.Font = Enum.Font.GothamSemibold
-	coinLbl.TextColor3 = Color3.fromRGB(255, 220, 60)
-	coinLbl.TextSize = 16
-	coinLbl.Text = string.format("+%d %s", data.yourCoins or 0, rewardLabelText)
-	coinLbl.ZIndex = 42
-	coinLbl.Parent = card
+
+	local function addRewardLine(text: string, color: Color3, size: number, font: Enum.Font)
+		local line = Instance.new("TextLabel")
+		line.AnchorPoint = Vector2.new(0.5, 0)
+		line.Position = UDim2.new(0.5, 0, 0, yOffset)
+		line.Size = UDim2.new(1, -24, 0, size + 4)
+		line.BackgroundTransparency = 1
+		line.Font = font
+		line.TextColor3 = color
+		line.TextSize = size
+		line.Text = text
+		line.ZIndex = 42
+		line.Parent = card
+
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.fromRGB(0, 0, 0)
+		stroke.Thickness = if size >= 18 then 1.5 else 1.2
+		stroke.Transparency = 0.15
+		stroke.Parent = line
+
+		yOffset += size + 6
+	end
+
+	addRewardLine(string.format("+%d %s", placementCoins, rewardLabelText), Color3.fromRGB(255, 220, 60), 16, Enum.Font.GothamSemibold)
+	if matchCoins > 0 then
+		addRewardLine(string.format("+%d Coins Collected", matchCoins), Color3.fromRGB(100, 220, 255), 14, Enum.Font.GothamSemibold)
+	end
+	if firstMatchBonusCoins > 0 then
+		addRewardLine(string.format("+%d First Match Bonus", firstMatchBonusCoins), Color3.fromRGB(120, 232, 166), 14, Enum.Font.GothamSemibold)
+	end
+	addRewardLine(string.format("TOTAL EARNED  +%d F", totalEarned), Color3.fromRGB(255, 255, 255), 19, Enum.Font.GothamBold)
+	if currentCoinsAfterRewards > 0 then
+		addRewardLine(string.format("Balance Now: %s F", formatCoinText(currentCoinsAfterRewards)), Color3.fromRGB(195, 205, 235), 13, Enum.Font.GothamMedium)
+	end
+
 	if DEBUG_LOGS then
 		print(string.format(
-			"[MatchResultsPanel] placement=%s rewardLabel=%s amount=%s",
+			"[MatchResultsPanel] placement=%s placementCoins=%s matchCoins=%s firstMatchBonus=%s total=%s",
 			tostring(data.yourPlacement),
-			rewardLabelText,
-			tostring(data.yourCoins or 0)
+			tostring(placementCoins),
+			tostring(matchCoins),
+			tostring(firstMatchBonusCoins),
+			tostring(totalEarned)
 		))
 	end
-	yOffset += 22
-
-	local matchCoins = data.matchCoinsCollected or 0
-	if matchCoins > 0 then
-		local matchCoinLbl = Instance.new("TextLabel")
-		matchCoinLbl.AnchorPoint = Vector2.new(0.5, 0)
-		matchCoinLbl.Position = UDim2.new(0.5, 0, 0, yOffset)
-		matchCoinLbl.Size = UDim2.new(1, -20, 0, 18)
-		matchCoinLbl.BackgroundTransparency = 1
-		matchCoinLbl.Font = Enum.Font.GothamSemibold
-		matchCoinLbl.TextColor3 = Color3.fromRGB(100, 220, 255)
-		matchCoinLbl.TextSize = 14
-		matchCoinLbl.Text = string.format("Coins Collected: %d", matchCoins)
-		matchCoinLbl.ZIndex = 42
-		matchCoinLbl.Parent = card
-		yOffset += 20
-
-		local totalEarned = (data.yourCoins or 0) + matchCoins
-		local totalLbl = Instance.new("TextLabel")
-		totalLbl.AnchorPoint = Vector2.new(0.5, 0)
-		totalLbl.Position = UDim2.new(0.5, 0, 0, yOffset)
-		totalLbl.Size = UDim2.new(1, -20, 0, 18)
-		totalLbl.BackgroundTransparency = 1
-		totalLbl.Font = Enum.Font.GothamBold
-		totalLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-		totalLbl.TextSize = 14
-		totalLbl.Text = string.format("Total Earned: %d", totalEarned)
-		totalLbl.ZIndex = 42
-		totalLbl.Parent = card
-		local ts = Instance.new("UIStroke")
-		ts.Color = Color3.fromRGB(0, 0, 0)
-		ts.Thickness = 1
-		ts.Parent = totalLbl
-		yOffset += 20
-	end
-	yOffset += 4
+	yOffset += 2
 
 	-- Separator
 	local sep1 = Instance.new("Frame")
@@ -628,6 +634,52 @@ function MatchResultsPanel.Show(data)
 		end)
 		yOffset += 28
 	end
+
+	local replayLabel = Instance.new("TextLabel")
+	replayLabel.AnchorPoint = Vector2.new(0.5, 0)
+	replayLabel.Position = UDim2.new(0.5, 0, 0, yOffset)
+	replayLabel.Size = UDim2.new(1, -28, 0, 28)
+	replayLabel.BackgroundTransparency = 1
+	replayLabel.Font = Enum.Font.GothamSemibold
+	replayLabel.TextColor3 = Color3.fromRGB(255, 236, 138)
+	replayLabel.TextSize = 13
+	replayLabel.TextWrapped = true
+	replayLabel.Text = tostring(data.replayMessage or "Next match starts soon - go for another win.")
+	replayLabel.ZIndex = 42
+	replayLabel.Parent = card
+	yOffset += 30
+
+	local nextGoal = data.nextGoal
+	local nextGoalText = "All Fate Coin goals complete"
+	if type(nextGoal) == "table" and tostring(nextGoal.name or "") ~= "" then
+		if tonumber(nextGoal.remainingCoins) and tonumber(nextGoal.remainingCoins) > 0 then
+			nextGoalText = string.format(
+				"Next Goal: %s - %s F (%s more)",
+				tostring(nextGoal.name),
+				formatCoinText(tonumber(nextGoal.price) or 0),
+				formatCoinText(tonumber(nextGoal.remainingCoins) or 0)
+			)
+		else
+			nextGoalText = string.format(
+				"Next Goal: %s - ready to unlock",
+				tostring(nextGoal.name)
+			)
+		end
+	end
+
+	local nextGoalLabel = Instance.new("TextLabel")
+	nextGoalLabel.AnchorPoint = Vector2.new(0.5, 0)
+	nextGoalLabel.Position = UDim2.new(0.5, 0, 0, yOffset)
+	nextGoalLabel.Size = UDim2.new(1, -28, 0, 32)
+	nextGoalLabel.BackgroundTransparency = 1
+	nextGoalLabel.Font = Enum.Font.Gotham
+	nextGoalLabel.TextColor3 = Color3.fromRGB(190, 198, 225)
+	nextGoalLabel.TextSize = 12
+	nextGoalLabel.TextWrapped = true
+	nextGoalLabel.Text = nextGoalText
+	nextGoalLabel.ZIndex = 42
+	nextGoalLabel.Parent = card
+	yOffset += 34
 
 	-- Finalize card size THEN start the scale-in animation
 	card.Size = UDim2.fromOffset(CARD_W, yOffset + 14)

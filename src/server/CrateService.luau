@@ -40,6 +40,7 @@ local _EconomyService = nil
 local _InventoryService = nil
 local _GrantService = nil
 local _PlayerDataService = nil
+local _DailyQuestService = nil
 
 local function getEconomy()
 	if _EconomyService then return _EconomyService end
@@ -67,6 +68,13 @@ local function getPlayerData()
 	local ok, mod = pcall(require, Server:WaitForChild("PlayerDataService", 10))
 	if ok and mod then _PlayerDataService = mod end
 	return _PlayerDataService
+end
+
+local function getDailyQuestService()
+	if _DailyQuestService ~= nil then return _DailyQuestService end
+	local ok, mod = pcall(require, Server:FindFirstChild("DailyQuestService"))
+	if ok and mod then _DailyQuestService = mod else _DailyQuestService = false end
+	return _DailyQuestService
 end
 
 local function log(...)
@@ -405,6 +413,10 @@ function CrateService.BuyCrateWithCoins(player: Player, crateId: string, quantit
 		economy.AwardCoins(player, price.cost, "CrateBuyRefund:" .. crateId, true)
 		print(string.format("[CrateBuy] FAIL reason=%s", tostring(add.reason or "AddCrates failed")))
 		return { success = false, reason = add.reason or "AddCrates failed" }
+	end
+	local dqs = getDailyQuestService()
+	if dqs and dqs.OnCratePurchased then
+		pcall(dqs.OnCratePurchased, player)
 	end
 	return { success = true, newCount = add.newCount, cost = price.cost }
 end

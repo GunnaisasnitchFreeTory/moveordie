@@ -13,6 +13,8 @@
 	  SwordKillsToday     -- sword kills today
 	  EliminationsToday   -- any player kill today (same source as SwordKillsToday)
 	  SurviveRoundsToday  -- rounds survived today
+	  FirstIndexOpen      -- open Index UI for the first time
+	  FirstCratePurchase  -- buy any crate for the first time
 	  TTSSurvivalsToday   -- TungTungSahur 30s-timer survival events today
 	  BrainrotIShowSpeedPickupsToday -- pick up IShowSpeed in Save the Brainrot mode
 
@@ -26,6 +28,20 @@
 ]]
 
 local DailyQuestConfig = {}
+
+DailyQuestConfig.StarterQuest = {
+	id = "starter_survive_1_round",
+	label = "SURVIVE 1 ROUND",
+	description = "SURVIVE 1 ROUND",
+	type = "StarterSurviveRound",
+	target = 1,
+	order = 0,
+	oneTime = true,
+	starter = true,
+	reward = { type = "Coins", amount = 700, exact = true },
+	icon = "",
+	iconColor = { 255, 220, 60 },
+}
 
 -- Permanent quests (always shown, specific item rewards)
 DailyQuestConfig.Permanent = {
@@ -114,6 +130,30 @@ DailyQuestConfig.Permanent = {
 		reward      = { type = "Crown", itemId = "crown_thestrongest" },
 		icon        = "",
 		iconColor   = { 255, 48, 48 },
+	},
+	{
+		id          = "quest_open_index_first_time",
+		label       = "Index Explorer",
+		description = "Open the Index UI for the first time.",
+		oneTime     = true,
+		type        = "FirstIndexOpen",
+		target      = 1,
+		order       = 8,
+		reward      = { type = "Coins", amount = 500, exact = true },
+		icon        = "",
+		iconColor   = { 120, 220, 255 },
+	},
+	{
+		id          = "quest_buy_first_crate",
+		label       = "First Crate",
+		description = "Buy your first crate.",
+		oneTime     = true,
+		type        = "FirstCratePurchase",
+		target      = 1,
+		order       = 9,
+		reward      = { type = "Coins", amount = 200, exact = true },
+		icon        = "",
+		iconColor   = { 255, 220, 120 },
 	},
 }
 

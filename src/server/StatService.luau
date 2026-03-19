@@ -61,7 +61,7 @@ local function log(...)
 end
 
 local BASE_STATS = {
-	WalkSpeed      = 18,
+	WalkSpeed      = 20,
 	JumpPower      = 50,
 	CoinMultiplier = 1.0,
 }
@@ -71,6 +71,7 @@ local coinMultiplierCache: { [number]: number } = {}
 local walkSpeedOverridesByUserId: { [number]: { [string]: number } } = {}
 local temporaryMovementBonusesByUserId: { [number]: { [string]: { WalkSpeed: number?, JumpPower: number? } } } = {}
 local vipOwnershipChecksInFlight: { [number]: boolean } = {}
+local TUTORIAL_MOVEMENT_LOCK_ATTRIBUTE = "TutorialMovementLocked"
 
 local function getItemStats(catalogCategory: string, itemId: string?): { [string]: number }?
 	if not itemId or itemId == "" then return nil end
@@ -120,6 +121,9 @@ local function getTemporaryMovementBonusTotals(userId: number): (number, number)
 end
 
 local function isMovementTemporarilyLocked(player: Player, humanoid: Humanoid): boolean
+	if player:GetAttribute(TUTORIAL_MOVEMENT_LOCK_ATTRIBUTE) == true then
+		return true
+	end
 	local state = player:GetAttribute("PlayerState")
 	if state ~= "InMatch" then
 		return false

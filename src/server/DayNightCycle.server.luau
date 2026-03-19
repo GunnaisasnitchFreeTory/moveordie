@@ -32,11 +32,13 @@ local NIGHT_BRIGHTNESS      = 3.4
 local GOLDEN_AMBIENT         = Color3.fromRGB(232, 170, 96) -- slightly more vivid golden hour
 local GOLDEN_OUTDOOR_AMBIENT = Color3.fromRGB(255, 198, 116)
 local GOLDEN_BRIGHTNESS      = 3.7
+local TARGET_SHADOW_SOFTNESS = 0.25
 
 -- Global post color pass (one notch stronger vibrance).
 local GLOBAL_VIBRANCE_SATURATION = 0.14
 local GLOBAL_VIBRANCE_CONTRAST   = 0.08
 local GLOBAL_VIBRANCE_BRIGHTNESS = 0.02
+local ADVANCE_LOG_INTERVAL_SECONDS = 20
 
 -- ═══════════════════════════════════════════════════════════════════
 -- HELPERS
@@ -80,7 +82,10 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 Lighting.ClockTime = START_HOUR
+Lighting.ShadowSoftness = TARGET_SHADOW_SOFTNESS
 print(string.format("[DayNight] Cycle started — %ds per full day, starting at hour %d", CYCLE_SECONDS, START_HOUR))
+local monitorElapsed = 0
+local lastClockTime = Lighting.ClockTime
 
 -- Ensure a single persistent color correction profile for world vibrance.
 do
@@ -100,9 +105,20 @@ do
 end
 
 RunService.Heartbeat:Connect(function(dt: number)
+	monitorElapsed += dt
+	local previousClock = lastClockTime
+	lastClockTime = Lighting.ClockTime
+
 	-- While an exclusive mode preset is active (e.g. Save the Brainrot),
 	-- do not mutate Lighting so the preset remains authoritative.
 	if Lighting:GetAttribute("ModeLightingExclusive") == true then
+		if monitorElapsed >= ADVANCE_LOG_INTERVAL_SECONDS then
+			monitorElapsed = 0
+			print(string.format(
+				"[DayNight] monitor cycleEnabled=true exclusive=true clock=%.2f advancing=false",
+				Lighting.ClockTime
+			))
+		end
 		return
 	end
 
@@ -130,5 +146,16 @@ RunService.Heartbeat:Connect(function(dt: number)
 	Lighting.Ambient = ambient
 	Lighting.OutdoorAmbient = outdoor
 	Lighting.Brightness = bright
+	Lighting.ShadowSoftness = TARGET_SHADOW_SOFTNESS
+
+	if monitorElapsed >= ADVANCE_LOG_INTERVAL_SECONDS then
+		monitorElapsed = 0
+		print(string.format(
+			"[DayNight] monitor cycleEnabled=true exclusive=false clock=%.2f prev=%.2f advancing=%s",
+			Lighting.ClockTime,
+			previousClock,
+			tostring(math.abs(Lighting.ClockTime - previousClock) > 0.001)
+		))
+	end
 end)
 

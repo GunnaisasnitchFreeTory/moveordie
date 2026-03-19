@@ -24,6 +24,8 @@
 	  OnTTSSurvive(player)           -- hook from TungTungSahurService
 	  OnElimination(player)          -- general kill hook
 	  OnRoundSurvived(player)        -- hook from RoundManager
+	OnIndexOpened(player)          -- hook from client Index panel open
+	OnCratePurchased(player)       -- hook from CrateService successful purchase
 	OnBrainrotPetPickup(player, petId, modeName) -- hook from BrainrotModeService
 	  DebugForceNewDay()             -- [Studio] reset cached day
 	  DebugResetProgress(player)     -- [Studio] wipe today's progress
@@ -43,7 +45,7 @@ local DailyQuestConfig = require(Shared:WaitForChild("DailyQuestConfig"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 
 -- Lazy service loaders
-local _PDS, _Economy, _Inventory, _Crate, _Spin = nil, nil, nil, nil, nil
+local _PDS, _Economy, _Inventory, _Crate, _Spin, _Feedback = nil, nil, nil, nil, nil, nil
 
 local function getPDS()
 	if _PDS then return _PDS end
@@ -70,6 +72,12 @@ local function getSpin()
 	local ok, m = pcall(require, Server:WaitForChild("SpinWheelService", 5))
 	if ok and m then _Spin = m end; return _Spin
 end
+local function getFeedback()
+	if _Feedback ~= nil then return _Feedback end
+	local ok, m = pcall(require, Server:FindFirstChild("MatchFeedbackService"))
+	if ok and m then _Feedback = m else _Feedback = false end
+	return _Feedback
+end
 
 local DailyQuestService = {}
 local initialized  = false
@@ -78,8 +86,16 @@ local updateRemote:    RemoteEvent?    = nil
 local getStatusFunc:   RemoteFunction? = nil
 local claimFunc:       RemoteFunction? = nil
 local debugRemote:     RemoteFunction? = nil
+local actionRemote:    RemoteEvent?    = nil
 
 local function log(...) print("[DailyQuestService]", ...) end
+local STARTER_QUEST = DailyQuestConfig.StarterQuest
+local STARTER_QUEST_ID = tostring(STARTER_QUEST and STARTER_QUEST.id or "starter_survive_1_round")
+local STARTER_QUEST_STATE_UNCLASSIFIED = "Unclassified"
+local STARTER_QUEST_STATE_ELIGIBLE = "Eligible"
+local STARTER_QUEST_STATE_INELIGIBLE = "Ineligible"
+local STARTER_QUEST_STATE_COMPLETED = "Completed"
+local STARTER_QUEST_REWARD_REASON = "StarterQuest_Survive1Round_700Coins"
 
 local CRATE_ID_ALIASES: { [string]: string } = {
 	crate_pet = "crate_pet_common",
@@ -99,6 +115,9 @@ local _studioDayOffsetDays: number = 0
 local _singleMatchSurvivalRoundsByUserId: { [number]: number } = {}
 local _singleMatchParticipantByUserId: { [number]: boolean } = {}
 local _lastSingleMatchSweepRound: number = -1
+local _starterQuestAssignedLoggedByUserId: { [number]: boolean } = {}
+local _lastQuestPayloadSignatureByUserId: { [number]: string } = {}
+local _starterJoinTraceLoggedByUserId: { [number]: boolean } = {}
 
 local MATCH_SCOPED_SURVIVAL_TYPES: { [string]: boolean } = {
 	SurviveRoundsSingleMatch12 = true,
@@ -188,6 +207,160 @@ local function isOneTimeQuestRewardOwned(player: Player, questDef: { [string]: a
 	return false
 end
 
+local function countListEntries(value: any): number
+	if type(value) ~= "table" then
+		return 0
+	end
+	return #value
+end
+
+local function getStarterQuestState(player: Player): string
+	local PDS = getPDS()
+	local rawState = PDS and PDS.GetField(player, "StarterQuestState") or STARTER_QUEST_STATE_UNCLASSIFIED
+	local starterQuestState = tostring(rawState or STARTER_QUEST_STATE_UNCLASSIFIED)
+	if starterQuestState ~= STARTER_QUEST_STATE_UNCLASSIFIED
+		and starterQuestState ~= STARTER_QUEST_STATE_ELIGIBLE
+		and starterQuestState ~= STARTER_QUEST_STATE_INELIGIBLE
+		and starterQuestState ~= STARTER_QUEST_STATE_COMPLETED
+	then
+		starterQuestState = STARTER_QUEST_STATE_UNCLASSIFIED
+	end
+	return starterQuestState
+end
+
+local function setStarterQuestState(player: Player, starterQuestState: string): boolean
+	local PDS = getPDS()
+	if not PDS then
+		return false
+	end
+	return PDS.SetField(player, "StarterQuestState", starterQuestState) == true
+end
+
+local function getStarterCompletionSnapshot(player: Player): (boolean, string)
+	local state = getStarterQuestState(player)
+	if state == STARTER_QUEST_STATE_COMPLETED then
+		return true, "starter_state_completed"
+	end
+
+	local data = { day = "", progress = {}, oneTimeClaimed = {} }
+	local PDS = getPDS()
+	local raw = PDS and PDS.GetField(player, "DailyQuestData") or ""
+	if raw and raw ~= "" then
+		local ok, decoded = pcall(function()
+			return HttpService:JSONDecode(raw)
+		end)
+		if ok and type(decoded) == "table" then
+			data = decoded
+		end
+	end
+	local oneTimeClaimed = type(data.oneTimeClaimed) == "table" and data.oneTimeClaimed[STARTER_QUEST_ID] == true
+	if oneTimeClaimed then
+		return true, "dailyquest_onetime_claimed"
+	end
+
+	local progressState = type(data.progress) == "table" and data.progress[STARTER_QUEST_ID] or nil
+	if type(progressState) == "table" and progressState.claimed == true then
+		return true, "dailyquest_progress_claimed"
+	end
+
+	return false, "starter_not_completed"
+end
+
+local function resolveStarterQuestState(player: Player): string
+	local PDS = getPDS()
+	if not PDS or not PDS.IsLoaded(player) then
+		return STARTER_QUEST_STATE_UNCLASSIFIED
+	end
+
+	local currentState = getStarterQuestState(player)
+	if currentState == STARTER_QUEST_STATE_COMPLETED or currentState == STARTER_QUEST_STATE_ELIGIBLE then
+		return currentState
+	end
+
+	local completed, completionReason = getStarterCompletionSnapshot(player)
+	local nextState = if completed then STARTER_QUEST_STATE_COMPLETED else STARTER_QUEST_STATE_ELIGIBLE
+	setStarterQuestState(player, nextState)
+
+	log(string.format(
+		"[StarterQuestEligibility] player=%s eligible=%s reason=%s assignedState=%s gate=quest_completion_only",
+		player.Name,
+		tostring(not completed),
+		completionReason,
+		nextState
+	))
+
+	return nextState
+end
+
+local function syncStarterQuestProgressEntry(data: { [string]: any }, starterQuestState: string): boolean
+	if not STARTER_QUEST then
+		return false
+	end
+	if type(data.progress) ~= "table" then
+		data.progress = {}
+	end
+	if type(data.oneTimeClaimed) ~= "table" then
+		data.oneTimeClaimed = {}
+	end
+
+	local progressState = data.progress[STARTER_QUEST_ID]
+	local mutated = false
+	if type(progressState) ~= "table" then
+		progressState = { progress = 0, claimed = false }
+		data.progress[STARTER_QUEST_ID] = progressState
+		mutated = true
+	end
+
+	if data.oneTimeClaimed[STARTER_QUEST_ID] == true or starterQuestState == STARTER_QUEST_STATE_COMPLETED then
+		if (tonumber(progressState.progress) or 0) < STARTER_QUEST.target then
+			progressState.progress = STARTER_QUEST.target
+			mutated = true
+		end
+		if progressState.claimed ~= true then
+			progressState.claimed = true
+			mutated = true
+		end
+		if data.oneTimeClaimed[STARTER_QUEST_ID] ~= true then
+			data.oneTimeClaimed[STARTER_QUEST_ID] = true
+			mutated = true
+		end
+	end
+
+	return mutated
+end
+
+local function shouldIncludeStarterQuestInStatus(data: { [string]: any }, starterQuestState: string): boolean
+	if not STARTER_QUEST or type(data.progress) ~= "table" then
+		return false
+	end
+	if starterQuestState == STARTER_QUEST_STATE_ELIGIBLE then
+		return true
+	end
+	local progressState = data.progress[STARTER_QUEST_ID]
+	return type(progressState) == "table"
+		and progressState.claimed ~= true
+		and (tonumber(progressState.progress) or 0) > 0
+end
+
+local function buildStarterQuestStatus(progressState: { [string]: any }): { [string]: any }
+	local progress = math.max(0, math.floor(tonumber(progressState and progressState.progress) or 0))
+	local claimed = progressState and progressState.claimed == true or false
+	return {
+		id = STARTER_QUEST.id,
+		label = STARTER_QUEST.label,
+		description = STARTER_QUEST.description,
+		type = STARTER_QUEST.type,
+		progress = progress,
+		target = STARTER_QUEST.target,
+		claimed = claimed,
+		completed = progress >= STARTER_QUEST.target,
+		reward = STARTER_QUEST.reward,
+		icon = STARTER_QUEST.icon,
+		iconColor = STARTER_QUEST.iconColor,
+		order = STARTER_QUEST.order,
+	}
+end
+
 -- Player data helpers
 
 local function getQuestData(player: Player): { [string]: any }
@@ -208,12 +381,17 @@ local function saveQuestData(player: Player, data: { [string]: any })
 end
 
 -- Returns the player's quest data, resetting if the UTC day has changed.
-local function ensureQuestData(player: Player): { [string]: any }
+local function ensureQuestData(player: Player, starterQuestStateOverride: string?): { [string]: any }
 	local data   = getQuestData(player)
 	local today  = getCurrentDay()
 	local quests = getTodayQuests()
+	local starterQuestState = if type(starterQuestStateOverride) == "string" and starterQuestStateOverride ~= ""
+		then starterQuestStateOverride
+		else getStarterQuestState(player)
+	local mutated = false
 	if type(data.oneTimeClaimed) ~= "table" then
 		data.oneTimeClaimed = {}
+		mutated = true
 	end
 
 	if data.day ~= today then
@@ -222,13 +400,17 @@ local function ensureQuestData(player: Player): { [string]: any }
 		for _, q in ipairs(quests) do
 			data.progress[q.id] = { progress = 0, claimed = false }
 		end
-		saveQuestData(player, data)
+		mutated = true
 	end
 
-	if type(data.progress) ~= "table" then data.progress = {} end
+	if type(data.progress) ~= "table" then
+		data.progress = {}
+		mutated = true
+	end
 	for _, q in ipairs(quests) do
 		if not data.progress[q.id] then
 			data.progress[q.id] = { progress = 0, claimed = false }
+			mutated = true
 		end
 		if q.oneTime == true and data.oneTimeClaimed[q.id] == true then
 			local p = data.progress[q.id]
@@ -241,6 +423,12 @@ local function ensureQuestData(player: Player): { [string]: any }
 				p.progress = 0
 			end
 		end
+	end
+	if syncStarterQuestProgressEntry(data, starterQuestState) then
+		mutated = true
+	end
+	if mutated then
+		saveQuestData(player, data)
 	end
 	return data
 end
@@ -263,6 +451,22 @@ local function resolveQuestProgress(player: Player, questDef: { [string]: any },
 	return progressState.progress or 0
 end
 
+local function buildQuestPayloadSummary(questList: { { [string]: any } }): (string, boolean, string)
+	local entries = table.create(#questList)
+	local starterPresent = false
+	for _, quest in ipairs(questList) do
+		local questId = tostring(quest.id or "")
+		local questLabel = tostring(quest.label or questId)
+		if questId == STARTER_QUEST_ID then
+			starterPresent = true
+		end
+		table.insert(entries, questId .. ":" .. questLabel)
+	end
+	local payloadSummary = table.concat(entries, " | ")
+	local payloadSignature = tostring(#questList) .. "::" .. payloadSummary
+	return payloadSignature, starterPresent, payloadSummary
+end
+
 -- Status builder
 
 function DailyQuestService.GetStatus(player: Player)
@@ -271,11 +475,16 @@ function DailyQuestService.GetStatus(player: Player)
 		return { dataLoaded = false, quests = {} }
 	end
 
-	local data       = ensureQuestData(player)
+	local starterQuestState = resolveStarterQuestState(player)
+	local data       = ensureQuestData(player, starterQuestState)
 	local quests     = getTodayQuests()
 	local mutated    = false
+	local statusScope = "join_or_refresh"
+	local starterCompleted, starterDecisionReason = getStarterCompletionSnapshot(player)
+	local starterEligible = not starterCompleted
 
 	local questList = {}
+
 	for _, questDef in ipairs(quests) do
 		local p = data.progress[questDef.id] or { progress = 0, claimed = false }
 		local oneTimeClaimed = (questDef.oneTime == true) and (data.oneTimeClaimed[questDef.id] == true)
@@ -329,9 +538,61 @@ function DailyQuestService.GetStatus(player: Player)
 		})
 	end
 
+	local beforeStarterSignature, beforeStarterPresent, beforeStarterSummary = buildQuestPayloadSummary(questList)
+	local shouldIncludeStarter = shouldIncludeStarterQuestInStatus(data, starterQuestState) and STARTER_QUEST ~= nil
+	local starterQuestCreated = shouldIncludeStarter and data.progress[STARTER_QUEST_ID] ~= nil
+	local starterInserted = false
+	if shouldIncludeStarter and STARTER_QUEST then
+		local starterProgressState = data.progress[STARTER_QUEST_ID] or { progress = 0, claimed = false }
+		table.insert(questList, buildStarterQuestStatus(starterProgressState))
+		starterInserted = true
+		if _starterQuestAssignedLoggedByUserId[player.UserId] ~= true then
+			_starterQuestAssignedLoggedByUserId[player.UserId] = true
+			log(string.format(
+				"[StarterQuestAssignment] player=%s questCreated=%s questId=%s label=%s reward=%s",
+				player.Name,
+				tostring(starterQuestCreated),
+				STARTER_QUEST_ID,
+				tostring(STARTER_QUEST.label),
+				DailyQuestConfig.GetRewardLabel(STARTER_QUEST.reward)
+			))
+		end
+	end
+
 	table.sort(questList, function(a, b) return (a.order or 99) < (b.order or 99) end)
 	if mutated then
 		saveQuestData(player, data)
+	end
+
+	local payloadSignature, starterPresent, payloadSummary = buildQuestPayloadSummary(questList)
+	if _lastQuestPayloadSignatureByUserId[player.UserId] ~= payloadSignature then
+		_lastQuestPayloadSignatureByUserId[player.UserId] = payloadSignature
+		log(string.format(
+			"[QuestPayload] player=%s source=GetStatus starterState=%s starterPresent=%s activeQuestCount=%d quests=%s",
+			player.Name,
+			starterQuestState,
+			tostring(starterPresent),
+			#questList,
+			payloadSummary
+		))
+	end
+	if _starterJoinTraceLoggedByUserId[player.UserId] ~= true then
+		_starterJoinTraceLoggedByUserId[player.UserId] = true
+		log(string.format(
+			"[StarterQuestJoinTrace] player=%s scope=%s eligible=%s reason=%s state=%s questCreated=%s insertedIntoActiveQuestList=%s beforeStarterPresent=%s beforeCountSig=%s beforeList=%s finalStarterPresent=%s finalActiveList=%s",
+			player.Name,
+			statusScope,
+			tostring(starterEligible),
+			starterDecisionReason,
+			starterQuestState,
+			tostring(starterQuestCreated),
+			tostring(starterInserted),
+			tostring(beforeStarterPresent),
+			beforeStarterSignature,
+			beforeStarterSummary,
+			tostring(starterPresent),
+			payloadSummary
+		))
 	end
 
 	return {
@@ -347,9 +608,37 @@ local function incrementProgress(player: Player, questType: string, amount: numb
 	local PDS = getPDS()
 	if not PDS or not PDS.IsLoaded(player) then return end
 
-	local data    = ensureQuestData(player)
+	local starterQuestState = resolveStarterQuestState(player)
+	local data    = ensureQuestData(player, starterQuestState)
 	local quests  = getTodayQuests()
 	local changed = false
+	local incrementAmount = amount or 1
+
+	if STARTER_QUEST
+		and STARTER_QUEST.type == questType
+		and starterQuestState == STARTER_QUEST_STATE_ELIGIBLE
+	then
+		local starterProgress = data.progress[STARTER_QUEST_ID]
+		if starterProgress and starterProgress.claimed ~= true and (tonumber(starterProgress.progress) or 0) < STARTER_QUEST.target then
+			local previousProgress = tonumber(starterProgress.progress) or 0
+			starterProgress.progress = math.min(previousProgress + incrementAmount, STARTER_QUEST.target)
+			log(string.format("Progress: %s %s %d/%d",
+				player.Name, STARTER_QUEST_ID, starterProgress.progress, STARTER_QUEST.target))
+			if previousProgress < STARTER_QUEST.target and starterProgress.progress >= STARTER_QUEST.target then
+				log(string.format("[StarterQuest] player=%s completed=true quest=%s", player.Name, STARTER_QUEST_ID))
+				local feedback = getFeedback()
+				if feedback and feedback.OnQuestCompleted then
+					pcall(feedback.OnQuestCompleted, player, STARTER_QUEST)
+				end
+			elseif previousProgress < starterProgress.progress then
+				local feedback = getFeedback()
+				if feedback and feedback.OnQuestProgressUpdated then
+					pcall(feedback.OnQuestProgressUpdated, player, STARTER_QUEST, starterProgress.progress, STARTER_QUEST.target)
+				end
+			end
+			changed = true
+		end
+	end
 
 	for _, questDef in ipairs(quests) do
 		if questDef.type == questType then
@@ -368,11 +657,20 @@ local function incrementProgress(player: Player, questType: string, amount: numb
 			end
 			if p and not p.claimed and p.progress < questDef.target then
 				local prevProgress = p.progress
-				p.progress = math.min(prevProgress + (amount or 1), questDef.target)
+				p.progress = math.min(prevProgress + incrementAmount, questDef.target)
 				log(string.format("Progress: %s %s %d/%d",
 					player.Name, questDef.id, p.progress, questDef.target))
 				if prevProgress < questDef.target and p.progress >= questDef.target then
 					log(string.format("Quest completed: %s %s", player.Name, questDef.id))
+					local feedback = getFeedback()
+					if feedback and feedback.OnQuestCompleted then
+						pcall(feedback.OnQuestCompleted, player, questDef)
+					end
+				elseif prevProgress < p.progress then
+					local feedback = getFeedback()
+					if feedback and feedback.OnQuestProgressUpdated then
+						pcall(feedback.OnQuestProgressUpdated, player, questDef, p.progress, questDef.target)
+					end
 				end
 				changed = true
 			end
@@ -411,6 +709,10 @@ local function applySingleMatchSurvivalProgress(player: Player, roundsSurvived: 
 					roundsSurvived,
 					questDef.target or 0
 				))
+				local feedback = getFeedback()
+				if feedback and feedback.OnQuestCompleted then
+					pcall(feedback.OnQuestCompleted, player, questDef)
+				end
 			end
 		end
 	end
@@ -499,6 +801,7 @@ end
 
 function DailyQuestService.OnRoundSurvived(player: Player, roundNumber: number?)
 	incrementProgress(player, "SurviveRoundsToday")
+	incrementProgress(player, "StarterSurviveRound")
 	sweepSingleMatchRunFailures(roundNumber)
 	if not isPlayerInActiveSingleMatchRun(player) then
 		return
@@ -506,11 +809,48 @@ function DailyQuestService.OnRoundSurvived(player: Player, roundNumber: number?)
 	local roundsSurvived = (_singleMatchSurvivalRoundsByUserId[player.UserId] or 0) + 1
 	_singleMatchSurvivalRoundsByUserId[player.UserId] = roundsSurvived
 	log(string.format(
-		"[SingleMatchQuest] player=%s roundSurvived=true roundsSurvived=%d",
+		"[SingleMatchQuest] player=%s roundSurvived=true round=%s roundsSurvived=%d event=RoundsSurvivedIncrement",
 		player.Name,
+		tostring(roundNumber or "?"),
 		roundsSurvived
 	))
 	applySingleMatchSurvivalProgress(player, roundsSurvived)
+end
+
+function DailyQuestService.OnIndexOpened(player: Player)
+	if not player or not player.Parent then
+		return
+	end
+	local PDS = getPDS()
+	if not PDS or not PDS.IsLoaded(player) then
+		-- Join-time UI can open before profile load; retry briefly so first open still counts.
+		task.spawn(function()
+			for _ = 1, 20 do
+				local retryPDS = getPDS()
+				if not player.Parent then
+					return
+				end
+				if retryPDS and retryPDS.IsLoaded(player) then
+					incrementProgress(player, "FirstIndexOpen", 1)
+					log(string.format("[QuestAction] player=%s action=IndexOpened result=applied_after_retry", player.Name))
+					return
+				end
+				task.wait(0.25)
+			end
+			log(string.format("[QuestAction] player=%s action=IndexOpened result=skipped_data_not_loaded", player.Name))
+		end)
+		return
+	end
+
+	incrementProgress(player, "FirstIndexOpen", 1)
+	log(string.format("[QuestAction] player=%s action=IndexOpened result=applied_immediate", player.Name))
+end
+
+function DailyQuestService.OnCratePurchased(player: Player)
+	if not player or not player.Parent then
+		return
+	end
+	incrementProgress(player, "FirstCratePurchase", 1)
 end
 
 function DailyQuestService.OnBrainrotPetPickup(player: Player, petId: string, modeName: string?)
@@ -540,12 +880,18 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 		return { success = false, reason = "Invalid questId" }
 	end
 
-	local questDef = getTodayQuestById(questId)
+	local starterQuestState = resolveStarterQuestState(player)
+	local data = ensureQuestData(player, starterQuestState)
+	local questDef = nil
+	if questId == STARTER_QUEST_ID and STARTER_QUEST and shouldIncludeStarterQuestInStatus(data, starterQuestState) then
+		questDef = STARTER_QUEST
+	else
+		questDef = getTodayQuestById(questId)
+	end
 	if not questDef then
 		return { success = false, reason = "Unknown quest: " .. questId }
 	end
 
-	local data = ensureQuestData(player)
 	local p    = data.progress[questId]
 	if not p then return { success = false, reason = "Quest state missing" } end
 
@@ -589,15 +935,22 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 		if eco then
 			local source = "DailyQuest_" .. questId
 			local baseAmount = tonumber(reward.amount) or 0
-			local ok, actualAmount = eco.AwardVipOnlyCoins(player, baseAmount, source)
+			local useExactPolicy = reward.exact == true
+			local ok, actualAmount
+			if useExactPolicy then
+				ok, actualAmount = eco.AwardCoins(player, baseAmount, source, true)
+			else
+				ok, actualAmount = eco.AwardVipOnlyCoins(player, baseAmount, source)
+			end
 			granted = ok == true
 			if granted then
 				extra.actualAmount = actualAmount or baseAmount
 				log(string.format(
-					"[DailyQuestGrantAudit] player=%s quest=%s base=%d policy=vip_only final=%d source=%s",
+					"[DailyQuestGrantAudit] player=%s quest=%s base=%d policy=%s final=%d source=%s",
 					player.Name,
 					questId,
 					baseAmount,
+					if useExactPolicy then "exact" else "vip_only",
 					tonumber(extra.actualAmount) or 0,
 					source
 				))
@@ -738,10 +1091,21 @@ function DailyQuestService.TryClaim(player: Player, questId: string)
 			data.oneTimeClaimed = {}
 		end
 		data.oneTimeClaimed[questId] = true
+		if questId == STARTER_QUEST_ID then
+			setStarterQuestState(player, STARTER_QUEST_STATE_COMPLETED)
+		end
 	end
 	saveQuestData(player, data)
 	log(string.format("[DailyQuest] quest=%s claimed=true deactivated=true", tostring(questId)))
 	log(string.format("[DailyQuest] quest=%s trackerStopped=true", tostring(questId)))
+	if questId == STARTER_QUEST_ID then
+		log(string.format(
+			"[StarterQuest] player=%s rewardGranted=%d reason=%s",
+			player.Name,
+			tonumber(extra.actualAmount) or (tonumber(reward.amount) or 0),
+			STARTER_QUEST_REWARD_REASON
+		))
+	end
 
 	if updateRemote then
 		updateRemote:FireClient(player, DailyQuestService.GetStatus(player))
@@ -794,6 +1158,9 @@ function DailyQuestService.DebugResetProgress(player: Player)
 	local PDS = getPDS()
 	if PDS then
 		PDS.SetField(player, "DailyQuestData", "")
+		PDS.SetField(player, "StarterQuestState", STARTER_QUEST_STATE_UNCLASSIFIED)
+		_starterQuestAssignedLoggedByUserId[player.UserId] = nil
+		_lastQuestPayloadSignatureByUserId[player.UserId] = nil
 		log("[DEBUG] Reset quest progress for " .. player.Name)
 		if updateRemote then
 			updateRemote:FireClient(player, DailyQuestService.GetStatus(player))
@@ -804,8 +1171,9 @@ end
 function DailyQuestService.DebugCompleteQuest(player: Player, questId: string)
 	local PDS = getPDS()
 	if not PDS or not PDS.IsLoaded(player) then return end
-	local data = ensureQuestData(player)
-	local qdef = getTodayQuestById(questId)
+	local starterQuestState = resolveStarterQuestState(player)
+	local data = ensureQuestData(player, starterQuestState)
+	local qdef = if questId == STARTER_QUEST_ID and STARTER_QUEST then STARTER_QUEST else getTodayQuestById(questId)
 	if not qdef then
 		log("[DEBUG] Unknown questId: " .. tostring(questId))
 		return
@@ -868,6 +1236,35 @@ function DailyQuestService.Init()
 		return DailyQuestService.TryClaim(player, questId)
 	end
 
+	local existingAction = remotes:FindFirstChild("DailyQuest_Action")
+	if existingAction and not existingAction:IsA("RemoteEvent") then
+		warn(string.format(
+			"[DailyQuestService] DailyQuest_Action had wrong class=%s, recreating as RemoteEvent",
+			existingAction.ClassName
+		))
+		existingAction:Destroy()
+		existingAction = nil
+	end
+	if not existingAction then
+		actionRemote = Instance.new("RemoteEvent")
+		actionRemote.Name = "DailyQuest_Action"
+		actionRemote.Parent = remotes
+	else
+		actionRemote = existingAction
+	end
+	if actionRemote then
+		actionRemote.OnServerEvent:Connect(function(player, actionName)
+			if type(actionName) ~= "string" then
+				log(string.format("[QuestAction] player=%s action=invalid_type", player.Name))
+				return
+			end
+			log(string.format("[QuestAction] player=%s action=%s result=received", player.Name, actionName))
+			if actionName == "IndexOpened" then
+				DailyQuestService.OnIndexOpened(player)
+			end
+		end)
+	end
+
 	if RunService:IsStudio() then
 		if not remotes:FindFirstChild("DailyQuest_Debug") then
 			debugRemote = Instance.new("RemoteFunction")
@@ -901,17 +1298,28 @@ function DailyQuestService.Init()
 
 	Players.PlayerAdded:Connect(function(player)
 		_sessionJoinTimeByUserId[player.UserId] = os.time()
+		_starterQuestAssignedLoggedByUserId[player.UserId] = nil
+		_lastQuestPayloadSignatureByUserId[player.UserId] = nil
+		_starterJoinTraceLoggedByUserId[player.UserId] = nil
 		task.spawn(function()
-			local PDS = getPDS()
-			if PDS then
-				for _ = 1, 20 do
-					if PDS.IsLoaded(player) then break end
-					task.wait(0.5)
+			while player.Parent do
+				local PDS = getPDS()
+				if PDS and PDS.IsLoaded(player) then
+					task.wait(1)
+					if player.Parent and updateRemote then
+						local status = DailyQuestService.GetStatus(player)
+						updateRemote:FireClient(player, status)
+						local _, starterPresent, payloadSummary = buildQuestPayloadSummary(status.quests or {})
+						log(string.format(
+							"[StarterQuestReplication] player=%s source=PlayerAdded payloadStarterPresent=%s payloadQuests=%s",
+							player.Name,
+							tostring(starterPresent),
+							payloadSummary
+						))
+					end
+					return
 				end
-			end
-			task.wait(1)
-			if player.Parent and updateRemote then
-				updateRemote:FireClient(player, DailyQuestService.GetStatus(player))
+				task.wait(0.5)
 			end
 		end)
 	end)
@@ -919,6 +1327,7 @@ function DailyQuestService.Init()
 	Players.PlayerRemoving:Connect(function(player)
 		_singleMatchParticipantByUserId[player.UserId] = nil
 		_singleMatchSurvivalRoundsByUserId[player.UserId] = nil
+		_lastQuestPayloadSignatureByUserId[player.UserId] = nil
 		local PDS = getPDS()
 		if PDS and PDS.IsLoaded(player) then
 			local data = ensureQuestData(player)
@@ -945,6 +1354,28 @@ function DailyQuestService.Init()
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		_sessionJoinTimeByUserId[player.UserId] = os.time()
+		_starterJoinTraceLoggedByUserId[player.UserId] = nil
+		task.spawn(function()
+			while player.Parent do
+				local PDS = getPDS()
+				if PDS and PDS.IsLoaded(player) then
+					task.wait(0.25)
+					if player.Parent and updateRemote then
+						local status = DailyQuestService.GetStatus(player)
+						updateRemote:FireClient(player, status)
+						local _, starterPresent, payloadSummary = buildQuestPayloadSummary(status.quests or {})
+						log(string.format(
+							"[StarterQuestReplication] player=%s source=InitBackfillExistingPlayer payloadStarterPresent=%s payloadQuests=%s",
+							player.Name,
+							tostring(starterPresent),
+							payloadSummary
+						))
+					end
+					return
+				end
+				task.wait(0.25)
+			end
+		end)
 	end
 
 	log("Initialized -- " .. #getTodayQuests() .. " quests active today")

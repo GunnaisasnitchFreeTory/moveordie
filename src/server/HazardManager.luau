@@ -35,6 +35,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Server = ServerScriptService:WaitForChild("Server")
 
 local HazardConfig = require(Shared:WaitForChild("HazardConfig"))
+local FeedbackConfig = require(Shared:WaitForChild("FeedbackConfig"))
 local StormFXConfig = require(Shared:WaitForChild("StormFXConfig"))
 local PlayerState = require(Shared:WaitForChild("PlayerState"))
 local PlayerStateService = require(Server:WaitForChild("PlayerStateService"))
@@ -84,6 +85,20 @@ local tileWarningActive = false  -- Gate for pulse animation coroutine
 local currentRoundIndex: number = 0
 
 local HazardManager = {}
+
+local _Feedback = nil
+local function getFeedback()
+	if _Feedback ~= nil then
+		return _Feedback
+	end
+	local ok, mod = pcall(require, Server:FindFirstChild("MatchFeedbackService"))
+	if ok and mod then
+		_Feedback = mod
+	else
+		_Feedback = false
+	end
+	return _Feedback
+end
 
 --[[ HELPERS ]]
 
@@ -737,6 +752,44 @@ local function getHRPBeamHit(position: Vector3): string?
 end
 
 --[[
+	Get shortest outside distance from point -> nearest beam kill-zone edge (XZ plane).
+	Returns:
+	  - nil when no beams exist
+	  - 0 when point is inside a kill zone
+	  - positive studs when point is outside all kill zones
+]]
+local function getClosestBeamEdgeDistance(point: Vector3): number?
+	if #spawnedBeams == 0 then
+		return nil
+	end
+
+	local closestDistance: number? = nil
+	local buffer = HazardConfig.KillZoneInnerBuffer
+
+	for _, beam in ipairs(spawnedBeams) do
+		local beamPos = beam.Position
+		local beamSize = beam.Size
+		local killHalfX = (beamSize.X / 2) * (1 - buffer)
+		local killHalfZ = (beamSize.Z / 2) * (1 - buffer)
+
+		local dx = math.abs(point.X - beamPos.X)
+		local dz = math.abs(point.Z - beamPos.Z)
+		local outsideX = math.max(0, dx - killHalfX)
+		local outsideZ = math.max(0, dz - killHalfZ)
+
+		local distance = math.sqrt(outsideX * outsideX + outsideZ * outsideZ)
+		if closestDistance == nil or distance < closestDistance then
+			closestDistance = distance
+			if distance == 0 then
+				break
+			end
+		end
+	end
+
+	return closestDistance
+end
+
+--[[
 	Execute the strike: eliminate players with ANY body part in unsafe zones.
 	Uses limb-accurate detection for fair hit testing.
 	Eliminated players are immediately sent to Lobby (no Spectating).
@@ -747,6 +800,8 @@ function HazardManager.Strike(): number
 		warn("[HazardManager] Not initialized")
 		return 0
 	end
+
+	log(string.format("[STRIKE] Entered round=%d beams=%d", currentRoundIndex, #spawnedBeams))
 	
 	-- Log unsafe zones for this strike
 	log(string.format("[STRIKE] Checking %d unsafe zones: %s", 
@@ -813,9 +868,37 @@ function HazardManager.Strike(): number
 	for _, player in ipairs(eliminatedPlayers) do
 		PlayerStateService.SetState(player, PlayerState.States.Lobby)
 	end
+
+	local feedback = getFeedback()
+	if feedback and feedback.OnNarrowDodge and #spawnedBeams > 0 then
+		log(string.format("[STRIKE] NarrowDodge helper resolved=getClosestBeamEdgeDistance beams=%d", #spawnedBeams))
+		local dodgeThreshold = tonumber(FeedbackConfig and FeedbackConfig.Rewards and FeedbackConfig.Rewards.NarrowDodgeDistanceThresholdStuds)
+		dodgeThreshold = dodgeThreshold or 0
+		if dodgeThreshold > 0 then
+			local survivors = PlayerStateService.GetPlayersInState(PlayerState.States.InMatch)
+			for _, player in ipairs(survivors) do
+				local character = player.Character
+				local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+				local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+				if rootPart and rootPart:IsA("BasePart") and humanoid and humanoid.Health > 0 then
+					local nearestDistance = getClosestBeamEdgeDistance(rootPart.Position)
+					if nearestDistance and nearestDistance > 0 and nearestDistance <= dodgeThreshold then
+						log(string.format(
+							"[NarrowDodgeCheck] player=%s round=%d nearestDistance=%.2f threshold=%.2f qualified=true",
+							player.Name,
+							currentRoundIndex,
+							nearestDistance,
+							dodgeThreshold
+						))
+						pcall(feedback.OnNarrowDodge, player, currentRoundIndex)
+					end
+				end
+			end
+		end
+	end
 	
 	local survived = #inMatchPlayers - #eliminatedPlayers
-	log(string.format("Strike complete: %d eliminated, %d survived", #eliminatedPlayers, survived))
+	log(string.format("[STRIKE] Completed success=true eliminated=%d survived=%d", #eliminatedPlayers, survived))
 	
 	return #eliminatedPlayers
 end

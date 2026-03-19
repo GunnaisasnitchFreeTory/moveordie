@@ -25,9 +25,9 @@ local activeMode: string = ModeEnvironmentConfig.DefaultMode
 
 local PROPERTY_KEYS = {
 	"Brightness",
-	"ClockTime",
 	"Ambient",
 	"OutdoorAmbient",
+	"Technology",
 	"ExposureCompensation",
 	"FogEnd",
 	"FogStart",
@@ -36,6 +36,11 @@ local PROPERTY_KEYS = {
 	"EnvironmentDiffuseScale",
 	"EnvironmentSpecularScale",
 	"ShadowSoftness",
+}
+
+local SAFE_LIGHTING_OVERRIDES = {
+	Technology = Enum.Technology.ShadowMap,
+	ShadowSoftness = 0.25,
 }
 
 local defaultPropertySnapshot: { [string]: any }? = nil
@@ -133,12 +138,21 @@ local function setExclusiveFlag(enabled: boolean)
 	Lighting:SetAttribute("ModeLightingExclusive", enabled)
 end
 
+local function applySafeLightingOverrides()
+	for key, value in pairs(SAFE_LIGHTING_OVERRIDES) do
+		pcall(function()
+			Lighting[key] = value
+		end)
+	end
+end
+
 function ModeLightingService.Init()
 	if initialized then return end
 	initialized = true
 	activeMode = ModeEnvironmentConfig.DefaultMode
 	activeState = "DefaultOnly"
 	setExclusiveFlag(false)
+	applySafeLightingOverrides()
 	log("Initialized")
 end
 
@@ -179,10 +193,18 @@ function ModeLightingService.ApplyForMode(modeName: string?)
 		appliedCount += 1
 	end
 	applyPresetProperties(presetFolder)
+	applySafeLightingOverrides()
 
 	activeMode = mode
 	activeState = "BrainrotExclusive"
-	log(string.format("Mode=%s appliedPreset=%s exclusively (children=%d)", mode, presetPath, appliedCount))
+	log(string.format(
+		"Mode=%s appliedPreset=%s exclusively (children=%d, clockTime=%.2f exclusive=%s)",
+		mode,
+		presetPath,
+		appliedCount,
+		tonumber(Lighting.ClockTime) or 0,
+		tostring(Lighting:GetAttribute("ModeLightingExclusive") == true)
+	))
 end
 
 function ModeLightingService.RestoreDefault()
@@ -209,12 +231,19 @@ function ModeLightingService.RestoreDefault()
 		restoredChildren += 1
 	end
 	applyPropertySnapshot(defaultPropertySnapshot)
+	applySafeLightingOverrides()
 	setExclusiveFlag(false)
 
 	activeMode = ModeEnvironmentConfig.DefaultMode
 	activeState = "DefaultOnly"
-	log(string.format("UnwrapInLighting removed (children=%d), default lighting restored (children=%d, state=%s)",
-		removed, restoredChildren, activeState))
+	log(string.format(
+		"UnwrapInLighting removed (children=%d), default lighting restored (children=%d, state=%s, clockTime=%.2f exclusive=%s)",
+		removed,
+		restoredChildren,
+		activeState,
+		tonumber(Lighting.ClockTime) or 0,
+		tostring(Lighting:GetAttribute("ModeLightingExclusive") == true)
+	))
 end
 
 function ModeLightingService.GetActiveMode(): string

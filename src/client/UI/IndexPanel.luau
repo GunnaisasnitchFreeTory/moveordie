@@ -65,6 +65,7 @@ local contentFrame: ScrollingFrame = nil
 local visible = false
 local closeCallback: (() -> ())? = nil
 local activeTab = 1
+local actionRemote: RemoteEvent? = nil
 
 local TABS = {
 	{ label = "Crowns" },
@@ -73,6 +74,24 @@ local TABS = {
 }
 
 local IndexPanel = {}
+
+local function fireIndexQuestAction()
+	if actionRemote and actionRemote.Parent then
+		actionRemote:FireServer("IndexOpened")
+		print("[IndexPanel] quest_action=IndexOpened fired")
+		return
+	end
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then
+		return
+	end
+	local remote = remotes:FindFirstChild("DailyQuest_Action")
+	if remote and remote:IsA("RemoteEvent") then
+		actionRemote = remote
+		actionRemote:FireServer("IndexOpened")
+		print("[IndexPanel] quest_action=IndexOpened fired")
+	end
+end
 
 local function clearCards()
 	if not contentFrame then return end
@@ -362,6 +381,7 @@ end
 function IndexPanel.Show()
 	if visible then return end
 	visible = true
+	fireIndexQuestAction()
 	if overlay then overlay.Visible = true end
 	showTab(activeTab)
 	SoundUtil.Open()
